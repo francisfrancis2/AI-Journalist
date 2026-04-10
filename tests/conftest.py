@@ -22,6 +22,7 @@ os.environ.setdefault("ALPHA_VANTAGE_API_KEY", "test-av-key")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-for-tests-only")
 
 # ── Now it's safe to import backend modules ───────────────────────────────────
 from backend.db.database import Base, get_db

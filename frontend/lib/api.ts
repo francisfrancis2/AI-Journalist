@@ -4,6 +4,7 @@
  */
 
 import axios, { AxiosInstance } from "axios";
+import { getToken } from "@/lib/auth";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -33,6 +34,40 @@ export interface StoryCreate {
   target_duration_minutes?: number;
 }
 
+export interface EvaluationCriteria {
+  factual_accuracy: number;
+  narrative_coherence: number;
+  audience_engagement: number;
+  source_diversity: number;
+  originality: number;
+  production_feasibility: number;
+}
+
+export interface EvaluationData {
+  criteria: EvaluationCriteria;
+  overall_score: number;
+  strengths: string[];
+  weaknesses: string[];
+  improvement_suggestions: string[];
+  approved_for_scripting: boolean;
+  evaluator_notes: string;
+}
+
+export interface BenchmarkData {
+  bi_similarity_score: number;
+  hook_potency: number;
+  title_formula_fit: number;
+  act_architecture: number;
+  data_density: number;
+  human_narrative_placement: number;
+  tension_release_rhythm: number;
+  closing_device: number;
+  closest_reference_title: string | null;
+  gaps: string[];
+  strengths: string[];
+  grade: string;
+}
+
 export interface Story {
   id: string;
   title: string;
@@ -45,6 +80,8 @@ export interface Story {
   script_s3_key: string | null;
   error_message: string | null;
   iteration_count: number;
+  evaluation_data: EvaluationData | null;
+  benchmark_data: BenchmarkData | null;
   created_at: string;
   updated_at: string;
 }
@@ -101,10 +138,22 @@ class AIJournalistAPIClient {
       timeout: 30_000,
     });
 
+    // Attach JWT token to every request
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.http.interceptors.request.use((config: any) => {
+      const token = getToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    });
+
     // Global error interceptor
     this.http.interceptors.response.use(
-      (res) => res,
-      (err) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (res: any) => res,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (err: any) => {
         const message =
           err.response?.data?.detail ??
           err.response?.data?.message ??
@@ -113,6 +162,23 @@ class AIJournalistAPIClient {
         return Promise.reject(new Error(message));
       }
     );
+  }
+
+  // ── Auth ─────────────────────────────────────────────────────────────────
+
+  async login(email: string, password: string): Promise<{ access_token: string }> {
+    const { data } = await this.http.post<{ access_token: string }>("/api/v1/auth/login", { email, password });
+    return data;
+  }
+
+  async register(email: string, password: string): Promise<{ access_token: string }> {
+    const { data } = await this.http.post<{ access_token: string }>("/api/v1/auth/register", { email, password });
+    return data;
+  }
+
+  async getMe(): Promise<{ id: string; email: string; is_active: boolean }> {
+    const { data } = await this.http.get("/api/v1/auth/me");
+    return data;
   }
 
   // ── Stories ──────────────────────────────────────────────────────────────

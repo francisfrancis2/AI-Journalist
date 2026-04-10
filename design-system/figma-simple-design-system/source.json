@@ -1,0 +1,35 @@
+{
+  "source_url": "https://www.figma.com/design/8feFgBQyREYeQHhnd5nNxF/Simple-Design-System--Community-?t=QqDMspc8GGoEpERQ-0",
+  "file_key": "8feFgBQyREYeQHhnd5nNxF",
+  "created_at": "2026-04-10",
+  "status": "page_ids_discovered",
+  "discovered_nodes": {
+    "pages": [
+      { "id": "3:5", "name": "Cover" },
+      { "id": "9762:187", "name": "Foundations" },
+      { "id": "7809:18809", "name": "Icons" },
+      { "id": "7641:2142", "name": "Examples" },
+      { "id": "83:32628", "name": "Composition guide" },
+      { "id": "128:10284", "name": "Buttons" },
+      { "id": "2143:13485", "name": "Cards" },
+      { "id": "128:10423", "name": "Inputs" },
+      { "id": "516:12822", "name": "Navigation" },
+      { "id": "370:5433", "name": "Forms" },
+      { "id": "348:13000", "name": "Sections" },
+      { "id": "368:11410", "name": "Text" },
+      { "id": "7809:18808", "name": "Utilities" },
+      { "id": "522:12151", "name": "Component Playground" }
+    ],
+    "foundation_sections": [
+      { "id": "226:13829", "name": "Typography" },
+      { "id": "226:13679", "name": "Color" },
+      { "id": "226:13680", "name": "Size" },
+      { "id": "226:13682", "name": "Effects" }
+    ]
+  },
+  "notes": [
+    "Top-level file URL was provided without a node-id.",
+    "Page node IDs were discovered through the Figma plugin API.",
+    "This folder is the local snapshot location for future Figma imports."
+  ]
+}

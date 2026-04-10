@@ -10,14 +10,17 @@ Routing logic:
   - After researcher: if iteration < max → analyst, else → storyline_creator (best effort)
 """
 
+import asyncio
+
 import structlog
 from langgraph.graph import END, StateGraph
 
-from backend.agents.researcher import ResearcherAgent
 from backend.agents.analyst import AnalystAgent
-from backend.agents.storyline_creator import StorylineCreatorAgent
+from backend.agents.benchmarker import BenchmarkAgent
 from backend.agents.evaluator import EvaluatorAgent
+from backend.agents.researcher import ResearcherAgent
 from backend.agents.scriptwriter import ScriptwriterAgent
+from backend.agents.storyline_creator import StorylineCreatorAgent
 from backend.config import settings
 from backend.graph.state import JournalistState
 
@@ -28,6 +31,7 @@ _researcher = ResearcherAgent()
 _analyst = AnalystAgent()
 _storyline_creator = StorylineCreatorAgent()
 _evaluator = EvaluatorAgent()
+_benchmarker = BenchmarkAgent()
 _scriptwriter = ScriptwriterAgent()
 
 
@@ -65,11 +69,27 @@ async def storyline_creator_node(state: JournalistState) -> dict:
 
 
 async def evaluator_node(state: JournalistState) -> dict:
-    """Run the Evaluator agent to score and gate the storyline."""
+    """Run the Evaluator and BenchmarkAgent in parallel, then merge results."""
     log.info("graph.node.evaluator", story_id=state["story_id"])
     try:
-        updates = await _evaluator.run(state)
-        return {**updates, "refinement_cycle": state["refinement_cycle"] + 1}
+        eval_result, bench_result = await asyncio.gather(
+            _evaluator.run(state),
+            _benchmarker.run(state),
+            return_exceptions=True,
+        )
+        updates: dict = {"refinement_cycle": state["refinement_cycle"] + 1}
+
+        if isinstance(eval_result, Exception):
+            log.error("graph.node.evaluator.error", error=str(eval_result))
+            return {"error": str(eval_result), "failed_node": "evaluator"}
+        updates.update(eval_result)
+
+        if isinstance(bench_result, Exception):
+            log.warning("graph.node.benchmarker.error", error=str(bench_result))
+        else:
+            updates.update(bench_result)
+
+        return updates
     except Exception as exc:
         log.error("graph.node.evaluator.error", error=str(exc))
         return {"error": str(exc), "failed_node": "evaluator"}
@@ -111,9 +131,21 @@ def route_after_evaluator(state: JournalistState) -> str:
     log.warning(
         "graph.route.max_refinement_reached",
         story_id=state["story_id"],
-        score=state.get("evaluation_report", {}).overall_score if state.get("evaluation_report") else 0,
+        score=state["evaluation_report"].overall_score if state.get("evaluation_report") else 0,
     )
     return "scriptwriter"
+
+
+def route_after_storyline_creator(state: JournalistState) -> str:
+    """Route to evaluator, or END early if storyline_creator failed."""
+    if state.get("error") or not state.get("selected_storyline"):
+        log.error(
+            "graph.route.storyline_creator_failed",
+            story_id=state.get("story_id"),
+            error=state.get("error"),
+        )
+        return END
+    return "evaluator"
 
 
 def route_after_researcher(state: JournalistState) -> str:
@@ -150,7 +182,10 @@ def build_journalist_graph() -> StateGraph:
         END: END,
     })
     graph.add_edge("analyst", "storyline_creator")
-    graph.add_edge("storyline_creator", "evaluator")
+    graph.add_conditional_edges("storyline_creator", route_after_storyline_creator, {
+        "evaluator": "evaluator",
+        END: END,
+    })
 
     # Conditional routing after evaluation
     graph.add_conditional_edges(

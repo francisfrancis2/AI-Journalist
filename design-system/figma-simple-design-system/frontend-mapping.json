@@ -1,0 +1,12 @@
+{
+  "status": "pending_design_extraction",
+  "targets": {
+    "global_tokens": [],
+    "dashboard": [],
+    "story_card": [],
+    "script_viewer": []
+  },
+  "notes": [
+    "This file will map extracted Figma assets to frontend implementation targets."
+  ]
+}

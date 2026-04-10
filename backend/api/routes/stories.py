@@ -91,6 +91,10 @@ async def _run_pipeline(story_id: str, topic: str, tone: str) -> None:
                 final_state["research_package"].model_dump(mode="json")
                 if final_state.get("research_package") else None
             ),
+            "analysis_data": (
+                final_state["analysis_result"].model_dump(mode="json")
+                if final_state.get("analysis_result") else None
+            ),
             "storyline_data": (
                 final_state["selected_storyline"].model_dump(mode="json")
                 if final_state.get("selected_storyline") else None
@@ -98,7 +102,12 @@ async def _run_pipeline(story_id: str, topic: str, tone: str) -> None:
             "evaluation_data": (
                 evaluation.model_dump(mode="json") if evaluation else None
             ),
+            "iteration_count": final_state.get("research_iteration", 0),
             "error_message": final_state.get("error"),
+            "benchmark_data": (
+                final_state["benchmark_report"].model_dump(mode="json")
+                if final_state.get("benchmark_report") else None
+            ),
         }
         if script:
             values["title"] = script.title

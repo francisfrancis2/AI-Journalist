@@ -66,6 +66,9 @@ class StoryORM(Base):
     # S3 reference for the final script document
     script_s3_key: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
 
+    # BI benchmark scores
+    benchmark_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     # Error tracking
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     iteration_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -108,6 +111,8 @@ class StoryRead(BaseModel):
     script_s3_key: Optional[str]
     error_message: Optional[str]
     iteration_count: int
+    evaluation_data: Optional[dict] = None
+    benchmark_data: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 

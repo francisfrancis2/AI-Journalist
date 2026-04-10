@@ -33,25 +33,25 @@ function StoriesListView() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">All Stories</h1>
-        <span className="text-sm text-gray-500">
+        <span className="text-sm text-[color:var(--palette-muted)]">
           {stories?.length ?? 0} total
         </span>
       </div>
 
       {isLoading && (
         <div className="flex justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+          <Loader2 className="w-8 h-8 animate-spin text-[color:var(--palette-primary)]" />
         </div>
       )}
 
       {error && (
-        <div className="rounded-lg bg-red-900/30 border border-red-800 p-4 text-red-300 text-sm">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700 text-sm">
           Failed to load stories: {(error as Error).message}
         </div>
       )}
 
       {stories && stories.length === 0 && (
-        <div className="text-center py-16 text-gray-600">
+        <div className="text-center py-16 text-[color:var(--palette-muted)]">
           No stories found. Go to the dashboard to create one.
         </div>
       )}
@@ -93,14 +93,14 @@ function StoryDetailView({
   if (storyLoading) {
     return (
       <div className="flex justify-center py-16">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+        <Loader2 className="w-8 h-8 animate-spin text-[color:var(--palette-primary)]" />
       </div>
     );
   }
 
   if (!story) {
     return (
-      <div className="text-center py-16 text-gray-500">Story not found.</div>
+      <div className="text-center py-16 text-[color:var(--palette-muted)]">Story not found.</div>
     );
   }
 
@@ -108,19 +108,19 @@ function StoryDetailView({
     <div className="space-y-6 max-w-4xl mx-auto">
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+        className="flex items-center gap-2 text-sm text-[color:var(--palette-muted)] hover:text-[color:var(--palette-primary)] transition-colors"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Stories
       </button>
 
       {/* Story Header */}
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+      <div className="surface-card p-6">
         <div className="flex items-start justify-between gap-4 mb-3">
           <h1 className="text-2xl font-bold leading-tight">{story.title}</h1>
           <StatusBadge status={story.status} />
         </div>
-        <p className="text-gray-400 text-sm mb-4">{story.topic}</p>
+        <p className="text-[color:var(--palette-muted)] text-sm mb-4">{story.topic}</p>
 
         {story.quality_score !== null && story.quality_score !== undefined && (
           <div className="flex items-center gap-6 text-sm">
@@ -141,7 +141,7 @@ function StoryDetailView({
         )}
 
         {story.error_message && (
-          <div className="mt-4 rounded-lg bg-red-900/30 border border-red-800 p-3 text-red-300 text-sm">
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-red-700 text-sm">
             Error: {story.error_message}
           </div>
         )}
@@ -160,20 +160,20 @@ function StoryDetailView({
 // ── Helper Components ─────────────────────────────────────────────────────────
 
 const STATUS_STYLES: Record<string, string> = {
-  pending: "bg-gray-800 text-gray-300",
-  researching: "bg-blue-900/50 text-blue-300",
-  analysing: "bg-cyan-900/50 text-cyan-300",
-  writing_storyline: "bg-violet-900/50 text-violet-300",
-  evaluating: "bg-amber-900/50 text-amber-300",
-  scripting: "bg-emerald-900/50 text-emerald-300",
-  completed: "bg-green-900/50 text-green-300",
-  failed: "bg-red-900/50 text-red-300",
+  pending: "bg-[rgba(124,237,253,0.1)] text-[color:var(--palette-muted)]",
+  researching: "bg-[rgba(124,237,253,0.18)] text-[color:var(--palette-primary)]",
+  analysing: "bg-cyan-50 text-cyan-700",
+  writing_storyline: "bg-[rgba(28,33,170,0.08)] text-[color:var(--palette-primary)]",
+  evaluating: "bg-amber-50 text-amber-700",
+  scripting: "bg-emerald-50 text-emerald-700",
+  completed: "bg-green-50 text-green-700",
+  failed: "bg-red-50 text-red-700",
 };
 
 function StatusBadge({ status }: { status: string }) {
   return (
     <span
-      className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider whitespace-nowrap ${STATUS_STYLES[status] ?? "bg-gray-800 text-gray-400"}`}
+      className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider whitespace-nowrap ${STATUS_STYLES[status] ?? "bg-[rgba(124,237,253,0.1)] text-[color:var(--palette-muted)]"}`}
     >
       {status.replace(/_/g, " ")}
     </span>
@@ -183,8 +183,8 @@ function StatusBadge({ status }: { status: string }) {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-gray-500 text-xs">{label}</p>
-      <p className="text-white font-semibold">{value}</p>
+      <p className="text-[color:var(--palette-muted)] text-xs">{label}</p>
+      <p className="text-[color:var(--palette-ink)] font-semibold">{value}</p>
     </div>
   );
 }
@@ -201,7 +201,7 @@ function PipelineProgress({ status }: { status: string }) {
   const currentIdx = PIPELINE_STAGES.findIndex((s) => s.status === status);
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+    <div className="surface-card p-6">
       <h2 className="text-lg font-semibold mb-6">Pipeline Progress</h2>
       <div className="space-y-4">
         {PIPELINE_STAGES.map((stage, idx) => {
@@ -212,22 +212,22 @@ function PipelineProgress({ status }: { status: string }) {
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
                   done
-                    ? "bg-green-700 text-green-100"
+                    ? "bg-green-600 text-white"
                     : active
-                    ? "bg-indigo-700 text-white"
-                    : "bg-gray-800 text-gray-600"
+                    ? "bg-[color:var(--palette-primary)] text-white"
+                    : "bg-[rgba(124,237,253,0.14)] text-[color:var(--palette-muted)]"
                 }`}
               >
                 {done ? "✓" : idx + 1}
               </div>
               <span
                 className={`text-sm ${
-                  active ? "text-white font-semibold" : done ? "text-gray-400" : "text-gray-600"
+                  active ? "text-[color:var(--palette-primary)] font-semibold" : done ? "text-[color:var(--palette-muted)]" : "text-[rgba(77,77,79,0.55)]"
                 }`}
               >
                 {stage.label}
                 {active && (
-                  <span className="ml-2 inline-flex items-center gap-1 text-indigo-400">
+                  <span className="ml-2 inline-flex items-center gap-1 text-[color:var(--palette-primary)]">
                     <Loader2 className="w-3 h-3 animate-spin" />
                     running...
                   </span>

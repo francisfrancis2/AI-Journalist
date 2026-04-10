@@ -1,0 +1,16 @@
+category,service,metric,unit_price_usd,usage_low,usage_typical,usage_high,cost_low_usd,cost_typical_usd,cost_high_usd,formula,notes
+llm,Anthropic Claude Opus 4.6,input_tokens_per_million,5.00,16500,24000,53000,0.082500,0.120000,0.265000,usage/1000000*unit_price,Uses current Opus 4.6 pricing from product page
+llm,Anthropic Claude Opus 4.6,output_tokens_per_million,25.00,5100,7500,15400,0.127500,0.187500,0.385000,usage/1000000*unit_price,Uses current Opus 4.6 pricing from product page
+search,Tavily,api_credit,0.008,16,16,20,0.128000,0.128000,0.160000,usage*unit_price,Current code uses advanced search depth so each search costs 2 credits
+search,Tavily monthly plan,base_fee_per_script_formula,,1,1,1,,,,"monthly_fee/scripts_per_month",If you use a monthly Tavily plan instead of pay-as-you-go allocate the subscription across scripts
+news,NewsAPI,request_overage_business_plan,0.0018,2,2,2,0.003600,0.003600,0.003600,usage*unit_price,Business plan overage rate only; base subscription not allocated here
+news,NewsAPI,request_overage_advanced_plan,0.0009,2,2,2,0.001800,0.001800,0.001800,usage*unit_price,Advanced plan overage rate only; base subscription not allocated here
+news,NewsAPI Business,base_fee_per_script_formula,449.00,1,1,1,,,,"449/scripts_per_month",Allocate only if this app is using the Business plan in production
+news,NewsAPI Advanced,base_fee_per_script_formula,1749.00,1,1,1,,,,"1749/scripts_per_month",Allocate only if this app is using the Advanced plan in production
+finance,Alpha Vantage premium 75 rpm,base_fee_per_script_formula,49.99,1,1,1,,,,"49.99/scripts_per_month",Best treated as a fixed monthly subscription instead of per-request overage
+rss,RSS feeds,request,0.000000,9,9,9,0.000000,0.000000,0.000000,usage*unit_price,RSS feed polling has no direct vendor fee in current setup
+scraping,Playwright,browser_scrape_vendor_cost,0.000000,5,5,5,0.000000,0.000000,0.000000,usage*unit_price,No direct third-party per-scrape fee; compute cost is separate
+storage,AWS S3 Standard,put_request,0.000005,1,1,1,0.000005,0.000005,0.000005,usage*unit_price,Derived from 0.005 per 1000 PUT requests
+storage,AWS S3 Standard,storage_gb_month,0.023000,0.000300,0.000300,0.000300,0.000007,0.000007,0.000007,usage*unit_price,Assumes one 300 KB JSON script stored for one month
+summary,Third-party marginal cash cost excluding fixed subscriptions,total,,0,0,0,0.341612,0.439105,0.813605,sum(selected rows except alternative NewsAPI lines),Includes Anthropic Opus 4.6 plus Tavily plus S3 plus NewsAPI Business overage
+summary,Third-party marginal cash cost excluding fixed subscriptions total with NewsAPI advanced overage,total,,0,0,0,0.339812,0.437305,0.811805,sum(selected rows except alternative NewsAPI lines),Same as above but using NewsAPI Advanced overage rate

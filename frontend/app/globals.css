@@ -4,13 +4,293 @@
 
 @layer base {
   :root {
-    --background: 222 47% 5%;
-    --foreground: 210 40% 98%;
+    /* ── Surfaces ── */
+    --color-background-primary:   #ffffff;
+    --color-background-secondary: #f4f4f5;
+    --color-background-tertiary:  #f9f9f9;
+
+    /* ── Borders ── */
+    --color-border-primary:       #d0d0d0;
+    --color-border-secondary:     #4d4d4f;
+    --color-border-tertiary:      #e8e8e8;
+
+    /* ── Text ── */
+    --color-text-primary:         #4d4d4f;
+    --color-text-secondary:       #8a8a8c;
+    --color-text-tertiary:        #adadad;
+
+    /* ── Brand (EDB Blue YlnMn) ── */
+    --color-action:               #1c26a8;
+    --color-action-hover:         #151e8a;
+
+    /* ── Status ── */
+    --color-success:              #16a34a;
+    --color-success-bg:           #f0fdf4;
+    --color-warning:              #c2410c;
+    --color-warning-bg:           #fff7ed;
+    --color-danger:               #dc2626;
+    --color-danger-bg:            #fef2f2;
+
+    /* ── Radius ── */
+    --border-radius-sm:           6px;
+    --border-radius-md:           8px;
+    --border-radius-lg:           12px;
+
+    /* ── Layout ── */
+    --sidebar-w:                  220px;
+    --font-sans:                  -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { height: 100%; }
+
+  body {
+    height: 100%;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-primary);
+    background: var(--color-background-tertiary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5 {
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--color-text-primary);
   }
 }
 
 @layer utilities {
-  .text-gradient {
-    @apply bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent;
+  /* ── Buttons ── */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 20px;
+    background: var(--color-action);
+    color: #fff;
+    border: none;
+    border-radius: var(--border-radius-md);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: background 0.12s;
+    white-space: nowrap;
+    user-select: none;
   }
+  .btn-primary:hover:not(:disabled) { background: var(--color-action-hover); }
+  .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 14px;
+    background: var(--color-background-primary);
+    color: var(--color-text-secondary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-md);
+    font-size: 12px;
+    font-weight: 400;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .btn-secondary:hover:not(:disabled) {
+    border-color: var(--color-border-secondary);
+    color: var(--color-text-primary);
+  }
+  .btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    border: none;
+    border-radius: var(--border-radius-md);
+    font-size: 12px;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+  }
+  .btn-ghost:hover { background: var(--color-background-secondary); color: var(--color-text-primary); }
+
+  /* ── Input / textarea ── */
+  .input {
+    width: 100%;
+    background: var(--color-background-secondary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-md);
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: var(--font-sans);
+    color: var(--color-text-primary);
+    outline: none;
+    transition: border-color 0.12s;
+  }
+  .input::placeholder { color: var(--color-text-tertiary); }
+  .input:focus { border-color: var(--color-border-secondary); }
+
+  /* ── Card ── */
+  .card {
+    background: var(--color-background-primary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-lg);
+  }
+
+  /* ── Pill chip (tone selector) ── */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 0.5px solid var(--color-border-tertiary);
+    background: var(--color-background-secondary);
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.12s;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .chip:hover { border-color: var(--color-border-secondary); color: var(--color-text-primary); }
+  .chip.selected {
+    background: var(--color-action);
+    color: #fff;
+    border-color: var(--color-action);
+  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 10px;
+  }
+
+  /* ── Section rule ── */
+  .section-rule {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .section-rule span {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+  .section-rule::after {
+    content: "";
+    flex: 1;
+    height: 0.5px;
+    background: var(--color-border-tertiary);
+  }
+
+  /* ── Sidebar nav item ── */
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: var(--border-radius-md);
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+    text-decoration: none;
+  }
+  .nav-item:hover { background: var(--color-background-secondary); color: var(--color-text-primary); }
+  .nav-item.active {
+    background: var(--color-background-secondary);
+    color: var(--color-text-primary);
+    font-weight: 500;
+  }
+  .nav-item svg { opacity: 0.7; }
+  .nav-item.active svg { opacity: 1; }
+
+  /* ── Status badge ── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: var(--border-radius-md);
+    font-size: 11px;
+    font-weight: 500;
+    border: 0.5px solid transparent;
+  }
+  .badge-success { background: var(--color-success-bg); color: var(--color-success); border-color: #bbf7d0; }
+  .badge-danger  { background: var(--color-danger-bg);  color: var(--color-danger);  border-color: #fecaca; }
+  .badge-warning { background: var(--color-warning-bg); color: var(--color-warning); border-color: #fed7aa; }
+  .badge-neutral { background: var(--color-background-secondary); color: var(--color-text-secondary); border-color: var(--color-border-tertiary); }
+  .badge-active  { background: #eaf4fb; color: #3e8ebe; border-color: #b8ddf0; }
+
+  /* ── Tone badge colors ── */
+  .tone-investigative { background: #f0f0f0; color: #333; }
+  .tone-narrative     { background: #eef4ff; color: #2563eb; }
+  .tone-explanatory   { background: #f0faf4; color: #16a34a; }
+  .tone-profile       { background: #fdf4ff; color: #9333ea; }
+  .tone-trend         { background: #fff7ed; color: #c2410c; }
+
+  /* ── Stat callout ── */
+  .stat-callout {
+    padding: 12px 14px;
+    background: var(--color-background-secondary);
+    border-left: 2px solid var(--color-action);
+    border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
+    font-size: 13px;
+  }
+
+  /* ── Progress bar ── */
+  .progress-track {
+    height: 3px;
+    width: 100%;
+    border-radius: 99px;
+    background: var(--color-background-secondary);
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: var(--color-action);
+    transition: width 0.6s ease;
+  }
+
+  /* ── Source citation chip ── */
+  .source-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    background: var(--color-background-secondary);
+    white-space: nowrap;
+  }
+
+  /* ── Table row ── */
+  .table-row {
+    transition: background 0.1s;
+  }
+  .table-row:hover { background: var(--color-background-secondary); }
 }

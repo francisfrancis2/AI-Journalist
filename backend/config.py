@@ -19,7 +19,8 @@ class Settings(BaseSettings):
 
     # ── Anthropic ─────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(..., env="ANTHROPIC_API_KEY")
-    claude_model: str = "claude-opus-4-6"
+    claude_model: str = "claude-sonnet-4-6"        # creative agents: scriptwriter, storyline
+    claude_haiku_model: str = "claude-haiku-4-5-20251001"  # fast agents: researcher planner, analyst, evaluator
     claude_max_tokens: int = 8192
     claude_temperature: float = 0.3
 
@@ -47,6 +48,7 @@ class Settings(BaseSettings):
     aws_access_key_id: Optional[str] = Field(None, env="AWS_ACCESS_KEY_ID")
     aws_secret_access_key: Optional[str] = Field(None, env="AWS_SECRET_ACCESS_KEY")
     aws_region: str = "us-east-1"
+    s3_endpoint_url: Optional[str] = Field(None, env="S3_ENDPOINT_URL")
     s3_bucket_scripts: str = "ai-journalist-scripts"
     s3_bucket_assets: str = "ai-journalist-assets"
 
@@ -61,11 +63,22 @@ class Settings(BaseSettings):
 
     # ── Agent / Graph ─────────────────────────────────────────────────────────
     max_research_iterations: int = 3
-    max_refinement_cycles: int = 2
+    max_refinement_cycles: int = 1
     target_script_duration_min: int = 10
     target_script_duration_max: int = 15
     min_sources_required: int = 5
     quality_score_threshold: float = 0.75
+
+    # ── YouTube / Benchmarking ────────────────────────────────────────────────
+    youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")
+    bi_channel_id: str = "UCcyq283he07B7_KUX07mmtA"  # Business Insider main channel
+    bi_corpus_min_docs: int = 20          # min docs before patterns are considered valid
+    bi_pattern_cache_path: str = "backend/data/bi_patterns.json"
+
+    # ── Auth / JWT ────────────────────────────────────────────────────────────
+    jwt_secret_key: str = Field(..., env="JWT_SECRET_KEY")
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8000"]

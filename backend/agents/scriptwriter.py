@@ -3,22 +3,21 @@ Scriptwriter Agent — final node in the journalist pipeline.
 
 Responsibilities:
   1. Receive the approved storyline and full research package.
-  2. Write a complete, production-ready narrator script act-by-act.
+  2. Write a complete, production-ready narrator script act-by-act in parallel.
   3. Include on-screen text, b-roll cues, and interview prompts.
   4. Upload the finished script to S3.
   5. Persist word count, duration estimate, and S3 key back into state.
 """
 
-import io
-import json
-import re
+import asyncio
 import uuid
-from typing import Any
+from typing import Optional
 
 import aioboto3
 import structlog
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from backend.config import settings
 from backend.models.research import AnalysisResult, StorylineProposal
@@ -26,31 +25,34 @@ from backend.models.story import FinalScript, ScriptSection
 
 log = structlog.get_logger(__name__)
 
-# ~150 words per minute for documentary narration
 _WORDS_PER_MINUTE = 150
+
+
+# ── Structured output schema ──────────────────────────────────────────────────
+
+class ActOutput(BaseModel):
+    narration: str = Field(description="Full narrator script for this act — complete sentences, natural cadence")
+    on_screen_text: Optional[str] = Field(None, description="Key stat, quote, or title card text shown on screen")
+    b_roll_suggestions: list[str] = Field(default_factory=list, description="Specific b-roll footage descriptions")
+    interview_cues: list[str] = Field(default_factory=list, description="Interview questions or moments to capture")
+    word_count: int = Field(description="Word count of the narration")
+
+
+# ── System prompt ─────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """You are an Emmy-award-winning documentary scriptwriter for a major digital media company.
 Your scripts match the style of Business Insider, Bloomberg Quicktake, and CNBC Make It documentaries.
 
-Write a complete narration script for ONE act of a documentary. Be vivid, precise, and compelling.
-The narration should feel like spoken journalism — conversational but authoritative.
-
-Return ONLY valid JSON with this structure:
-{
-  "narration": "<Full narrator script for this act — complete sentences, natural cadence>",
-  "on_screen_text": "<Key stat, quote, or title card text shown on screen (optional)>",
-  "b_roll_suggestions": ["<specific b-roll footage description>", ...],
-  "interview_cues": ["<Interview question or moment to capture>", ...],
-  "word_count": <integer>
-}
+Write complete narration for ONE act of a documentary.
 
 Guidelines:
 - Write for the ear, not the eye. Short sentences. Active voice.
 - Start Act 1 with the sharpest, most dramatic sentence.
 - Use rhetorical questions to maintain tension.
 - Ground abstract statistics in human terms.
-- Each b-roll suggestion should be specific and achievable (e.g., "Time-lapse of NYSE trading floor").
-"""
+- Each b_roll_suggestion should be specific and achievable (e.g., "Time-lapse of NYSE trading floor").
+- on_screen_text: a key stat, quote, or title card — keep it punchy (optional).
+- word_count: count the words in your narration accurately."""
 
 
 class ScriptwriterAgent:
@@ -64,12 +66,13 @@ class ScriptwriterAgent:
     """
 
     def __init__(self) -> None:
-        self._llm = ChatAnthropic(
+        _llm = ChatAnthropic(
             model=settings.claude_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=8192,
+            max_tokens=4096,
             temperature=0.4,
         )
+        self._structured_llm = _llm.with_structured_output(ActOutput)
 
     async def _write_act(
         self,
@@ -105,27 +108,18 @@ class ScriptwriterAgent:
             f"Notable quotes:\n{relevant_quotes or '  (none available)'}"
         )
 
-        messages = [
+        output: ActOutput = await self._structured_llm.ainvoke([
             SystemMessage(content=_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
-        ]
-
-        response = await self._llm.ainvoke(messages)
-        raw_text: str = response.content
-
-        match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-        if not match:
-            raise ValueError(f"Scriptwriter LLM returned invalid JSON for act {act_data['act_number']}")
-
-        data: dict[str, Any] = json.loads(match.group())
+        ])
 
         return ScriptSection(
             section_number=act_data["act_number"],
             title=act_data["act_title"],
-            narration=data.get("narration", ""),
-            on_screen_text=data.get("on_screen_text"),
-            b_roll_suggestions=data.get("b_roll_suggestions", []),
-            interview_cues=data.get("interview_cues", []),
+            narration=output.narration,
+            on_screen_text=output.on_screen_text,
+            b_roll_suggestions=output.b_roll_suggestions,
+            interview_cues=output.interview_cues,
             estimated_seconds=act_data["estimated_duration_seconds"],
         )
 
@@ -139,7 +133,10 @@ class ScriptwriterAgent:
             aws_secret_access_key=settings.aws_secret_access_key,
             region_name=settings.aws_region,
         )
-        async with session.client("s3") as s3:
+        client_kwargs = {}
+        if settings.s3_endpoint_url:
+            client_kwargs["endpoint_url"] = settings.s3_endpoint_url
+        async with session.client("s3", **client_kwargs) as s3:
             await s3.put_object(
                 Bucket=settings.s3_bucket_scripts,
                 Key=key,
@@ -150,16 +147,6 @@ class ScriptwriterAgent:
         return key
 
     async def run(self, state: dict) -> dict:
-        """
-        Write the complete production script act-by-act and upload to S3.
-
-        Args:
-            state: Current JournalistState with ``selected_storyline``,
-                   ``analysis_result``, and ``research_package`` populated.
-
-        Returns:
-            Partial state update with ``final_script`` and ``script_s3_key``.
-        """
         storyline: StorylineProposal = state["selected_storyline"]
         analysis: AnalysisResult = state["analysis_result"]
         topic: str = state["topic"]
@@ -167,11 +154,9 @@ class ScriptwriterAgent:
 
         log.info("scriptwriter.start", topic=topic, acts=len(storyline.acts))
 
-        # Write each act sequentially (order matters for narrative coherence)
-        sections: list[ScriptSection] = []
-        for act in storyline.acts:
-            log.info("scriptwriter.writing_act", act_number=act.act_number, title=act.act_title)
-            section = await self._write_act(
+        # Write all acts in parallel — each act is independent
+        act_tasks = [
+            self._write_act(
                 act_data={
                     "act_number": act.act_number,
                     "act_title": act.act_title,
@@ -183,12 +168,13 @@ class ScriptwriterAgent:
                 analysis=analysis,
                 topic=topic,
             )
-            sections.append(section)
+            for act in storyline.acts
+        ]
+        sections: list[ScriptSection] = list(await asyncio.gather(*act_tasks))
 
         total_words = sum(len(s.narration.split()) for s in sections)
         duration_minutes = total_words / _WORDS_PER_MINUTE
 
-        # Build source references
         source_refs = [
             {
                 "title": src.title,
@@ -221,7 +207,6 @@ class ScriptwriterAgent:
             },
         )
 
-        # Upload to S3 (best-effort — don't fail the pipeline on upload errors)
         s3_key: str | None = None
         try:
             s3_key = await self._upload_to_s3(final_script)

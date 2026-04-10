@@ -221,37 +221,45 @@ class TestEvaluatorAgent:
 class TestStorylineCreatorAgent:
     @pytest.mark.asyncio
     async def test_run_returns_proposals(self, sample_topic):
-        from backend.agents.storyline_creator import StorylineCreatorAgent
+        from backend.agents.storyline_creator import (
+            StoryActOutput,
+            StorylineCreatorAgent,
+            StorylineCreatorOutput,
+            StorylineProposalOutput,
+        )
 
-        mock_response = json.dumps({
-            "proposals": [
-                {
-                    "title": "The Chip Wars",
-                    "logline": "How semiconductors changed the world.",
-                    "opening_hook": "In 2024...",
-                    "unique_angle": "Supply chain angle",
-                    "target_audience": "Business viewers",
-                    "tone": "investigative",
-                    "acts": [
-                        {
-                            "act_number": 1,
-                            "act_title": "The Hook",
-                            "purpose": "Grab attention",
-                            "key_points": ["Point A", "Point B"],
-                            "estimated_duration_seconds": 120,
-                            "required_visuals": ["Factory footage"],
-                        }
+        mock_response = StorylineCreatorOutput(
+            proposals=[
+                StorylineProposalOutput(
+                    title="The Chip Wars",
+                    logline="How semiconductors changed the world.",
+                    opening_hook="In 2024...",
+                    unique_angle="Supply chain angle",
+                    target_audience="Business viewers",
+                    tone="investigative",
+                    acts=[
+                        StoryActOutput(
+                            act_number=1,
+                            act_title="The Hook",
+                            purpose="Grab attention",
+                            key_points=["Point A", "Point B"],
+                            estimated_duration_seconds=120,
+                            required_visuals=["Factory footage"],
+                        )
                     ],
-                    "closing_statement": "The future of chips.",
-                }
+                    closing_statement="The future of chips.",
+                )
             ],
-            "recommended_proposal_index": 0,
-        })
+            recommended_proposal_index=0,
+        )
 
         with patch("backend.agents.storyline_creator.ChatAnthropic") as MockLLM:
-            mock_instance = AsyncMock()
-            mock_instance.ainvoke.return_value = MagicMock(content=mock_response)
-            MockLLM.return_value = mock_instance
+            mock_structured = AsyncMock()
+            mock_structured.ainvoke.return_value = mock_response
+
+            mock_base = MagicMock()
+            mock_base.with_structured_output.return_value = mock_structured
+            MockLLM.return_value = mock_base
 
             agent = StorylineCreatorAgent()
             state = {
@@ -266,3 +274,37 @@ class TestStorylineCreatorAgent:
         assert "selected_storyline" in result
         assert len(result["storyline_proposals"]) == 1
         assert result["selected_storyline"].title == "The Chip Wars"
+
+    @pytest.mark.asyncio
+    async def test_run_uses_deterministic_fallback_after_empty_structured_responses(self, sample_topic):
+        from backend.agents.storyline_creator import StorylineCreatorAgent
+
+        with patch("backend.agents.storyline_creator.ChatAnthropic") as MockLLM:
+            mock_structured = AsyncMock()
+            mock_structured.ainvoke.side_effect = [
+                ValueError("1 validation error for StorylineCreatorOutput proposals Field required"),
+                ValueError("1 validation error for StorylineCreatorOutput proposals Field required"),
+                ValueError("1 validation error for StorylineCreatorOutput proposals Field required"),
+            ]
+
+            mock_base = MagicMock()
+            mock_base.with_structured_output.return_value = mock_structured
+            mock_base.ainvoke.side_effect = [
+                MagicMock(content='{}'),
+                MagicMock(content='{}'),
+                MagicMock(content='{}'),
+            ]
+            MockLLM.return_value = mock_base
+
+            agent = StorylineCreatorAgent()
+            state = {
+                "topic": sample_topic,
+                "tone": "investigative",
+                "refinement_cycle": 0,
+                "analysis_result": _make_analysis_result(sample_topic),
+            }
+            result = await agent.run(state)
+
+        assert "storyline_proposals" in result
+        assert len(result["storyline_proposals"]) >= 1
+        assert result["selected_storyline"].title

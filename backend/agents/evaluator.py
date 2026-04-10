@@ -8,13 +8,10 @@ Responsibilities:
   4. Flag whether additional research is required.
 """
 
-import json
-import re
-from typing import Any
-
 import structlog
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from backend.config import settings
 from backend.models.research import (
@@ -25,37 +22,44 @@ from backend.models.research import (
 
 log = structlog.get_logger(__name__)
 
+
+# ── Structured output schema ──────────────────────────────────────────────────
+
+class CriteriaOutput(BaseModel):
+    factual_accuracy: float = Field(ge=0.0, le=1.0)
+    narrative_coherence: float = Field(ge=0.0, le=1.0)
+    audience_engagement: float = Field(ge=0.0, le=1.0)
+    source_diversity: float = Field(ge=0.0, le=1.0)
+    originality: float = Field(ge=0.0, le=1.0)
+    production_feasibility: float = Field(ge=0.0, le=1.0)
+
+
+class EvaluatorOutput(BaseModel):
+    criteria: CriteriaOutput
+    strengths: list[str]
+    weaknesses: list[str]
+    improvement_suggestions: list[str]
+    requires_additional_research: bool
+    evaluator_notes: str
+
+
+# ── System prompt ─────────────────────────────────────────────────────────────
+
 _SYSTEM_PROMPT = """You are the editorial director of a major video journalism outlet.
-You evaluate documentary storylines against professional editorial standards.
+Evaluate the documentary storyline against professional editorial standards.
 
 Score each criterion from 0.0 (terrible) to 1.0 (publication-ready):
 - factual_accuracy: Are all claims well-sourced and verifiable?
-- narrative_coherence: Does the story flow logically? Is the structure compelling?
+- narrative_coherence: Does the story flow logically with a compelling structure?
 - audience_engagement: Will this hold a viewer's attention for 10-15 minutes?
 - source_diversity: Are multiple perspectives and source types represented?
-- originality: Does this offer a fresh angle or new insight on the topic?
+- originality: Does this offer a fresh angle or new insight?
 - production_feasibility: Can this realistically be produced (visuals, interviews)?
 
-Return ONLY valid JSON with this structure:
-{
-  "criteria": {
-    "factual_accuracy": 0.0-1.0,
-    "narrative_coherence": 0.0-1.0,
-    "audience_engagement": 0.0-1.0,
-    "source_diversity": 0.0-1.0,
-    "originality": 0.0-1.0,
-    "production_feasibility": 0.0-1.0
-  },
-  "strengths": ["<specific strength>", ...],
-  "weaknesses": ["<specific weakness>", ...],
-  "improvement_suggestions": ["<actionable suggestion>", ...],
-  "requires_additional_research": true|false,
-  "additional_research_topics": ["<topic to research further>", ...],
-  "evaluator_notes": "<overall editorial assessment in 2-3 sentences>"
-}
+A combined score below 0.75 means the story needs more work.
+A score of 0.75 or above means it is ready for scripting.
 
-Be honest and critical. A score below 0.75 overall means the story needs more work.
-A score of 0.75 or above means it is ready for scripting."""
+Be honest and critical. Provide specific, actionable weaknesses and improvement suggestions."""
 
 
 class EvaluatorAgent:
@@ -69,26 +73,21 @@ class EvaluatorAgent:
     """
 
     def __init__(self) -> None:
-        self._llm = ChatAnthropic(
-            model=settings.claude_model,
+        _llm = ChatAnthropic(
+            model=settings.claude_haiku_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=3000,
-            temperature=0.1,  # Low temperature for consistent scoring
+            max_tokens=1500,
+            temperature=0.1,
         )
+        self._structured_llm = _llm.with_structured_output(EvaluatorOutput)
 
     async def run(self, state: dict) -> dict:
-        """
-        Evaluate the selected storyline and produce an EvaluationReport.
+        storyline: StorylineProposal | None = state.get("selected_storyline")
+        if storyline is None:
+            raise ValueError(
+                "evaluator received no storyline — storyline_creator likely failed upstream"
+            )
 
-        Args:
-            state: Current JournalistState with ``selected_storyline`` and
-                   ``analysis_result`` populated.
-
-        Returns:
-            Partial state update with ``evaluation_report``, ``approved_for_scripting``,
-            and ``needs_more_research`` flags.
-        """
-        storyline: StorylineProposal = state["selected_storyline"]
         analysis = state["analysis_result"]
         topic: str = state["topic"]
 
@@ -120,37 +119,27 @@ class EvaluatorAgent:
             f"Controversies: {', '.join(analysis.controversies) or 'None identified'}"
         )
 
-        messages = [
+        output: EvaluatorOutput = await self._structured_llm.ainvoke([
             SystemMessage(content=_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
-        ]
+        ])
 
-        response = await self._llm.ainvoke(messages)
-        raw_text: str = response.content
-
-        match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-        if not match:
-            raise ValueError(f"Evaluator LLM returned invalid JSON: {raw_text[:300]}")
-
-        data: dict[str, Any] = json.loads(match.group())
-
-        criteria_data = data.get("criteria", {})
         criteria = EvaluationCriteria(
-            factual_accuracy=float(criteria_data.get("factual_accuracy", 0.5)),
-            narrative_coherence=float(criteria_data.get("narrative_coherence", 0.5)),
-            audience_engagement=float(criteria_data.get("audience_engagement", 0.5)),
-            source_diversity=float(criteria_data.get("source_diversity", 0.5)),
-            originality=float(criteria_data.get("originality", 0.5)),
-            production_feasibility=float(criteria_data.get("production_feasibility", 0.5)),
+            factual_accuracy=output.criteria.factual_accuracy,
+            narrative_coherence=output.criteria.narrative_coherence,
+            audience_engagement=output.criteria.audience_engagement,
+            source_diversity=output.criteria.source_diversity,
+            originality=output.criteria.originality,
+            production_feasibility=output.criteria.production_feasibility,
         )
 
         report = EvaluationReport(
             criteria=criteria,
-            strengths=data.get("strengths", []),
-            weaknesses=data.get("weaknesses", []),
-            improvement_suggestions=data.get("improvement_suggestions", []),
-            requires_additional_research=data.get("requires_additional_research", False),
-            evaluator_notes=data.get("evaluator_notes", ""),
+            strengths=output.strengths,
+            weaknesses=output.weaknesses,
+            improvement_suggestions=output.improvement_suggestions,
+            requires_additional_research=output.requires_additional_research,
+            evaluator_notes=output.evaluator_notes,
         )
         report.compute_overall()
 

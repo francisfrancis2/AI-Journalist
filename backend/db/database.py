@@ -19,13 +19,19 @@ _db_url = settings.database_url.replace(
     "postgresql://", "postgresql+asyncpg://"
 ).replace("postgres://", "postgresql+asyncpg://")
 
+# SQLite (used in tests) doesn't support connection pool args
+_is_sqlite = _db_url.startswith("sqlite")
+_engine_kwargs = {} if _is_sqlite else {
+    "pool_size": settings.db_pool_size,
+    "max_overflow": settings.db_max_overflow,
+    "pool_timeout": settings.db_pool_timeout,
+}
+
 engine = create_async_engine(
     _db_url,
-    pool_size=settings.db_pool_size,
-    max_overflow=settings.db_max_overflow,
-    pool_timeout=settings.db_pool_timeout,
     echo=settings.debug,
     future=True,
+    **_engine_kwargs,
 )
 
 AsyncSessionLocal = async_sessionmaker(

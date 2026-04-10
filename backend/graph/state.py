@@ -12,6 +12,7 @@ from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
 from typing_extensions import TypedDict
 
+from backend.models.benchmark import BenchmarkReport
 from backend.models.research import (
     AnalysisResult,
     EvaluationReport,
@@ -53,6 +54,7 @@ class JournalistState(TypedDict):
 
     # ── Evaluation phase ──────────────────────────────────────────────────────
     evaluation_report: Optional[EvaluationReport]
+    benchmark_report: Optional[BenchmarkReport]  # BI benchmark scores (runs parallel to evaluator)
     refinement_cycle: int                   # How many times evaluation→refinement has run
 
     # ── Script phase ──────────────────────────────────────────────────────────
@@ -96,6 +98,7 @@ def create_initial_state(
         storyline_proposals=[],
         selected_storyline=None,
         evaluation_report=None,
+        benchmark_report=None,
         refinement_cycle=0,
         final_script=None,
         script_s3_key=None,

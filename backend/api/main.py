@@ -3,14 +3,18 @@ FastAPI application factory and lifecycle management.
 """
 
 import structlog
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
+from backend.api.deps import get_current_user
+from backend.api.routes import auth as auth_router
 from backend.api.routes import research as research_router
 from backend.api.routes import stories as stories_router
 from backend.config import settings
 from backend.db.database import create_tables
+from backend.models import user as _user_models  # noqa: F401 — ensures UserORM is registered with Base
+from backend.models import benchmark as _benchmark_models  # noqa: F401 — registers BIReferenceDocORM, BIPatternLibraryORM
 
 log = structlog.get_logger(__name__)
 
@@ -60,8 +64,19 @@ def create_app() -> FastAPI:
         return {"status": "ok", "version": settings.app_version}
 
     # ── Routers ───────────────────────────────────────────────────────────────
-    app.include_router(stories_router.router, prefix="/api/v1/stories", tags=["Stories"])
-    app.include_router(research_router.router, prefix="/api/v1/research", tags=["Research"])
+    app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
+    app.include_router(
+        stories_router.router,
+        prefix="/api/v1/stories",
+        tags=["Stories"],
+        dependencies=[Depends(get_current_user)],
+    )
+    app.include_router(
+        research_router.router,
+        prefix="/api/v1/research",
+        tags=["Research"],
+        dependencies=[Depends(get_current_user)],
+    )
 
     return app
 

@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, HttpUrl
 
+from backend.config import settings
+
 
 # ── Source Types ──────────────────────────────────────────────────────────────
 
@@ -159,4 +161,4 @@ class EvaluationReport(BaseModel):
 
     def compute_overall(self) -> None:
         self.overall_score = self.criteria.overall_score
-        self.approved_for_scripting = self.overall_score >= 0.75
+        self.approved_for_scripting = self.overall_score >= settings.quality_score_threshold

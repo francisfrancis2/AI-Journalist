@@ -8,58 +8,73 @@ Responsibilities:
   4. Produce a structured AnalysisResult that the Storyline Creator can use.
 """
 
-import json
-import re
-from typing import Any
+from typing import Any, Optional
 
 import structlog
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from backend.config import settings
 from backend.models.research import (
     AnalysisResult,
-    EvaluationCriteria,
     KeyFinding,
     ResearchPackage,
-    SourceCredibility,
 )
 
 log = structlog.get_logger(__name__)
 
+
+# ── Structured output schemas ─────────────────────────────────────────────────
+
+class KeyFindingOutput(BaseModel):
+    claim: str
+    supporting_sources: list[str] = Field(default_factory=list)
+    confidence: float = Field(0.5, ge=0.0, le=1.0)
+    category: str = "general"
+
+
+class QuoteOutput(BaseModel):
+    quote: str
+    speaker: str
+    source: str = ""
+
+
+class AnalysisOutput(BaseModel):
+    executive_summary: str
+    key_findings: list[KeyFindingOutput]
+    narrative_angles: list[str]
+    data_gaps: list[str]
+    recommended_tone: str
+    controversies: list[str]
+    notable_quotes: list[QuoteOutput]
+    financial_metrics: Optional[dict[str, str]] = None
+
+
+# ── System prompt ─────────────────────────────────────────────────────────────
+
 _SYSTEM_PROMPT = """You are a senior editorial analyst and documentary researcher.
 You have been given a collection of raw research sources on a topic.
-Your task is to synthesise this material into a structured editorial analysis.
+Synthesise this material into a structured editorial analysis.
 
-Return ONLY a valid JSON object with this structure:
-{
-  "executive_summary": "<2-3 sentence summary of the most important facts>",
-  "key_findings": [
-    {
-      "claim": "<specific, verifiable fact or insight>",
-      "supporting_sources": ["<title or URL>", ...],
-      "confidence": 0.0-1.0,
-      "category": "financial|human_interest|trend|regulatory|technology|cultural"
-    }
-  ],
-  "narrative_angles": ["<compelling story angle>", ...],
-  "data_gaps": ["<missing information that would strengthen the story>", ...],
-  "recommended_tone": "investigative|explanatory|narrative|profile|trend",
-  "controversies": ["<controversial aspect>", ...],
-  "notable_quotes": [
-    {"quote": "<text>", "speaker": "<name/title>", "source": "<URL or title>"}
-  ],
-  "financial_metrics": null or {"<metric>": "<value>", ...}
-}
+Guidelines:
+- executive_summary: 2-3 sentences covering the most important facts
+- key_findings: specific, verifiable facts or insights with confidence scores (0-1)
+  - confidence reflects how well-sourced each claim is
+  - category: financial | human_interest | trend | regulatory | technology | cultural | general
+- narrative_angles: compelling story angles for a documentary
+- data_gaps: missing information that would strengthen the story
+- recommended_tone: investigative | explanatory | narrative | profile | trend
+- controversies: controversial aspects worth exploring
+- notable_quotes: direct quotes with speaker attribution
+- financial_metrics: key numeric data if financially relevant, else omit
 
-Be rigorous. Only include claims supported by the provided sources.
-Confidence scores should reflect how well-sourced each claim is."""
+Only include claims supported by the provided sources. Be rigorous."""
 
-_MAX_SOURCE_CHARS = 60_000  # roughly 15k tokens of context for sources
+_MAX_SOURCE_CHARS = 60_000
 
 
 def _build_source_digest(package: ResearchPackage) -> str:
-    """Produce a condensed digest of top sources for the prompt."""
     lines: list[str] = []
     for i, src in enumerate(package.top_sources(20), 1):
         credibility_tag = f"[{src.credibility.value.upper()}]"
@@ -69,8 +84,7 @@ def _build_source_digest(package: ResearchPackage) -> str:
             f"URL: {src.url or 'N/A'}\n"
             f"Content: {src.content[:1500]}\n"
         )
-    digest = "\n".join(lines)
-    return digest[:_MAX_SOURCE_CHARS]
+    return "\n".join(lines)[:_MAX_SOURCE_CHARS]
 
 
 class AnalystAgent:
@@ -84,74 +98,66 @@ class AnalystAgent:
     """
 
     def __init__(self) -> None:
-        self._llm = ChatAnthropic(
-            model=settings.claude_model,
+        _llm = ChatAnthropic(
+            model=settings.claude_haiku_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=4096,
+            max_tokens=2048,
             temperature=0.2,
         )
+        self._structured_llm = _llm.with_structured_output(AnalysisOutput)
 
     async def run(self, state: dict) -> dict:
-        """
-        Execute the analysis phase.
-
-        Args:
-            state: Current JournalistState containing ``research_package``.
-
-        Returns:
-            Partial state update with ``analysis_result``.
-        """
         package: ResearchPackage = state["research_package"]
         topic: str = state["topic"]
         tone: str = state.get("tone", "explanatory")
 
         log.info("analyst.start", topic=topic, source_count=package.total_sources)
 
-        source_digest = _build_source_digest(package)
-
         prompt = (
             f"Topic: {topic}\n"
             f"Target tone: {tone}\n"
             f"Total sources collected: {package.total_sources}\n\n"
-            f"=== RESEARCH SOURCES ===\n{source_digest}"
+            f"=== RESEARCH SOURCES ===\n{_build_source_digest(package)}"
         )
 
-        messages = [
-            SystemMessage(content=_SYSTEM_PROMPT),
-            HumanMessage(content=prompt),
-        ]
+        messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=prompt)]
+        last_exc: Exception | None = None
+        output: AnalysisOutput | None = None
+        for attempt in range(3):
+            try:
+                result_raw = await self._structured_llm.ainvoke(messages)
+                if result_raw and result_raw.key_findings:
+                    output = result_raw
+                    break
+                log.warning("analyst.empty_response", attempt=attempt)
+            except Exception as exc:
+                last_exc = exc
+                log.warning("analyst.retry", attempt=attempt, error=str(exc))
 
-        response = await self._llm.ainvoke(messages)
-        raw_text: str = response.content
-
-        # Extract the JSON payload
-        match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-        if not match:
-            raise ValueError(f"Analyst LLM did not return valid JSON: {raw_text[:300]}")
-
-        data: dict[str, Any] = json.loads(match.group())
-
-        # Build structured AnalysisResult
-        key_findings = [
-            KeyFinding(
-                claim=f["claim"],
-                supporting_sources=f.get("supporting_sources", []),
-                confidence=float(f.get("confidence", 0.5)),
-                category=f.get("category", "general"),
-            )
-            for f in data.get("key_findings", [])
-        ]
+        if output is None:
+            raise ValueError(f"Analyst failed after 3 attempts: {last_exc}")
 
         result = AnalysisResult(
             topic=topic,
-            executive_summary=data.get("executive_summary", ""),
-            key_findings=key_findings,
-            narrative_angles=data.get("narrative_angles", []),
-            data_gaps=data.get("data_gaps", []),
-            recommended_tone=data.get("recommended_tone", tone),
-            controversies=data.get("controversies", []),
-            notable_quotes=data.get("notable_quotes", []),
-            financial_metrics=data.get("financial_metrics"),
+            executive_summary=output.executive_summary,
+            key_findings=[
+                KeyFinding(
+                    claim=kf.claim,
+                    supporting_sources=kf.supporting_sources,
+                    confidence=kf.confidence,
+                    category=kf.category,
+                )
+                for kf in output.key_findings
+            ],
+            narrative_angles=output.narrative_angles,
+            data_gaps=output.data_gaps,
+            recommended_tone=output.recommended_tone,
+            controversies=output.controversies,
+            notable_quotes=[
+                {"quote": q.quote, "speaker": q.speaker, "source": q.source}
+                for q in output.notable_quotes
+            ],
+            financial_metrics=output.financial_metrics,
         )
 
         log.info(

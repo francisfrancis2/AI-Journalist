@@ -1,0 +1,26 @@
+# Environment — never commit real secrets
+.env
+*.env.local
+
+# macOS
+.DS_Store
+~$*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pycache-check/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Node
+node_modules/
+.next/
+frontend/.next/
+
+# Misc
+*.log

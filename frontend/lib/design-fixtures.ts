@@ -1,0 +1,192 @@
+import type { FinalScript, Story } from "@/lib/api";
+
+const now = "2026-04-09T12:00:00.000Z";
+
+export const designFixtureStories: Story[] = [
+  {
+    id: "c7f59551-4b76-4a27-8f62-f15d70a34701",
+    title: "The AI Spending Boom",
+    topic: "How the race to fund AI infrastructure is reshaping the global economy",
+    status: "researching",
+    tone: "investigative",
+    quality_score: null,
+    word_count: null,
+    estimated_duration_minutes: null,
+    script_s3_key: null,
+    error_message: null,
+    iteration_count: 1,
+    evaluation_data: null,
+    benchmark_data: null,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    id: "f394c948-27a9-4223-ae32-d96a5f33494b",
+    title: "Inside NVIDIA's Power Play",
+    topic: "How NVIDIA became the most valuable company in the AI era",
+    status: "completed",
+    tone: "explanatory",
+    quality_score: 0.89,
+    word_count: 1764,
+    estimated_duration_minutes: 11.8,
+    script_s3_key: "scripts/f394c948/inside_nvidia_power_play.json",
+    error_message: null,
+    iteration_count: 2,
+    evaluation_data: null,
+    benchmark_data: null,
+    created_at: now,
+    updated_at: now,
+  },
+  {
+    id: "08747689-b3ae-4ed1-af4e-eb6c9824ad39",
+    title: "TikTok's New Calculation",
+    topic: "What the next chapter of TikTok regulation means for creators, brands, and Washington",
+    status: "failed",
+    tone: "trend",
+    quality_score: 0.54,
+    word_count: null,
+    estimated_duration_minutes: null,
+    script_s3_key: null,
+    error_message: "News sources conflicted and the storyline could not be approved after refinement.",
+    iteration_count: 2,
+    evaluation_data: null,
+    benchmark_data: null,
+    created_at: now,
+    updated_at: now,
+  },
+];
+
+export const designFixtureStoryDetail: Story = {
+  id: "f394c948-27a9-4223-ae32-d96a5f33494b",
+  title: "Inside NVIDIA's Power Play",
+  topic: "How NVIDIA became the most valuable company in the AI era",
+  status: "completed",
+  tone: "explanatory",
+  quality_score: 0.89,
+  word_count: 1764,
+  estimated_duration_minutes: 11.8,
+  script_s3_key: "scripts/f394c948/inside_nvidia_power_play.json",
+  error_message: null,
+  iteration_count: 2,
+  evaluation_data: null,
+  benchmark_data: null,
+  created_at: now,
+  updated_at: now,
+};
+
+export const designFixturePendingStory: Story = {
+  id: "6dc79e53-ff0a-4d8e-bba0-b73d26ee7191",
+  title: "The New Data Center Arms Race",
+  topic: "Why cloud providers are spending billions to build AI-ready infrastructure faster than power grids can keep up",
+  status: "writing_storyline",
+  tone: "investigative",
+  quality_score: 0.72,
+  word_count: null,
+  estimated_duration_minutes: null,
+  script_s3_key: null,
+  error_message: null,
+  iteration_count: 1,
+  evaluation_data: null,
+  benchmark_data: null,
+  created_at: now,
+  updated_at: now,
+};
+
+export const designFixtureScript: FinalScript = {
+  story_id: "f394c948-27a9-4223-ae32-d96a5f33494b",
+  title: "Inside NVIDIA's Power Play",
+  logline:
+    "A company once known for gaming chips became the silent engine underneath the global AI boom.",
+  opening_hook:
+    "For years, NVIDIA sold the hardware behind video games. Then the AI boom turned those same chips into the most coveted machines in business.",
+  sections: [
+    {
+      section_number: 1,
+      title: "From Graphics To Gold Rush",
+      narration:
+        "The AI boom did not start in a lab full of robots. It started in server rooms, balance sheets, and one company’s unusual bet on graphics chips. NVIDIA spent decades building hardware for gamers. Then, almost overnight, those chips became the core engine of artificial intelligence.",
+      on_screen_text: "NVIDIA briefly became the world's most valuable public company in 2026.",
+      b_roll_suggestions: [
+        "Server racks glowing in a hyperscale data center",
+        "Fast montage of GPUs on factory lines and traders reacting on market screens",
+      ],
+      interview_cues: [
+        "When did you realize GPUs were becoming AI infrastructure rather than gaming hardware?",
+      ],
+      estimated_seconds: 120,
+    },
+    {
+      section_number: 2,
+      title: "The Architecture That Scaled",
+      narration:
+        "Large AI models needed parallel computing at massive scale, and NVIDIA’s CUDA ecosystem made that scale usable. The company was not just selling chips. It was selling a platform developers already knew how to build on.",
+      on_screen_text: "CUDA turned hardware demand into platform lock-in.",
+      b_roll_suggestions: [
+        "Animated diagram showing model training distributed across GPU clusters",
+        "Developer screens with CUDA tooling and inference dashboards",
+      ],
+      interview_cues: [
+        "How important was software in NVIDIA’s lead over other chipmakers?",
+      ],
+      estimated_seconds: 145,
+    },
+    {
+      section_number: 3,
+      title: "The Cost Of Winning",
+      narration:
+        "Every wave of demand created a second story: cost. Training advanced models consumed staggering amounts of capital, electricity, and urgency. The companies buying NVIDIA chips were not just chasing innovation. They were racing to avoid falling behind.",
+      on_screen_text: "AI infrastructure became a strategic spending war.",
+      b_roll_suggestions: [
+        "Construction footage of new data center campuses",
+        "Utility maps, energy charts, and close-ups of cooling systems",
+      ],
+      interview_cues: [
+        "What does this spending race mean for smaller AI companies?",
+      ],
+      estimated_seconds: 165,
+    },
+  ],
+  closing_statement:
+    "NVIDIA’s rise says as much about the world’s appetite for AI as it does about one company’s execution. The next question is not whether the boom continues. It is who can afford to stay in it.",
+  total_word_count: 1764,
+  estimated_duration_minutes: 11.8,
+  sources: [
+    {
+      title: "Reuters: NVIDIA market cap milestone",
+      url: "https://www.reuters.com/markets/us/nvidia-market-cap-example",
+      credibility: "high",
+      type: "news_api",
+    },
+    {
+      title: "Company overview and market metrics",
+      url: "https://finance.yahoo.com/quote/NVDA",
+      credibility: "high",
+      type: "financial_data",
+    },
+    {
+      title: "Bloomberg: The AI infrastructure bottleneck",
+      url: "https://www.bloomberg.com/news/example",
+      credibility: "high",
+      type: "web_search",
+    },
+    {
+      title: "Business data center energy analysis",
+      url: "https://www.ft.com/content/example",
+      credibility: "high",
+      type: "rss_feed",
+    },
+    {
+      title: "Industry expert interview roundup",
+      url: null,
+      credibility: "medium",
+      type: "web_scrape",
+    },
+  ],
+  metadata: {
+    topic: "How NVIDIA became the most valuable company in the AI era",
+    tone: "explanatory",
+    unique_angle: "The cost and platform mechanics behind NVIDIA's lead",
+    target_audience: "Business and technology viewers",
+    evaluation_score: 0.89,
+  },
+};

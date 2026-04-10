@@ -14,51 +14,51 @@ const STATUS_CONFIG: Record<
   string,
   { label: string; color: string; pulse: boolean }
 > = {
-  pending: { label: "Pending", color: "text-gray-400", pulse: false },
-  researching: { label: "Researching", color: "text-blue-400", pulse: true },
-  analysing: { label: "Analysing", color: "text-cyan-400", pulse: true },
+  pending: { label: "Pending", color: "text-[color:var(--palette-muted)]", pulse: false },
+  researching: { label: "Researching", color: "text-[color:var(--palette-primary)]", pulse: true },
+  analysing: { label: "Analysing", color: "text-cyan-700", pulse: true },
   writing_storyline: {
     label: "Writing Storyline",
-    color: "text-violet-400",
+    color: "text-[color:var(--palette-primary)]",
     pulse: true,
   },
-  evaluating: { label: "Evaluating", color: "text-amber-400", pulse: true },
-  scripting: { label: "Scripting", color: "text-emerald-400", pulse: true },
-  completed: { label: "Completed", color: "text-green-400", pulse: false },
-  failed: { label: "Failed", color: "text-red-400", pulse: false },
+  evaluating: { label: "Evaluating", color: "text-amber-700", pulse: true },
+  scripting: { label: "Scripting", color: "text-emerald-700", pulse: true },
+  completed: { label: "Completed", color: "text-green-700", pulse: false },
+  failed: { label: "Failed", color: "text-red-700", pulse: false },
 };
 
 const TONE_COLORS: Record<string, string> = {
-  explanatory: "bg-blue-900/40 text-blue-300",
-  investigative: "bg-red-900/40 text-red-300",
-  narrative: "bg-purple-900/40 text-purple-300",
-  profile: "bg-amber-900/40 text-amber-300",
-  trend: "bg-teal-900/40 text-teal-300",
+  explanatory: "bg-[rgba(124,237,253,0.14)] text-[color:var(--palette-primary)]",
+  investigative: "bg-red-50 text-red-700",
+  narrative: "bg-[rgba(28,33,170,0.08)] text-[color:var(--palette-primary)]",
+  profile: "bg-amber-50 text-amber-700",
+  trend: "bg-cyan-50 text-cyan-700",
 };
 
 export function StoryCard({ story, showLink = false }: StoryCardProps) {
   const statusCfg = STATUS_CONFIG[story.status] ?? STATUS_CONFIG.pending;
-  const toneColor = TONE_COLORS[story.tone] ?? "bg-gray-800 text-gray-400";
+  const toneColor = TONE_COLORS[story.tone] ?? "bg-[rgba(124,237,253,0.14)] text-[color:var(--palette-muted)]";
 
   const card = (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-5 flex flex-col gap-3 hover:border-gray-700 transition-colors h-full">
+    <div className="surface-card flex h-full flex-col gap-3 p-5 transition-colors hover:border-[rgba(28,33,170,0.22)]">
       {/* Title & Tone Badge */}
       <div className="flex items-start justify-between gap-2">
-        <h3 className="font-semibold text-sm leading-snug line-clamp-2 flex-1">
+        <h3 className="flex-1 text-sm font-semibold leading-snug text-[color:var(--palette-ink)] line-clamp-2">
           {story.title}
         </h3>
         <span
-          className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 capitalize ${toneColor}`}
+          className={`flex-shrink-0 rounded-full px-2.5 py-1 text-xs font-medium capitalize ${toneColor}`}
         >
           {story.tone}
         </span>
       </div>
 
       {/* Topic */}
-      <p className="text-gray-500 text-xs line-clamp-2">{story.topic}</p>
+      <p className="text-xs text-[color:var(--palette-muted)] line-clamp-2">{story.topic}</p>
 
       {/* Metrics row */}
-      <div className="flex items-center gap-4 text-xs text-gray-500">
+      <div className="flex items-center gap-4 text-xs text-[color:var(--palette-muted)]">
         {story.estimated_duration_minutes && (
           <span className="flex items-center gap-1">
             <Clock className="w-3 h-3" />
@@ -72,7 +72,7 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
           </span>
         )}
         {story.status === "completed" && (
-          <span className="flex items-center gap-1 text-green-500">
+          <span className="flex items-center gap-1 text-green-700">
             <FileText className="w-3 h-3" />
             Script ready
           </span>
@@ -80,7 +80,7 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
       </div>
 
       {/* Status + Timestamp */}
-      <div className="mt-auto flex items-center justify-between pt-2 border-t border-gray-800">
+      <div className="mt-auto flex items-center justify-between border-t border-[rgba(28,33,170,0.1)] pt-3">
         <span className={`text-xs font-semibold flex items-center gap-1.5 ${statusCfg.color}`}>
           {statusCfg.pulse && (
             <span className="relative flex h-2 w-2">
@@ -90,7 +90,7 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
           )}
           {statusCfg.label}
         </span>
-        <span className="text-xs text-gray-600">
+        <span className="text-xs text-[rgba(77,77,79,0.55)]">
           {formatDistanceToNow(new Date(story.created_at), { addSuffix: true })}
         </span>
       </div>
