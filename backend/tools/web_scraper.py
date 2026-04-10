@@ -90,8 +90,8 @@ class WebScraperTool:
             raise RuntimeError("Call start() before scraping or use as async context manager.")
         return self._browser
 
-    @retry(stop=stop_after_attempt(2), wait=wait_fixed(3), reraise=True)
-    async def scrape(self, url: str, wait_for: str = "networkidle") -> RawSource:
+    @retry(stop=stop_after_attempt(1), wait=wait_fixed(1), reraise=True)
+    async def scrape(self, url: str, wait_for: str = "domcontentloaded") -> RawSource:
         """
         Scrape a single URL and return a RawSource.
 

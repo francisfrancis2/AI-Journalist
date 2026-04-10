@@ -26,13 +26,13 @@ class Settings(BaseSettings):
 
     # ── Tavily ────────────────────────────────────────────────────────────────
     tavily_api_key: str = Field(..., env="TAVILY_API_KEY")
-    tavily_max_results: int = 10
-    tavily_search_depth: str = "advanced"  # "basic" | "advanced"
+    tavily_max_results: int = 5
+    tavily_search_depth: str = "basic"  # "basic" | "advanced"
 
     # ── NewsAPI ───────────────────────────────────────────────────────────────
     news_api_key: str = Field(..., env="NEWS_API_KEY")
     news_api_base_url: str = "https://newsapi.org/v2"
-    news_api_page_size: int = 20
+    news_api_page_size: int = 10
 
     # ── Alpha Vantage ─────────────────────────────────────────────────────────
     alpha_vantage_api_key: str = Field(..., env="ALPHA_VANTAGE_API_KEY")
@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 
     # ── Playwright ────────────────────────────────────────────────────────────
     playwright_headless: bool = True
-    playwright_timeout_ms: int = 30_000
+    playwright_timeout_ms: int = 10_000
     playwright_user_agent: str = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "

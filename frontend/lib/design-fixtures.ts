@@ -105,14 +105,6 @@ export const designFixtureScript: FinalScript = {
       title: "From Graphics To Gold Rush",
       narration:
         "The AI boom did not start in a lab full of robots. It started in server rooms, balance sheets, and one company’s unusual bet on graphics chips. NVIDIA spent decades building hardware for gamers. Then, almost overnight, those chips became the core engine of artificial intelligence.",
-      on_screen_text: "NVIDIA briefly became the world's most valuable public company in 2026.",
-      b_roll_suggestions: [
-        "Server racks glowing in a hyperscale data center",
-        "Fast montage of GPUs on factory lines and traders reacting on market screens",
-      ],
-      interview_cues: [
-        "When did you realize GPUs were becoming AI infrastructure rather than gaming hardware?",
-      ],
       estimated_seconds: 120,
     },
     {
@@ -120,14 +112,6 @@ export const designFixtureScript: FinalScript = {
       title: "The Architecture That Scaled",
       narration:
         "Large AI models needed parallel computing at massive scale, and NVIDIA’s CUDA ecosystem made that scale usable. The company was not just selling chips. It was selling a platform developers already knew how to build on.",
-      on_screen_text: "CUDA turned hardware demand into platform lock-in.",
-      b_roll_suggestions: [
-        "Animated diagram showing model training distributed across GPU clusters",
-        "Developer screens with CUDA tooling and inference dashboards",
-      ],
-      interview_cues: [
-        "How important was software in NVIDIA’s lead over other chipmakers?",
-      ],
       estimated_seconds: 145,
     },
     {
@@ -135,14 +119,6 @@ export const designFixtureScript: FinalScript = {
       title: "The Cost Of Winning",
       narration:
         "Every wave of demand created a second story: cost. Training advanced models consumed staggering amounts of capital, electricity, and urgency. The companies buying NVIDIA chips were not just chasing innovation. They were racing to avoid falling behind.",
-      on_screen_text: "AI infrastructure became a strategic spending war.",
-      b_roll_suggestions: [
-        "Construction footage of new data center campuses",
-        "Utility maps, energy charts, and close-ups of cooling systems",
-      ],
-      interview_cues: [
-        "What does this spending race mean for smaller AI companies?",
-      ],
       estimated_seconds: 165,
     },
   ],

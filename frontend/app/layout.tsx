@@ -4,6 +4,8 @@ import { Providers } from "./providers";
 import { AuthGuard } from "@/components/AuthGuard";
 import { SidebarWrapper } from "@/components/SidebarWrapper";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "AI Journalist",
   description: "Autonomous documentary research and scriptwriting.",

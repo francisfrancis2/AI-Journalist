@@ -4,6 +4,7 @@
  */
 
 import axios, { AxiosInstance } from "axios";
+import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import { getToken } from "@/lib/auth";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -90,9 +91,6 @@ export interface ScriptSection {
   section_number: number;
   title: string;
   narration: string;
-  on_screen_text: string | null;
-  b_roll_suggestions: string[];
-  interview_cues: string[];
   estimated_seconds: number;
 }
 
@@ -139,8 +137,7 @@ class AIJournalistAPIClient {
     });
 
     // Attach JWT token to every request
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.http.interceptors.request.use((config: any) => {
+    this.http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
       const token = getToken();
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
@@ -150,10 +147,8 @@ class AIJournalistAPIClient {
 
     // Global error interceptor
     this.http.interceptors.response.use(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (res: any) => res,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (err: any) => {
+      (res: AxiosResponse) => res,
+      (err: AxiosError<{ detail?: string; message?: string }>) => {
         const message =
           err.response?.data?.detail ??
           err.response?.data?.message ??

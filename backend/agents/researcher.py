@@ -136,7 +136,7 @@ class ResearcherAgent:
 
         if "tavily" in use_sources:
             fetch_tasks["web"] = self._search.multi_search(
-                plan.primary_queries + plan.deep_dive_queries,
+                (plan.primary_queries + plan.deep_dive_queries)[:5],
                 max_results_per_query=settings.tavily_max_results,
             )
 
@@ -169,7 +169,7 @@ class ResearcherAgent:
 
         # Step 6: Scrape top web results for full article text
         top_urls = [
-            src.url for src in package.top_sources(5)
+            src.url for src in package.top_sources(3)
             if src.url and src.source_type.value == SourceType.WEB_SEARCH.value
         ]
         if top_urls:

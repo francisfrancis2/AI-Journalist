@@ -71,18 +71,18 @@ Guidelines:
 
 Only include claims supported by the provided sources. Be rigorous."""
 
-_MAX_SOURCE_CHARS = 60_000
+_MAX_SOURCE_CHARS = 30_000
 
 
 def _build_source_digest(package: ResearchPackage) -> str:
     lines: list[str] = []
-    for i, src in enumerate(package.top_sources(20), 1):
+    for i, src in enumerate(package.top_sources(12), 1):
         credibility_tag = f"[{src.credibility.value.upper()}]"
         lines.append(
             f"--- SOURCE {i} {credibility_tag} ---\n"
             f"Title: {src.title}\n"
             f"URL: {src.url or 'N/A'}\n"
-            f"Content: {src.content[:1500]}\n"
+            f"Content: {src.content[:800]}\n"
         )
     return "\n".join(lines)[:_MAX_SOURCE_CHARS]
 

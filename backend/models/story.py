@@ -138,9 +138,6 @@ class ScriptSection(BaseModel):
     section_number: int
     title: str
     narration: str
-    on_screen_text: Optional[str] = None
-    b_roll_suggestions: list[str] = Field(default_factory=list)
-    interview_cues: list[str] = Field(default_factory=list)
     estimated_seconds: int = 60
 
 

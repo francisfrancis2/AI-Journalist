@@ -6,10 +6,10 @@ External HTTP calls are intercepted with respx / pytest-mock.
 import asyncio
 import json
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 import respx
-from httpx import Response
 
 from backend.models.research import SourceCredibility, SourceType
 
@@ -161,8 +161,7 @@ class TestRSSParserTool:
 
 class TestFinancialDataTool:
     @pytest.mark.asyncio
-    @respx.mock
-    async def test_get_company_overview_success(self):
+    async def test_get_company_overview_success(self, mocker):
         from backend.tools.financial_data import FinancialDataTool
 
         mock_data = {
@@ -173,8 +172,11 @@ class TestFinancialDataTool:
             "PERatio": "60",
             "Sector": "Technology",
         }
-        respx.get("https://www.alphavantage.co/query").mock(
-            return_value=Response(200, json=mock_data)
+
+        mocker.patch.object(
+            FinancialDataTool,
+            "_get",
+            new=AsyncMock(return_value=mock_data),
         )
 
         tool = FinancialDataTool()
@@ -184,12 +186,13 @@ class TestFinancialDataTool:
         assert src.credibility == SourceCredibility.HIGH
 
     @pytest.mark.asyncio
-    @respx.mock
-    async def test_get_company_overview_raises_on_error(self):
+    async def test_get_company_overview_raises_on_error(self, mocker):
         from backend.tools.financial_data import FinancialDataTool
 
-        respx.get("https://www.alphavantage.co/query").mock(
-            return_value=Response(200, json={"Error Message": "Invalid API call"})
+        mocker.patch.object(
+            FinancialDataTool,
+            "_get",
+            new=AsyncMock(side_effect=ValueError("Alpha Vantage error: Invalid API call")),
         )
 
         tool = FinancialDataTool()

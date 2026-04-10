@@ -382,10 +382,7 @@ function downloadScriptFile(script: FinalScript) {
     `Logline: ${script.logline}`, "", "OPENING HOOK", script.opening_hook, "",
   ];
   for (const s of script.sections) {
-    lines.push("─".repeat(60), `ACT ${s.section_number}: ${s.title.toUpperCase()}`, "", "NARRATION:", s.narration, "");
-    if (s.on_screen_text) lines.push(`[ON SCREEN]: ${s.on_screen_text}`, "");
-    if (s.b_roll_suggestions.length) lines.push("B-ROLL:", ...s.b_roll_suggestions.map(b => `  • ${b}`), "");
-    if (s.interview_cues.length)     lines.push("INTERVIEWS:", ...s.interview_cues.map(q => `  ? ${q}`), "");
+    lines.push("─".repeat(60), `ACT ${s.section_number}: ${s.title.toUpperCase()}`, "", s.narration, "");
   }
   lines.push("─".repeat(60), "CLOSING STATEMENT", script.closing_statement, "", "─".repeat(60), "SOURCES",
     ...script.sources.map((s, i) => `${i + 1}. [${s.credibility?.toUpperCase()}] ${s.title} — ${s.url ?? "N/A"}`));

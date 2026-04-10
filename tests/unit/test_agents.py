@@ -3,7 +3,6 @@ Unit tests for pipeline agents.
 LLM calls are mocked with pytest-mock — no API keys needed.
 """
 
-import json
 import uuid
 
 import pytest
@@ -84,25 +83,31 @@ def _make_storyline() -> StorylineProposal:
 class TestAnalystAgent:
     @pytest.mark.asyncio
     async def test_run_returns_analysis_result(self, sample_topic):
-        from backend.agents.analyst import AnalystAgent
-
-        mock_llm_response = json.dumps({
-            "executive_summary": "AI is booming.",
-            "key_findings": [
-                {"claim": "Revenue up 200%", "supporting_sources": [], "confidence": 0.9, "category": "financial"}
-            ],
-            "narrative_angles": ["The chip race"],
-            "data_gaps": [],
-            "recommended_tone": "investigative",
-            "controversies": [],
-            "notable_quotes": [],
-            "financial_metrics": None,
-        })
+        from backend.agents.analyst import AnalysisOutput, AnalystAgent, KeyFindingOutput
 
         with patch("backend.agents.analyst.ChatAnthropic") as MockLLM:
-            mock_instance = AsyncMock()
-            mock_instance.ainvoke.return_value = MagicMock(content=mock_llm_response)
-            MockLLM.return_value = mock_instance
+            mock_structured = AsyncMock()
+            mock_structured.ainvoke.return_value = AnalysisOutput(
+                executive_summary="AI is booming.",
+                key_findings=[
+                    KeyFindingOutput(
+                        claim="Revenue up 200%",
+                        supporting_sources=[],
+                        confidence=0.9,
+                        category="financial",
+                    )
+                ],
+                narrative_angles=["The chip race"],
+                data_gaps=[],
+                recommended_tone="investigative",
+                controversies=[],
+                notable_quotes=[],
+                financial_metrics=None,
+            )
+
+            mock_base = MagicMock()
+            mock_base.with_structured_output.return_value = mock_structured
+            MockLLM.return_value = mock_base
 
             agent = AnalystAgent()
             state = {
@@ -123,9 +128,12 @@ class TestAnalystAgent:
         from backend.agents.analyst import AnalystAgent
 
         with patch("backend.agents.analyst.ChatAnthropic") as MockLLM:
-            mock_instance = AsyncMock()
-            mock_instance.ainvoke.return_value = MagicMock(content="not json at all")
-            MockLLM.return_value = mock_instance
+            mock_structured = AsyncMock()
+            mock_structured.ainvoke.side_effect = ValueError("did not return valid JSON")
+
+            mock_base = MagicMock()
+            mock_base.with_structured_output.return_value = mock_structured
+            MockLLM.return_value = mock_base
 
             agent = AnalystAgent()
             state = {
@@ -133,7 +141,7 @@ class TestAnalystAgent:
                 "tone": "explanatory",
                 "research_package": _make_research_package(),
             }
-            with pytest.raises(ValueError, match="did not return valid JSON"):
+            with pytest.raises(ValueError, match="Analyst failed after 3 attempts: did not return valid JSON"):
                 await agent.run(state)
 
 
@@ -142,28 +150,29 @@ class TestAnalystAgent:
 class TestEvaluatorAgent:
     @pytest.mark.asyncio
     async def test_run_approves_high_scoring_storyline(self, sample_topic):
-        from backend.agents.evaluator import EvaluatorAgent
-
-        mock_response = json.dumps({
-            "criteria": {
-                "factual_accuracy": 0.9,
-                "narrative_coherence": 0.9,
-                "audience_engagement": 0.9,
-                "source_diversity": 0.9,
-                "originality": 0.9,
-                "production_feasibility": 0.9,
-            },
-            "strengths": ["Well sourced"],
-            "weaknesses": [],
-            "improvement_suggestions": [],
-            "requires_additional_research": False,
-            "evaluator_notes": "Ready to produce.",
-        })
+        from backend.agents.evaluator import CriteriaOutput, EvaluatorAgent, EvaluatorOutput
 
         with patch("backend.agents.evaluator.ChatAnthropic") as MockLLM:
-            mock_instance = AsyncMock()
-            mock_instance.ainvoke.return_value = MagicMock(content=mock_response)
-            MockLLM.return_value = mock_instance
+            mock_structured = AsyncMock()
+            mock_structured.ainvoke.return_value = EvaluatorOutput(
+                criteria=CriteriaOutput(
+                    factual_accuracy=0.9,
+                    narrative_coherence=0.9,
+                    audience_engagement=0.9,
+                    source_diversity=0.9,
+                    originality=0.9,
+                    production_feasibility=0.9,
+                ),
+                strengths=["Well sourced"],
+                weaknesses=[],
+                improvement_suggestions=[],
+                requires_additional_research=False,
+                evaluator_notes="Ready to produce.",
+            )
+
+            mock_base = MagicMock()
+            mock_base.with_structured_output.return_value = mock_structured
+            MockLLM.return_value = mock_base
 
             agent = EvaluatorAgent()
             state = {
@@ -180,28 +189,29 @@ class TestEvaluatorAgent:
 
     @pytest.mark.asyncio
     async def test_run_rejects_low_scoring_storyline(self, sample_topic):
-        from backend.agents.evaluator import EvaluatorAgent
-
-        mock_response = json.dumps({
-            "criteria": {
-                "factual_accuracy": 0.4,
-                "narrative_coherence": 0.4,
-                "audience_engagement": 0.4,
-                "source_diversity": 0.4,
-                "originality": 0.4,
-                "production_feasibility": 0.4,
-            },
-            "strengths": [],
-            "weaknesses": ["Weak sourcing"],
-            "improvement_suggestions": ["Add more data"],
-            "requires_additional_research": True,
-            "evaluator_notes": "Needs work.",
-        })
+        from backend.agents.evaluator import CriteriaOutput, EvaluatorAgent, EvaluatorOutput
 
         with patch("backend.agents.evaluator.ChatAnthropic") as MockLLM:
-            mock_instance = AsyncMock()
-            mock_instance.ainvoke.return_value = MagicMock(content=mock_response)
-            MockLLM.return_value = mock_instance
+            mock_structured = AsyncMock()
+            mock_structured.ainvoke.return_value = EvaluatorOutput(
+                criteria=CriteriaOutput(
+                    factual_accuracy=0.4,
+                    narrative_coherence=0.4,
+                    audience_engagement=0.4,
+                    source_diversity=0.4,
+                    originality=0.4,
+                    production_feasibility=0.4,
+                ),
+                strengths=[],
+                weaknesses=["Weak sourcing"],
+                improvement_suggestions=["Add more data"],
+                requires_additional_research=True,
+                evaluator_notes="Needs work.",
+            )
+
+            mock_base = MagicMock()
+            mock_base.with_structured_output.return_value = mock_structured
+            MockLLM.return_value = mock_base
 
             agent = EvaluatorAgent()
             state = {

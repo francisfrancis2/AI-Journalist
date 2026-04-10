@@ -25,7 +25,9 @@ os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-for-tests-only")
 
 # ── Now it's safe to import backend modules ───────────────────────────────────
+from backend.api.deps import get_current_user
 from backend.db.database import Base, get_db
+from backend.models.user import UserORM
 from backend.models.story import StoryORM  # noqa: F401 — registers table with metadata
 
 
@@ -69,10 +71,20 @@ async def api_client(db_session):
 
     app = create_app()
 
+    test_user = UserORM(
+        email="test@example.com",
+        hashed_password="not-a-real-hash",
+        is_active=True,
+    )
+
     async def _override_get_db():
         yield db_session
 
+    async def _override_get_current_user():
+        return test_user
+
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = _override_get_current_user
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

@@ -32,9 +32,6 @@ _WORDS_PER_MINUTE = 150
 
 class ActOutput(BaseModel):
     narration: str = Field(description="Full narrator script for this act — complete sentences, natural cadence")
-    on_screen_text: Optional[str] = Field(None, description="Key stat, quote, or title card text shown on screen")
-    b_roll_suggestions: list[str] = Field(default_factory=list, description="Specific b-roll footage descriptions")
-    interview_cues: list[str] = Field(default_factory=list, description="Interview questions or moments to capture")
     word_count: int = Field(description="Word count of the narration")
 
 
@@ -50,8 +47,6 @@ Guidelines:
 - Start Act 1 with the sharpest, most dramatic sentence.
 - Use rhetorical questions to maintain tension.
 - Ground abstract statistics in human terms.
-- Each b_roll_suggestion should be specific and achievable (e.g., "Time-lapse of NYSE trading floor").
-- on_screen_text: a key stat, quote, or title card — keep it punchy (optional).
 - word_count: count the words in your narration accurately."""
 
 
@@ -69,7 +64,7 @@ class ScriptwriterAgent:
         _llm = ChatAnthropic(
             model=settings.claude_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=4096,
+            max_tokens=2048,
             temperature=0.4,
         )
         self._structured_llm = _llm.with_structured_output(ActOutput)
@@ -117,9 +112,6 @@ class ScriptwriterAgent:
             section_number=act_data["act_number"],
             title=act_data["act_title"],
             narration=output.narration,
-            on_screen_text=output.on_screen_text,
-            b_roll_suggestions=output.b_roll_suggestions,
-            interview_cues=output.interview_cues,
             estimated_seconds=act_data["estimated_duration_seconds"],
         )
 

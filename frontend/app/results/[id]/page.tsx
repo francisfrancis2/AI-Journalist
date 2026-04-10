@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { apiClient, type Story, type FinalScript } from "@/lib/api";
 
@@ -97,9 +98,14 @@ export default function ResultsPage() {
               {isComplete && (
                 <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
                   {story.quality_score != null && (
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                      Quality <strong style={{ color: "var(--color-text-primary)" }}>{(story.quality_score * 100).toFixed(0)}%</strong>
-                    </span>
+                    <Link
+                      href={`/results/${id}/evaluation`}
+                      title="Double-click for full breakdown"
+                      onDoubleClick={(e) => { e.preventDefault(); router.push(`/results/${id}/evaluation`); }}
+                      style={{ fontSize: 12, color: "var(--color-text-secondary)", textDecoration: "none", cursor: "pointer" }}
+                    >
+                      Quality <strong style={{ color: "var(--color-action)", textDecoration: "underline dotted" }}>{(story.quality_score * 100).toFixed(0)}%</strong>
+                    </Link>
                   )}
                   {story.word_count && (
                     <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
@@ -123,7 +129,7 @@ export default function ResultsPage() {
             {isComplete && script && (
               <button onClick={handleDownload} disabled={downloading} className="btn-secondary" style={{ flexShrink: 0, marginLeft: 16 }}>
                 {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                Download .txt
+                Download PDF
               </button>
             )}
           </div>
@@ -245,9 +251,16 @@ function ScriptPanel({ script }: { script: FinalScript }) {
                 <p className="section-label">Sources ({script.sources.length})</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {script.sources.map((src, i) => (
-                    <span key={i} className="source-chip" title={src.url ?? undefined}>
-                      {i + 1}. {src.title.slice(0, 28)}{src.title.length > 28 ? "…" : ""}
-                    </span>
+                    src.url
+                      ? <a key={i} href={src.url} target="_blank" rel="noopener noreferrer"
+                          className="source-chip"
+                          style={{ textDecoration: "none", color: "var(--color-action)" }}
+                          title={src.title}>
+                          {i + 1}. {src.title.slice(0, 26)}{src.title.length > 26 ? "…" : ""}
+                        </a>
+                      : <span key={i} className="source-chip" title={src.title}>
+                          {i + 1}. {src.title.slice(0, 26)}{src.title.length > 26 ? "…" : ""}
+                        </span>
                   ))}
                 </div>
               </div>
@@ -315,48 +328,8 @@ function ScriptPanel({ script }: { script: FinalScript }) {
               </button>
 
               {open.includes(i) && (
-                <div style={{ padding: "0 20px 20px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                  <div style={{ paddingTop: 16 }}>
-                    <div className="section-rule"><span>Narration</span></div>
-                    <p style={{ fontSize: 13, lineHeight: 1.7, marginBottom: 16 }}>{section.narration}</p>
-
-                    {section.on_screen_text && (
-                      <>
-                        <div className="section-rule"><span>On screen</span></div>
-                        <div className="stat-callout" style={{ marginBottom: 16 }}>
-                          <p style={{ fontSize: 13 }}>{section.on_screen_text}</p>
-                        </div>
-                      </>
-                    )}
-
-                    {section.b_roll_suggestions.length > 0 && (
-                      <>
-                        <div className="section-rule"><span>B-Roll</span></div>
-                        <ul style={{ margin: "0 0 16px", padding: 0, listStyle: "none" }}>
-                          {section.b_roll_suggestions.map((b, j) => (
-                            <li key={j} style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "3px 0", paddingLeft: 12, position: "relative" }}>
-                              <span style={{ position: "absolute", left: 0, color: "var(--color-text-tertiary)" }}>·</span>
-                              {b}
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
-
-                    {section.interview_cues.length > 0 && (
-                      <>
-                        <div className="section-rule"><span>Interview cues</span></div>
-                        <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                          {section.interview_cues.map((q, j) => (
-                            <li key={j} style={{ fontSize: 13, color: "var(--color-text-secondary)", padding: "3px 0" }}>
-                              <span style={{ fontWeight: 500, color: "var(--color-text-primary)", marginRight: 6 }}>Q</span>
-                              {q}
-                            </li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
-                  </div>
+                <div style={{ padding: "16px 20px 20px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                  <p style={{ fontSize: 13, lineHeight: 1.8 }}>{section.narration}</p>
                 </div>
               )}
             </div>
@@ -548,23 +521,50 @@ function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }
 }
 
 function downloadScriptFile(script: FinalScript) {
-  const lines: string[] = [
-    script.title.toUpperCase(), "=".repeat(60), "",
-    `Logline: ${script.logline}`, "", "OPENING HOOK", script.opening_hook, "",
-  ];
-  for (const s of script.sections) {
-    lines.push("─".repeat(60), `ACT ${s.section_number}: ${s.title.toUpperCase()}`, "", "NARRATION:", s.narration, "");
-    if (s.on_screen_text) lines.push(`[ON SCREEN]: ${s.on_screen_text}`, "");
-    if (s.b_roll_suggestions.length) lines.push("B-ROLL:", ...s.b_roll_suggestions.map(b => `  • ${b}`), "");
-    if (s.interview_cues.length)     lines.push("INTERVIEWS:", ...s.interview_cues.map(q => `  ? ${q}`), "");
-  }
-  lines.push("─".repeat(60), "CLOSING STATEMENT", script.closing_statement, "", "─".repeat(60), "SOURCES",
-    ...script.sources.map((s, i) => `${i + 1}. [${s.credibility?.toUpperCase()}] ${s.title} — ${s.url ?? "N/A"}`));
-  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href = url;
-  a.download = `${script.title.replace(/[^a-z0-9]/gi, "_")}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const actsHtml = script.sections.map(s => `
+    <div class="act">
+      <h3>Act ${s.section_number}: ${s.title}
+        <span class="dur">${Math.floor(s.estimated_seconds / 60)}:${String(s.estimated_seconds % 60).padStart(2, "0")}</span>
+      </h3>
+      <p>${s.narration.replace(/\n/g, "<br>")}</p>
+    </div>`).join("");
+
+  const sourcesHtml = script.sources.map((s, i) =>
+    `<li>${i + 1}. <strong>[${s.credibility?.toUpperCase()}]</strong> ${
+      s.url ? `<a href="${s.url}">${s.title}</a>` : s.title
+    }</li>`
+  ).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${script.title}</title>
+<style>
+  body{font-family:Georgia,serif;max-width:680px;margin:40px auto;color:#111;font-size:13px;line-height:1.8}
+  h1{font-size:20px;margin-bottom:4px}
+  .logline{font-style:italic;color:#555;margin-bottom:24px}
+  .hook{background:#f4f4f8;border-left:3px solid #1c26a8;padding:12px 16px;margin-bottom:28px}
+  .hook-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#1c26a8;margin-bottom:6px;font-weight:bold}
+  .act{margin-bottom:24px;page-break-inside:avoid}
+  .act h3{font-size:13px;font-weight:bold;border-bottom:1px solid #e0e0e0;padding-bottom:4px;margin-bottom:6px;display:flex;justify-content:space-between}
+  .dur{font-size:11px;color:#888;font-weight:normal}
+  .closing{border-top:1px solid #ddd;padding-top:20px;margin-top:28px}
+  .sources-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#1c26a8;font-weight:bold;margin-bottom:8px}
+  ul.src{font-size:11px;color:#555;padding-left:16px;line-height:1.6}
+  a{color:#1c26a8}
+  @media print{body{margin:20px}}
+</style></head><body>
+<h1>${script.title}</h1>
+<p class="logline">"${script.logline}"</p>
+<div class="hook"><div class="hook-label">Opening Hook</div><p>${script.opening_hook}</p></div>
+${actsHtml}
+<div class="closing"><h3>Closing Statement</h3><p>${script.closing_statement}</p></div>
+<br><div class="sources-label">Sources (${script.sources.length})</div>
+<ul class="src">${sourcesHtml}</ul>
+</body></html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 400);
 }
