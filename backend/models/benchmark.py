@@ -95,8 +95,8 @@ class BenchmarkScores(BaseModel):
     tension_release_rhythm: float = Field(ge=0.0, le=1.0, description="Alternating tension-release pattern across acts")
     closing_device: float = Field(ge=0.0, le=1.0, description="Closing device matches BI forward-looking trademark")
     closest_reference_title: Optional[str] = Field(None, description="Most similar BI doc title from corpus")
-    gaps: list[str] = Field(description="Specific gaps vs BI standard")
-    strengths: list[str] = Field(description="Elements that match or exceed BI standard")
+    gaps: list[str] = Field(default_factory=list, description="Specific gaps vs BI standard")
+    strengths: list[str] = Field(default_factory=list, description="Elements that match or exceed BI standard")
 
 
 class BenchmarkReport(BaseModel):

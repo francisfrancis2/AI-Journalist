@@ -36,11 +36,11 @@ class CriteriaOutput(BaseModel):
 
 class EvaluatorOutput(BaseModel):
     criteria: CriteriaOutput
-    strengths: list[str]
-    weaknesses: list[str]
-    improvement_suggestions: list[str]
-    requires_additional_research: bool
-    evaluator_notes: str
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    improvement_suggestions: list[str] = Field(default_factory=list)
+    requires_additional_research: bool = False
+    evaluator_notes: str = ""
 
 
 # ── System prompt ─────────────────────────────────────────────────────────────
