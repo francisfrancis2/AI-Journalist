@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     debug: bool = False
     log_level: str = "INFO"
+    run_migrations_on_startup: bool = True
 
     # ── Anthropic ─────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(..., env="ANTHROPIC_API_KEY")
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
     news_api_key: str = Field(..., env="NEWS_API_KEY")
     news_api_base_url: str = "https://newsapi.org/v2"
     news_api_page_size: int = 10
+    rss_fetch_timeout_seconds: float = 8.0
 
     # ── Alpha Vantage ─────────────────────────────────────────────────────────
     alpha_vantage_api_key: str = Field(..., env="ALPHA_VANTAGE_API_KEY")
@@ -63,27 +65,79 @@ class Settings(BaseSettings):
 
     # ── Agent / Graph ─────────────────────────────────────────────────────────
     max_research_iterations: int = 3
-    max_refinement_cycles: int = 1
+    max_refinement_cycles: int = 2
     target_script_duration_min: int = 10
     target_script_duration_max: int = 15
     min_sources_required: int = 5
-    quality_score_threshold: float = 0.75
+    quality_score_threshold: float = 0.70   # pre-script evaluation gate (70%)
+
+    # ── Script revision ───────────────────────────────────────────────────────
+    max_script_revision_cycles: int = 1     # post-script audit revision passes
+    script_audit_score_threshold: float = 0.70  # below this → trigger revision
 
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")
-    bi_channel_id: str = "UCcyq283he07B7_KUX07mmtA"  # Business Insider main channel
-    bi_corpus_min_docs: int = 20          # min docs before patterns are considered valid
+
+    # Channel identifiers (ID or @handle — fetcher resolves handles automatically)
+    bi_channel_id: str = "UCcyq283he07B7_KUX07mmtA"     # Business Insider
+    cnbc_channel_handle: str = "@CNBCMakeIt"              # CNBC Make It
+    vox_channel_handle: str = "@Vox"                      # Vox
+    johnny_harris_channel_handle: str = "@johnnyharris"   # Johnny Harris
+
+    # Pattern cache paths per library
     bi_pattern_cache_path: str = "backend/data/bi_patterns.json"
+    cnbc_pattern_cache_path: str = "backend/data/cnbc_patterns.json"
+    vox_pattern_cache_path: str = "backend/data/vox_patterns.json"
+    jh_pattern_cache_path: str = "backend/data/jh_patterns.json"
+
+    bi_corpus_min_docs: int = 20          # min docs before patterns are considered valid
+    benchmark_corpus_stale_after_days: int = 14
+    benchmark_default_rebuild_docs: int = 50  # fixed corpus size for all libraries
 
     # ── Auth / JWT ────────────────────────────────────────────────────────────
     jwt_secret_key: str = Field(..., env="JWT_SECRET_KEY")
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+    admin_email: Optional[str] = Field(None, env="ADMIN_EMAIL")
+    admin_password: Optional[str] = Field(None, env="ADMIN_PASSWORD")
 
     # ── CORS ──────────────────────────────────────────────────────────────────
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8000"]
+    # Comma-separated list of allowed origins, e.g. "http://localhost:3000,https://myapp.fly.dev"
+    cors_origins_str: str = Field("http://localhost:3000", env="CORS_ORIGINS")
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins_str.split(",") if o.strip()]
+
+    # ── Trusted hosts (rejects requests with unexpected Host headers) ─────────
+    # Comma-separated list of trusted hostnames
+    trusted_hosts_str: str = Field(
+        "localhost,127.0.0.1,backend,*.localhost", env="TRUSTED_HOSTS"
+    )
+
+    @property
+    def trusted_hosts(self) -> list[str]:
+        return [h.strip() for h in self.trusted_hosts_str.split(",") if h.strip()]
 
     model_config = {"env_file": ".env", "case_sensitive": False, "extra": "ignore"}
+
+    def get_pattern_cache_path(self, library_key: str) -> str:
+        """Return the local JSON cache path for a given library key."""
+        return {
+            "bi": self.bi_pattern_cache_path,
+            "cnbc": self.cnbc_pattern_cache_path,
+            "vox": self.vox_pattern_cache_path,
+            "jh": self.jh_pattern_cache_path,
+        }.get(library_key, f"backend/data/{library_key}_patterns.json")
+
+    def get_channel_identifier(self, library_key: str) -> str:
+        """Return the YouTube channel ID or handle for a given library key."""
+        return {
+            "bi": self.bi_channel_id,
+            "cnbc": self.cnbc_channel_handle,
+            "vox": self.vox_channel_handle,
+            "jh": self.johnny_harris_channel_handle,
+        }.get(library_key, "")
 
     @field_validator("claude_temperature")
     @classmethod

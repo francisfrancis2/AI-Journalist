@@ -10,8 +10,10 @@ services:
       POSTGRES_USER: aijournalist
       POSTGRES_PASSWORD: secret
       POSTGRES_DB: aijournalist
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
+    networks:
+      - internal
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -30,8 +32,10 @@ services:
       DEFAULT_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
       LOCALSTACK_AUTH_TOKEN: ""
-    ports:
-      - "4566:4566"
+    expose:
+      - "4566"
+    networks:
+      - internal
     volumes:
       - localstack_data:/var/lib/localstack
       - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh:ro
@@ -52,13 +56,15 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://aijournalist:secret@db:5432/aijournalist
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1
       S3_ENDPOINT_URL: http://localstack:4566
-    ports:
-      - "8000:8000"
+    # No host port mapping — backend is only reachable within the internal network
+    expose:
+      - "8000"
+    networks:
+      - internal
     depends_on:
       db:
         condition: service_healthy
@@ -73,15 +79,26 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        BACKEND_INTERNAL_URL: http://backend:8000
     container_name: aijournalist-frontend
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      # Empty string → api.ts uses relative URLs → Next.js rewrites proxy to backend
+      NEXT_PUBLIC_API_URL: ""
+      # Server-side proxy target (used by next.config.ts rewrites, never exposed to browser)
+      BACKEND_INTERNAL_URL: http://backend:8000
     ports:
       - "3000:3000"
+    networks:
+      - internal
     depends_on:
       - backend
 
 volumes:
   postgres_data:
   localstack_data:
+
+networks:
+  internal:
+    driver: bridge

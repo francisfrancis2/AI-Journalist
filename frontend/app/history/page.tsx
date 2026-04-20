@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Search, Download, ChevronRight, CheckCircle2, XCircle } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { apiClient, type Story, type FinalScript, type StoryStatus } from "@/lib/api";
+import { apiClient, type Story, type StoryStatus } from "@/lib/api";
+import { downloadScriptPdf } from "@/lib/script-export";
 
 const STATUS_FILTERS: { value: StoryStatus | "all"; label: string }[] = [
   { value: "all",         label: "All" },
@@ -57,7 +58,7 @@ export default function HistoryPage() {
     setDownloading(story.id);
     try {
       const script = await apiClient.getScript(story.id);
-      downloadScriptFile(script);
+      downloadScriptPdf(script);
     } catch { /* silent */ } finally { setDownloading(null); }
   };
 
@@ -294,7 +295,7 @@ export default function HistoryPage() {
                         disabled={downloading === story.id}
                         className="btn-ghost"
                         style={{ padding: "5px 8px" }}
-                        title="Download"
+                        title="Download PDF"
                       >
                         {downloading === story.id
                           ? <Loader2 size={13} className="animate-spin" />
@@ -374,23 +375,4 @@ export default function HistoryPage() {
       )}
     </div>
   );
-}
-
-function downloadScriptFile(script: FinalScript) {
-  const lines: string[] = [
-    script.title.toUpperCase(), "=".repeat(60), "",
-    `Logline: ${script.logline}`, "", "OPENING HOOK", script.opening_hook, "",
-  ];
-  for (const s of script.sections) {
-    lines.push("─".repeat(60), `ACT ${s.section_number}: ${s.title.toUpperCase()}`, "", s.narration, "");
-  }
-  lines.push("─".repeat(60), "CLOSING STATEMENT", script.closing_statement, "", "─".repeat(60), "SOURCES",
-    ...script.sources.map((s, i) => `${i + 1}. [${s.credibility?.toUpperCase()}] ${s.title} — ${s.url ?? "N/A"}`));
-  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href = url;
-  a.download = `${script.title.replace(/[^a-z0-9]/gi, "_")}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
 }

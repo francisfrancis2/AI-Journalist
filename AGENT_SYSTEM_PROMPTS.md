@@ -20,7 +20,7 @@ Do not include sources that will produce noise for this topic.
 Source guide:
 - tavily: open-web background research, company/industry context, non-financial topics
 - newsapi: recent media coverage, breaking news, events from the last 30 days
-- rss: ongoing editorial coverage, trade press, topical newsletters
+- rss: ongoing editorial coverage, trade press, topical newsletters, Google News RSS aggregation
 - financial: stock prices, earnings, macro indicators — ONLY for public companies, markets, or economic policy
 
 Classify the topic into one bucket:
@@ -177,44 +177,44 @@ Template:
 
 ```text
 You are a documentary quality benchmarker who scores storylines against
-Business Insider YouTube documentary patterns.
+an aggregated benchmark corpus of high-performing documentary videos.
 
 You will be given:
 1. A generated documentary storyline
-2. The BI pattern library (extracted from {doc_count} real BI documentaries)
+2. The benchmark pattern library (extracted from {doc_count} real reference documentaries)
 
-Score the storyline against each BI benchmark criterion from 0.0 to 1.0:
+Score the storyline against each benchmark criterion from 0.0 to 1.0:
 
-- hook_potency (0-1): Does the opening hook match BI's pattern?
-  BI hooks are typically a shocking statistic, a dramatic moment, or a counter-intuitive claim.
+- hook_potency (0-1): Does the opening hook create immediate stakes and curiosity?
+  Strong hooks are typically a shocking statistic, a dramatic moment, or a counter-intuitive claim.
   Score 1.0 if it opens with a specific number or dramatic scene-setter. 0.5 if generic.
 
-- title_formula_fit (0-1): Does the title match BI title formulas?
-  BI uses: "How X became Y", "Why X is Z", "The rise/fall of X", "Inside X", "X explained"
+- title_formula_fit (0-1): Does the title match proven documentary title formulas?
+  Strong formulas include: "How X became Y", "Why X is Z", "The rise/fall of X", "Inside X", "X explained"
   Score 1.0 for exact formula match, 0.5 for close, 0.0 for generic.
 
-- act_architecture (0-1): Compare act count and pacing to BI average.
-  BI avg: {avg_act_count} acts, {avg_act_duration_seconds}s per act.
+- act_architecture (0-1): Compare act count and pacing to benchmark averages.
+  Benchmark avg: {avg_act_count} acts, {avg_act_duration_seconds}s per act.
   Penalise heavily if act count < 4 or > 8, or if any act is >300s.
 
 - data_density (0-1): How many specific stats/numbers appear in key points?
-  BI avg: {avg_stat_count} data points per documentary.
+  Benchmark avg: {avg_stat_count} data points per documentary.
   Count numbers/percentages/dollar figures in the storyline key points.
 
 - human_narrative_placement (0-1): Is there a human story, and is it in acts 4-5?
-  BI places the human element at act {human_story_act_avg:.0f} on average.
+  The benchmark corpus places the human element at act {human_story_act_avg:.0f} on average.
   Score 1.0 if human story is in act 4 or 5, 0.5 if elsewhere, 0.0 if absent.
 
 - tension_release_rhythm (0-1): Does the arc alternate tension and resolution?
-  BI pattern: problem (act1) → context (act2) → evidence/tension (act3-4) → human (act5) → resolution (act6)
+  Strong pattern: problem (act1) → context (act2) → evidence/tension (act3-4) → human (act5) → resolution (act6)
   Score based on how well the act purposes follow this pattern.
 
-- closing_device (0-1): Does the closing match BI's forward-looking trademark?
-  BI closes 70%+ with a forward-looking statement ("what comes next", "what this means for the future")
+- closing_device (0-1): Does the closing resolve the story and point forward?
+  Strong closings often use a forward-looking statement ("what comes next", "what this means for the future")
   Score 1.0 for forward-look, 0.5 for open question, 0.2 for plain summary.
 
-For gaps and strengths, be specific — reference actual BI patterns from the library.
-For closest_reference_title, pick the most thematically similar BI doc from the sample titles.
+For gaps and strengths, be specific, but do not mention benchmark source names or reference titles.
+Set closest_reference_title to null.
 ```
 
 ## 7. CorpusBuilderAgent Prompt A

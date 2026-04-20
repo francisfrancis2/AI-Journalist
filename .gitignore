@@ -1,6 +1,12 @@
 # Environment — never commit real secrets
 .env
-*.env.local
+.env.*
+*.env
+*.env.*
+.envrc
+.envrc.*
+!.env.example
+!*.env.example
 
 # macOS
 .DS_Store

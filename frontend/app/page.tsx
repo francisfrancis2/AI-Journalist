@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, ChevronRight, CheckCircle2, XCircle } from "lucide-react";
 import Link from "next/link";
@@ -62,6 +62,8 @@ export default function NewStoryPage() {
   const queryClient = useQueryClient();
   const [topic, setTopic] = useState("");
   const [tone, setTone] = useState<StoryTone>("explanatory");
+  const [targetDuration, setTargetDuration] = useState(12);
+  const [targetAudience, setTargetAudience] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const { data: stories } = useQuery<Story[]>({
@@ -81,13 +83,31 @@ export default function NewStoryPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => apiClient.createStory({ topic: topic.trim(), tone }),
+    mutationFn: () => apiClient.createStory({
+      topic: topic.trim(),
+      tone,
+      target_duration_minutes: targetDuration,
+      target_audience: targetAudience.trim() || null,
+    }),
     onSuccess: (story) => {
       setActiveId(story.id);
       setTopic("");
+      setTargetAudience("");
       queryClient.invalidateQueries({ queryKey: ["stories"] });
     },
   });
+
+  useEffect(() => {
+    if (!activeId) return;
+    return apiClient.streamStoryEvents(
+      activeId,
+      (story) => {
+        queryClient.setQueryData(["story", activeId], story);
+        queryClient.invalidateQueries({ queryKey: ["stories"] });
+      },
+      () => undefined
+    );
+  }, [activeId, queryClient]);
 
   const isRunning = activeStory && !["completed", "failed"].includes(activeStory.status);
   const recent = (stories ?? []).filter(s => s.id !== activeId).slice(0, 6);
@@ -175,6 +195,56 @@ export default function NewStoryPage() {
             )}
           </div>
 
+          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 14, marginBottom: 16 }}>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "var(--color-text-secondary)",
+                  marginBottom: 8,
+                }}
+              >
+                Duration
+              </label>
+              <select
+                value={targetDuration}
+                onChange={e => setTargetDuration(Number(e.target.value))}
+                disabled={!!isRunning}
+                className="input"
+              >
+                {[10, 11, 12, 13, 14, 15].map((minutes) => (
+                  <option key={minutes} value={minutes}>{minutes} minutes</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 11,
+                  fontWeight: 500,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "var(--color-text-secondary)",
+                  marginBottom: 8,
+                }}
+              >
+                Audience
+              </label>
+              <input
+                value={targetAudience}
+                onChange={e => setTargetAudience(e.target.value)}
+                placeholder="e.g. finance professionals, founders, general YouTube audience"
+                disabled={!!isRunning}
+                className="input"
+              />
+            </div>
+          </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button
               onClick={() => createMutation.mutate()}
@@ -184,7 +254,7 @@ export default function NewStoryPage() {
               {createMutation.isPending && <Loader2 size={13} className="animate-spin" />}
               Generate script
             </button>
-            <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Takes ~60–90 seconds</span>
+            <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Live progress appears below</span>
           </div>
         </div>
 

@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 
-const NO_SIDEBAR = ["/login", "/register"];
+const NO_SIDEBAR = ["/login", "/register", "/change-password"];
 
 export function SidebarWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

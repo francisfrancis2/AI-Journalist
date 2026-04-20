@@ -113,6 +113,23 @@ class TestNewsAPITool:
 # ── RSSParserTool ─────────────────────────────────────────────────────────────
 
 class TestRSSParserTool:
+    def test_default_feeds_include_google_news_rss(self):
+        from backend.tools.rss_parser import DEFAULT_FEEDS, GOOGLE_NEWS_RSS_URL
+
+        assert GOOGLE_NEWS_RSS_URL in DEFAULT_FEEDS
+        assert DEFAULT_FEEDS[GOOGLE_NEWS_RSS_URL] == SourceCredibility.MEDIUM
+
+    def test_build_google_news_search_feed_encodes_keyword(self):
+        from backend.tools.rss_parser import _build_google_news_search_feed
+
+        url = _build_google_news_search_feed("electric vehicles")
+
+        assert url == (
+            "https://news.google.com/rss/search"
+            "?q=electric+vehicles&hl=en-US&gl=US&ceid=US:en"
+        )
+        assert _build_google_news_search_feed(" ") is None
+
     def test_get_entry_content_prefers_atom_content(self):
         from backend.tools.rss_parser import _get_entry_content
         import feedparser
@@ -155,6 +172,59 @@ class TestRSSParserTool:
         # Should not raise even though one feed fails
         results = await tool.fetch_all_default_feeds()
         assert isinstance(results, list)
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_default_feeds_adds_google_news_search_for_keyword(self):
+        from backend.tools.rss_parser import RSSParserTool
+
+        fetched_urls = []
+
+        async def _mock_fetch(url, cred, max_entries, keyword_filter):
+            fetched_urls.append(url)
+            return []
+
+        tool = RSSParserTool()
+        tool.fetch_feed = _mock_fetch  # type: ignore[assignment]
+
+        await tool.fetch_all_default_feeds(keyword_filter="semiconductors")
+
+        assert (
+            "https://news.google.com/rss/search?q=semiconductors&hl=en-US&gl=US&ceid=US:en"
+            in fetched_urls
+        )
+
+    @pytest.mark.asyncio
+    async def test_custom_feeds_do_not_add_google_news_search(self):
+        from backend.tools.rss_parser import RSSParserTool
+        from backend.models.research import SourceCredibility
+
+        fetched_urls = []
+
+        async def _mock_fetch(url, cred, max_entries, keyword_filter):
+            fetched_urls.append(url)
+            return []
+
+        tool = RSSParserTool(feeds={"http://feed1.rss": SourceCredibility.HIGH})
+        tool.fetch_feed = _mock_fetch  # type: ignore[assignment]
+
+        await tool.fetch_all_default_feeds(keyword_filter="semiconductors")
+
+        assert fetched_urls == ["http://feed1.rss"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_feed_times_out_quickly(self, mocker):
+        from backend.tools.rss_parser import RSSParserTool
+
+        mocker.patch("backend.tools.rss_parser.RSS_FETCH_TIMEOUT_SECONDS", 0.01)
+
+        async def _slow_download(url):
+            await asyncio.sleep(1)
+            return b""
+
+        tool = RSSParserTool(feeds={})
+        mocker.patch.object(tool, "_download_feed", side_effect=_slow_download)
+
+        assert await tool.fetch_feed("https://example.com/feed.xml") == []
 
 
 # ── FinancialDataTool ─────────────────────────────────────────────────────────

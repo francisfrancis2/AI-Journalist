@@ -48,6 +48,32 @@ class YouTubeFetcher:
         # Build is synchronous — done once at init
         self._service = build("youtube", "v3", developerKey=settings.youtube_api_key)
 
+    def _resolve_channel_id_sync(self, identifier: str) -> str:
+        """
+        Resolve a channel identifier to a channel ID.
+        Handles both raw IDs (UC...) and @handles.
+        Synchronous — call via run_in_executor.
+        """
+        if not identifier.startswith("@"):
+            return identifier  # already a channel ID
+
+        handle = identifier.lstrip("@")
+        resp = self._service.channels().list(
+            part="id",
+            forHandle=handle,
+        ).execute()
+        items = resp.get("items", [])
+        if not items:
+            raise ValueError(f"Could not resolve YouTube handle '{identifier}' to a channel ID")
+        return items[0]["id"]
+
+    async def resolve_channel_identifier(self, identifier: str) -> str:
+        """Async wrapper around handle resolution."""
+        if not identifier.startswith("@"):
+            return identifier
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._resolve_channel_id_sync, identifier)
+
     async def get_channel_videos(
         self,
         channel_id: Optional[str] = None,
@@ -58,13 +84,14 @@ class YouTubeFetcher:
         Returns videos ordered by view count (most successful first).
 
         Args:
-            channel_id: YouTube channel ID. Defaults to BI channel from config.
+            channel_id: YouTube channel ID or @handle. Defaults to BI channel from config.
             max_results: Maximum number of qualifying videos to return.
 
         Returns:
             List of dicts with id, title, description, view_count, like_count, duration_seconds.
         """
-        channel_id = channel_id or settings.bi_channel_id
+        raw_identifier = channel_id or settings.bi_channel_id
+        channel_id = await self.resolve_channel_identifier(raw_identifier)
         loop = asyncio.get_event_loop()
 
         def _fetch() -> list[dict]:

@@ -512,7 +512,7 @@ File:
 
 Purpose:
 
-- Scores the selected storyline against the local BI benchmark library.
+- Scores the selected storyline against the combined benchmark corpus.
 - Runs in parallel with `EvaluatorAgent`.
 - Produces a separate comparative benchmark report.
 
@@ -728,7 +728,7 @@ File:
 
 Purpose:
 
-- Polls curated RSS feeds and converts entries to `RawSource`
+- Polls curated RSS feeds, including Google News RSS, and converts entries to `RawSource`
 
 Key method:
 

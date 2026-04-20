@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Business Insider Benchmark Corpus Overview</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #202124;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      font-size: 12px;
+      line-height: 1.55;
+      background: #ffffff;
+    }
+    h1, h2, h3 { color: #15192f; line-height: 1.2; }
+    h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.03em; }
+    h2 { font-size: 18px; margin: 26px 0 10px; padding-top: 12px; border-top: 1px solid #d8dbe8; }
+    h3 { font-size: 14px; margin: 18px 0 8px; }
+    p { margin: 0 0 9px; }
+    ul, ol { margin: 6px 0 12px 20px; padding: 0; }
+    li { margin: 4px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; }
+    th, td { border: 1px solid #d8dbe8; padding: 7px 8px; vertical-align: top; }
+    th { background: #f2f4fb; text-align: left; color: #15192f; font-weight: 700; }
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 11px;
+      background: #f5f6fa;
+      border: 1px solid #e4e6ef;
+      border-radius: 4px;
+      padding: 1px 4px;
+    }
+    .cover {
+      border: 1px solid #d8dbe8;
+      border-radius: 18px;
+      padding: 28px;
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, #f8f9fd 0%, #eef2ff 100%);
+    }
+    .eyebrow {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #1c26a8;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .subtitle { color: #555c70; font-size: 13px; max-width: 620px; }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .meta-card, .callout, .warning, .ok, .metric-card {
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid #d8dbe8;
+      background: #ffffff;
+    }
+    .meta-card strong, .metric-card strong {
+      display: block;
+      color: #15192f;
+      font-size: 18px;
+      margin-top: 2px;
+    }
+    .label {
+      display: block;
+      color: #687084;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .warning { border-color: #f5c77b; background: #fff8ec; }
+    .ok { border-color: #b7e4c7; background: #f1fbf5; }
+    .callout { background: #f7f8fd; }
+    .danger { color: #aa2e25; font-weight: 700; }
+    .muted { color: #687084; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      background: #eef2ff;
+      color: #1c26a8;
+      border: 1px solid #d8defc;
+      margin-right: 4px;
+    }
+    .page-break { page-break-before: always; }
+    .small { font-size: 10px; color: #687084; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div class="eyebrow">AI Journalist Internal Product Report</div>
+    <h1>Business Insider Benchmark Corpus Overview</h1>
+    <p class="subtitle">
+      A current-state overview of the Business Insider corpus used by this app for benchmarking,
+      plus a practical explanation of how editorial evaluation, BI benchmarking, and post-script
+      audit are used in the story-generation pipeline.
+    </p>
+    <div class="meta">
+      <div class="meta-card">
+        <span class="label">Generated</span>
+        <strong>2026-04-17</strong>
+        <span class="small">Asia/Dubai workspace</span>
+      </div>
+      <div class="meta-card">
+        <span class="label">Active Library</span>
+        <strong>BI</strong>
+        <span class="small">Business Insider planned corpus</span>
+      </div>
+      <div class="meta-card">
+        <span class="label">Current Corpus Docs</span>
+        <strong>0</strong>
+        <span class="small">No local BI reference docs found</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>1. Executive Summary</h2>
+    <div class="warning">
+      <p><strong>Most important finding:</strong> the benchmarking framework exists, but this local environment currently has no real Business Insider content loaded into the corpus.</p>
+      <p>The cache file <code>backend/data/bi_patterns.json</code> contains an empty pattern library with <code>doc_count: 0</code>. The running Postgres database has <code>0</code> rows in <code>bi_reference_docs</code>, and the saved <code>bi_pattern_library</code> versions also have <code>doc_count: 0</code>.</p>
+    </div>
+    <p>
+      In practical terms, the product currently has the machinery for BI-style benchmarking, but it is not yet using actual BI video titles, descriptions, transcripts, extracted hooks, act structures, or title formulas as a reliable benchmark base. Until the corpus is rebuilt with real reference documentaries, BI similarity scores should be considered unavailable or untrusted.
+    </p>
+    <p>
+      The editorial evaluator is separate from the BI corpus and remains meaningful because it scores the generated storyline against general editorial standards. The BI benchmarker and the post-script audit can use BI context, but today that context is empty.
+    </p>
+  </section>
+
+  <section>
+    <h2>2. Current Corpus Inventory</h2>
+    <h3>2.1 Local JSON cache</h3>
+    <table>
+      <tr><th>Field</th><th>Current value</th><th>Meaning</th></tr>
+      <tr><td><code>version</code></td><td>1</td><td>Local cache version in <code>backend/data/bi_patterns.json</code>.</td></tr>
+      <tr><td><code>doc_count</code></td><td>0</td><td>No BI documentaries are represented in the local cache.</td></tr>
+      <tr><td><code>avg_act_count</code></td><td>0.0</td><td>No synthesized act-count pattern exists.</td></tr>
+      <tr><td><code>avg_act_duration_seconds</code></td><td>0.0</td><td>No synthesized pacing pattern exists.</td></tr>
+      <tr><td><code>hook_type_distribution</code></td><td>{}</td><td>No hook distribution is available.</td></tr>
+      <tr><td><code>title_formula_distribution</code></td><td>{}</td><td>No title formula distribution is available.</td></tr>
+      <tr><td><code>closing_device_distribution</code></td><td>{}</td><td>No closing-device distribution is available.</td></tr>
+      <tr><td><code>sample_hooks</code></td><td>[]</td><td>No BI hooks are available for examples or comparison.</td></tr>
+      <tr><td><code>sample_titles</code></td><td>[]</td><td>No BI reference titles are available for closest-reference matching.</td></tr>
+    </table>
+
+    <h3>2.2 Running database state</h3>
+    <table>
+      <tr><th>Database object</th><th>Current state</th><th>Interpretation</th></tr>
+      <tr><td><code>bi_reference_docs</code></td><td>0 rows</td><td>No BI videos, metadata, transcripts, or extracted structures are stored.</td></tr>
+      <tr><td><code>bi_pattern_library</code></td><td>2 rows</td><td>Two pattern-library versions exist, but both have <code>doc_count = 0</code>.</td></tr>
+      <tr><td>Latest library version</td><td>Version 2, created 2026-04-17 08:00:38 UTC</td><td>Latest saved pattern row is still empty.</td></tr>
+      <tr><td>Previous library version</td><td>Version 1, created 2026-04-15 15:03:43 UTC</td><td>Previous saved pattern row is also empty.</td></tr>
+    </table>
+
+    <div class="callout">
+      <p><strong>Conclusion:</strong> there are currently no Business Insider titles, YouTube IDs, transcripts, view counts, like counts, structural extractions, sample hooks, or reference titles being used as real benchmark evidence.</p>
+    </div>
+  </section>
+
+  <section class="page-break">
+    <h2>3. What BI Content Is Designed To Be Used</h2>
+    <p>
+      The corpus system is designed around Business Insider YouTube documentary content. The configured channel ID is stored in <code>backend/config.py</code> as <code>bi_channel_id = "UCcyq283he07B7_KUX07mmtA"</code>.
+    </p>
+    <p>
+      The <code>YouTubeFetcher</code> fetches videos from that channel via YouTube Data API v3, orders them by view count, and filters to documentary-length content between 5 and 20 minutes. For each qualifying video, the intended stored data is:
+    </p>
+    <table>
+      <tr><th>Data item</th><th>Where stored</th><th>Why it matters</th></tr>
+      <tr><td>YouTube ID</td><td><code>BIReferenceDocORM.youtube_id</code></td><td>Unique reference video identity.</td></tr>
+      <tr><td>Title</td><td><code>title</code></td><td>Used for title formula analysis and closest-reference output.</td></tr>
+      <tr><td>Description</td><td><code>description</code></td><td>Context about topic and framing.</td></tr>
+      <tr><td>View count</td><td><code>view_count</code></td><td>Helps prioritize successful BI references.</td></tr>
+      <tr><td>Like count</td><td><code>like_count</code></td><td>Secondary engagement signal.</td></tr>
+      <tr><td>Duration</td><td><code>duration_seconds</code></td><td>Used to characterize pacing and act duration.</td></tr>
+      <tr><td>Transcript</td><td><code>transcript</code></td><td>Primary raw material for structure extraction.</td></tr>
+      <tr><td>Extracted structure</td><td><code>extracted_structure</code></td><td>LLM-produced structural analysis used for synthesis.</td></tr>
+    </table>
+
+    <h3>3.1 Per-document structural features</h3>
+    <p>The app asks Claude Haiku to extract these fields from each BI transcript:</p>
+    <ul>
+      <li><code>hook_type</code>: for example stat, question, scene, or claim.</li>
+      <li><code>hook_text</code>: the first 2-3 sentences or opening hook pattern.</li>
+      <li><code>act_count</code>, <code>act_titles</code>, and <code>act_durations_seconds</code>: structure and pacing.</li>
+      <li><code>has_human_story</code> and <code>human_story_act</code>: whether and where a human element appears.</li>
+      <li><code>closing_device</code>: for example forward look, open question, summary, or call to action.</li>
+      <li><code>stat_count</code>: number of specific facts, figures, dollar amounts, percentages, or numerical claims.</li>
+      <li><code>rhetorical_question_count</code>: question-driven narration style.</li>
+      <li><code>title_formula</code>: for example "how X became Y", "why X is Z", "the rise of", or other.</li>
+    </ul>
+
+    <h3>3.2 Cross-corpus synthesized pattern library</h3>
+    <p>After extracting document-level structures, Claude Sonnet synthesizes them into the active <code>BIPatternLibrary</code>:</p>
+    <ul>
+      <li>Average act count.</li>
+      <li>Average act duration.</li>
+      <li>Hook type distribution.</li>
+      <li>Title formula distribution.</li>
+      <li>Closing device distribution.</li>
+      <li>Average statistic count.</li>
+      <li>Average rhetorical-question count.</li>
+      <li>Average act where the human story appears.</li>
+      <li>Up to five sample hooks.</li>
+      <li>All reference titles.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>4. How Corpus Build Works</h2>
+    <ol>
+      <li><strong>Fetch candidate videos:</strong> <code>CorpusBuilderAgent</code> asks <code>YouTubeFetcher</code> for Business Insider channel videos, requesting more than the target number so filtering can remove unsuitable items.</li>
+      <li><strong>Filter for documentary length:</strong> only videos between 300 and 1200 seconds are considered.</li>
+      <li><strong>Skip duplicates:</strong> videos already present in <code>bi_reference_docs</code> are skipped.</li>
+      <li><strong>Fetch transcripts:</strong> English transcripts are fetched in batches with concurrency of 5.</li>
+      <li><strong>Extract structure:</strong> each transcript is passed to Claude Haiku using the document-structure schema.</li>
+      <li><strong>Save reference docs:</strong> each processed BI video is stored in <code>bi_reference_docs</code> with metadata, transcript, and extracted structure.</li>
+      <li><strong>Synthesize patterns:</strong> all structures are passed to Claude Sonnet to produce the pattern library.</li>
+      <li><strong>Persist library:</strong> the synthesized library is saved to <code>bi_pattern_library</code> and written to <code>backend/data/bi_patterns.json</code>.</li>
+    </ol>
+    <p>
+      The build can be run from the original script path <code>python -m backend.scripts.build_corpus</code>, or from the newer admin route <code>POST /api/v1/benchmarks/rebuild</code>, which the Benchmarking Admin UI calls.
+    </p>
+  </section>
+
+  <section class="page-break">
+    <h2>5. How Evaluation And Benchmarking Are Used In The Pipeline</h2>
+    <h3>5.1 Pipeline order</h3>
+    <p>The LangGraph pipeline runs in this order:</p>
+    <div class="callout">
+      <p><code>researcher -> analyst -> storyline_creator -> evaluator + benchmarker -> scriptwriter -> script_evaluator</code></p>
+    </div>
+    <p>
+      The editorial evaluator and BI benchmarker run in parallel inside the evaluator graph node. The script evaluator runs after the final script has been written.
+    </p>
+
+    <h3>5.2 Editorial Evaluator</h3>
+    <p>
+      The editorial evaluator does not depend on the Business Insider corpus. It evaluates the selected storyline against professional editorial standards and decides whether the storyline is ready for scripting.
+    </p>
+    <table>
+      <tr><th>Criterion</th><th>Weight</th><th>Question being answered</th></tr>
+      <tr><td>Factual accuracy</td><td>25%</td><td>Are claims well-sourced and verifiable?</td></tr>
+      <tr><td>Narrative coherence</td><td>20%</td><td>Does the story flow logically?</td></tr>
+      <tr><td>Audience engagement</td><td>20%</td><td>Will viewers stay engaged for 10-15 minutes?</td></tr>
+      <tr><td>Source diversity</td><td>15%</td><td>Are multiple perspectives and source types represented?</td></tr>
+      <tr><td>Originality</td><td>10%</td><td>Does the story have a fresh angle?</td></tr>
+      <tr><td>Production feasibility</td><td>10%</td><td>Can the video realistically be produced?</td></tr>
+    </table>
+    <p>
+      A combined score of <code>0.75</code> or higher approves the storyline for scripting. Below that threshold, the graph can refine the storyline or request more research, depending on the state and configured cycle limits.
+    </p>
+
+    <h3>5.3 BI Benchmark Agent</h3>
+    <p>
+      The BI benchmarker compares the selected storyline against the active BI pattern library. It currently scores the storyline before the final script is generated. It does not gate the pipeline by itself; it adds benchmark metadata, strengths, gaps, grade, and similarity score for product feedback and later analysis.
+    </p>
+    <table>
+      <tr><th>BI benchmark criterion</th><th>Weight</th><th>What it checks</th></tr>
+      <tr><td>Hook potency</td><td>20%</td><td>Whether the opening resembles BI's statistic, dramatic moment, or counter-intuitive claim style.</td></tr>
+      <tr><td>Title formula fit</td><td>10%</td><td>Whether the title matches patterns like "How X became Y", "Why X is Z", "The rise/fall of X", "Inside X", or "X explained".</td></tr>
+      <tr><td>Act architecture</td><td>20%</td><td>Whether act count and act duration fit the synthesized BI average.</td></tr>
+      <tr><td>Data density</td><td>15%</td><td>How many specific stats, figures, and numerical claims appear in the storyline.</td></tr>
+      <tr><td>Human narrative placement</td><td>15%</td><td>Whether a human story appears, typically around acts 4-5.</td></tr>
+      <tr><td>Tension-release rhythm</td><td>10%</td><td>Whether the storyline alternates tension, context, human stakes, and resolution.</td></tr>
+      <tr><td>Closing device</td><td>10%</td><td>Whether the ending resembles BI's forward-looking closing style.</td></tr>
+    </table>
+    <p>
+      Grades are computed from the weighted score: A at 0.85 or above, B at 0.70 or above, C at 0.55 or above, and D below 0.55.
+    </p>
+
+    <h3>5.4 Post-script Script Evaluator</h3>
+    <p>
+      The post-script evaluator audits the final generated script. It uses the final narration, section structure, source references, prior editorial evaluation, prior benchmark report, and BI benchmark context when available.
+    </p>
+    <p>
+      Its output includes an overall grade, production-readiness flag, strengths, weaknesses, rewrite priorities, section-by-section audit notes, and a best-in-class comparison block when a valid benchmark context exists.
+    </p>
+  </section>
+
+  <section>
+    <h2>6. Current Benchmarking Reliability</h2>
+    <div class="warning">
+      <p><strong>Current reliability level: not reliable for BI comparison.</strong></p>
+      <p>The active library object exists, but its <code>doc_count</code> is zero and every pattern field is empty or zero. Any BI similarity score generated from this state would be based on an empty benchmark context rather than actual BI reference material.</p>
+    </div>
+    <p>
+      A useful detail from the code review: <code>load_active_benchmark_library</code> can return a library object even when <code>doc_count = 0</code>. The service adds a note saying the corpus is below the recommended minimum of 20 documents, but the benchmarker currently only checks whether a library object exists. That means an empty library can still reach the LLM benchmark prompt.
+    </p>
+    <p>
+      Recommended product behavior is stricter: treat <code>doc_count &lt; bi_corpus_min_docs</code> as not ready for scoring, skip BI benchmark generation, and show an explicit admin action to rebuild the BI corpus.
+    </p>
+  </section>
+
+  <section>
+    <h2>7. Recommended Next Steps</h2>
+    <div class="grid-2">
+      <div class="ok">
+        <span class="label">Build Corpus</span>
+        <p>Set a valid <code>YOUTUBE_API_KEY</code>, then run the BI rebuild for 25-50 docs using the Benchmarking Admin page or <code>python -m backend.scripts.build_corpus</code>.</p>
+      </div>
+      <div class="ok">
+        <span class="label">Verify Corpus</span>
+        <p>Confirm <code>bi_reference_docs</code> contains titles, transcripts, and extracted structures, and that <code>bi_pattern_library.doc_count</code> is at least 20.</p>
+      </div>
+      <div class="ok">
+        <span class="label">Tighten Readiness Guard</span>
+        <p>Change readiness to require <code>doc_count &gt;= bi_corpus_min_docs</code>, not just a non-null library object.</p>
+      </div>
+      <div class="ok">
+        <span class="label">Review Output Quality</span>
+        <p>Run a few completed stories and inspect whether closest references, gaps, strengths, and script-audit benchmark notes are specific and credible.</p>
+      </div>
+    </div>
+
+    <h3>Suggested acceptance criteria for a trustworthy BI benchmark</h3>
+    <ul>
+      <li>At least 20 BI reference docs stored.</li>
+      <li>At least 80% of stored docs have transcripts.</li>
+      <li>At least 80% of stored docs have extracted structures.</li>
+      <li>Pattern library contains non-empty hook, title, and closing distributions.</li>
+      <li>Sample titles and sample hooks are populated.</li>
+      <li>Benchmark output names a plausible closest BI reference when one exists.</li>
+      <li>Admin UI shows corpus freshness and rebuild state accurately.</li>
+    </ul>
+  </section>
+
+  <section class="page-break">
+    <h2>8. Source Files And Objects Reviewed</h2>
+    <table>
+      <tr><th>Area</th><th>Reviewed artifact</th><th>Role</th></tr>
+      <tr><td>Corpus cache</td><td><code>backend/data/bi_patterns.json</code></td><td>Local BI pattern library cache.</td></tr>
+      <tr><td>Corpus builder</td><td><code>backend/agents/corpus_builder.py</code></td><td>Fetches BI videos, extracts structures, synthesizes pattern library.</td></tr>
+      <tr><td>YouTube fetcher</td><td><code>backend/tools/youtube_fetcher.py</code></td><td>Fetches BI channel metadata and transcripts.</td></tr>
+      <tr><td>Benchmark agent</td><td><code>backend/agents/benchmarker.py</code></td><td>Scores selected storyline against BI patterns.</td></tr>
+      <tr><td>Editorial evaluator</td><td><code>backend/agents/evaluator.py</code></td><td>Scores selected storyline against editorial criteria.</td></tr>
+      <tr><td>Script evaluator</td><td><code>backend/agents/script_evaluator.py</code></td><td>Audits final script and uses BI context when available.</td></tr>
+      <tr><td>Benchmark models</td><td><code>backend/models/benchmark.py</code></td><td>Defines BI reference docs, pattern library, scores, and report models.</td></tr>
+      <tr><td>Graph orchestration</td><td><code>backend/graph/journalist_graph.py</code></td><td>Shows where evaluator, benchmarker, scriptwriter, and script evaluator run.</td></tr>
+      <tr><td>Benchmark service</td><td><code>backend/services/benchmarking.py</code></td><td>Loads cache/DB library, reports freshness, and manages rebuild state.</td></tr>
+      <tr><td>Database tables</td><td><code>bi_reference_docs</code>, <code>bi_pattern_library</code></td><td>Current local corpus inventory.</td></tr>
+    </table>
+  </section>
+</body>
+</html>

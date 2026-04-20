@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 # Chromium is already installed in the base image — just register it
 RUN playwright install chromium
 
+COPY alembic.ini ./alembic.ini
 COPY backend/ ./backend/
 
 ENV PYTHONPATH=/app

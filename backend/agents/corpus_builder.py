@@ -1,11 +1,11 @@
 """
-CorpusBuilderAgent — one-time agent that builds the BI benchmark reference corpus.
+CorpusBuilderAgent — one-time agent that builds benchmark reference corpora.
 
 Run manually via:
     python -m backend.scripts.build_corpus
 
 Workflow:
-  1. Fetch 25-50 BI documentaries from YouTube (metadata + transcripts)
+  1. Fetch 25-50 reference documentaries from YouTube (metadata + transcripts)
   2. Extract structural features from each transcript using Claude Haiku
   3. Synthesise cross-corpus patterns using Claude Sonnet
   4. Write pattern library to DB + local JSON cache
@@ -55,14 +55,14 @@ class _PatternSynthesisOutput(BaseModel):
     key_observations: list[str]
 
 
-_SYNTHESISE_SYSTEM = """You are a documentary research analyst. Given structural data from multiple
-Business Insider YouTube documentaries, synthesise the common patterns that make them successful.
+_SYNTHESISE_SYSTEM_TEMPLATE = """You are a documentary research analyst. Given structural data from multiple
+{channel_label} YouTube documentaries, synthesise the common patterns that make them successful.
 Focus on patterns that are consistent across the corpus and actionable for scoring new storylines."""
 
 
 class CorpusBuilderAgent:
     """
-    Builds and updates the BI benchmark reference corpus.
+    Builds and updates benchmark reference corpora.
 
     Example::
 
@@ -108,6 +108,7 @@ class CorpusBuilderAgent:
         docs: list[BIReferenceDocORM],
         structures: list[DocStructure],
         titles: list[str],
+        channel_label: str = "Business Insider",
     ) -> BIPatternLibrary:
         """Synthesise cross-corpus patterns from all extracted structures using Sonnet."""
         structures_text = "\n\n".join(
@@ -115,10 +116,11 @@ class CorpusBuilderAgent:
             for i, (title, s) in enumerate(zip(titles, structures))
         )
 
+        system = _SYNTHESISE_SYSTEM_TEMPLATE.format(channel_label=channel_label)
         output: _PatternSynthesisOutput = await self._sonnet.ainvoke([
-            SystemMessage(content=_SYNTHESISE_SYSTEM),
+            SystemMessage(content=system),
             HumanMessage(content=(
-                f"Corpus: {len(structures)} Business Insider documentaries\n\n"
+                f"Corpus: {len(structures)} {channel_label} documentaries\n\n"
                 f"All titles:\n" + "\n".join(f"  - {t}" for t in titles) + "\n\n"
                 f"Structural data:\n{structures_text}"
             )),
@@ -139,20 +141,26 @@ class CorpusBuilderAgent:
             sample_titles=titles,
         )
 
-    async def _get_next_version(self) -> int:
+    async def _get_next_version(self, library_key: str) -> int:
         result = await self._db.execute(
-            select(BIPatternLibraryORM).order_by(BIPatternLibraryORM.version.desc()).limit(1)
+            select(BIPatternLibraryORM)
+            .where(BIPatternLibraryORM.library_key == library_key)
+            .order_by(BIPatternLibraryORM.version.desc())
+            .limit(1)
         )
         latest = result.scalar_one_or_none()
         return (latest.version + 1) if latest else 1
 
-    async def _save_library(self, library: BIPatternLibrary) -> None:
+    async def _save_library(
+        self, library: BIPatternLibrary, library_key: str
+    ) -> None:
         """Persist pattern library to DB and local JSON cache."""
-        version = await self._get_next_version()
+        version = await self._get_next_version(library_key)
         library.version = version
 
         orm = BIPatternLibraryORM(
             id=uuid.uuid4(),
+            library_key=library_key,
             version=version,
             doc_count=library.doc_count,
             patterns=library.model_dump(),
@@ -162,30 +170,55 @@ class CorpusBuilderAgent:
         await self._db.commit()
 
         # Write JSON cache for fast loading in BenchmarkAgent
-        cache_path = Path(settings.bi_pattern_cache_path)
+        cache_path = Path(settings.get_pattern_cache_path(library_key))
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(library.model_dump_json(indent=2))
 
-        log.info("corpus_builder.library_saved", version=version, doc_count=library.doc_count)
+        log.info(
+            "corpus_builder.library_saved",
+            library_key=library_key,
+            version=version,
+            doc_count=library.doc_count,
+        )
 
-    async def build(self, max_docs: int = 25) -> BIPatternLibrary:
+    async def build(
+        self,
+        max_docs: int = 50,
+        library_key: str = "bi",
+        channel_label: str = "Business Insider",
+        channel_identifier: Optional[str] = None,
+    ) -> BIPatternLibrary:
         """
-        Full corpus build pipeline. Skips videos already in DB.
+        Full corpus build pipeline for any supported channel. Skips videos already in DB.
 
         Args:
-            max_docs: Maximum number of BI docs to fetch and process.
+            max_docs: Maximum number of docs to fetch and process.
+            library_key: Library identifier ("bi", "cnbc", "vox", "jh").
+            channel_label: Human-readable channel name used in prompts.
+            channel_identifier: YouTube channel ID or @handle. Falls back to config.
 
         Returns:
             The synthesised BIPatternLibrary saved to DB.
         """
-        log.info("corpus_builder.start", max_docs=max_docs)
+        channel_id = channel_identifier or settings.get_channel_identifier(library_key)
+        log.info(
+            "corpus_builder.start",
+            library_key=library_key,
+            channel_label=channel_label,
+            max_docs=max_docs,
+        )
 
         # 1. Fetch video list from YouTube
-        videos = await self._fetcher.get_channel_videos(max_results=max_docs + 10)
+        videos = await self._fetcher.get_channel_videos(
+            channel_id=channel_id, max_results=max_docs + 10
+        )
         log.info("corpus_builder.videos_fetched", count=len(videos))
 
-        # 2. Skip videos already in DB
-        existing = await self._db.execute(select(BIReferenceDocORM.youtube_id))
+        # 2. Skip videos already in DB for this library
+        existing = await self._db.execute(
+            select(BIReferenceDocORM.youtube_id)
+            .where(BIReferenceDocORM.library_key == library_key)
+        )
         existing_ids = {row[0] for row in existing.fetchall()}
         new_videos = [v for v in videos if v["id"] not in existing_ids][:max_docs]
         log.info("corpus_builder.new_videos", count=len(new_videos))
@@ -212,6 +245,7 @@ class CorpusBuilderAgent:
 
             doc = BIReferenceDocORM(
                 id=uuid.uuid4(),
+                library_key=library_key,
                 youtube_id=video["id"],
                 title=video["title"],
                 description=video["description"],
@@ -228,18 +262,21 @@ class CorpusBuilderAgent:
             structures.append(structure)
             titles.append(video["title"])
             saved_docs.append(doc)
-            log.info("corpus_builder.doc_processed", title=video["title"])
+            log.info("corpus_builder.doc_processed", title=video["title"], library_key=library_key)
 
         if len(structures) < settings.bi_corpus_min_docs:
             log.warning(
                 "corpus_builder.insufficient_docs",
+                library_key=library_key,
                 have=len(structures),
                 need=settings.bi_corpus_min_docs,
             )
 
-        # 5. Include already-existing docs in synthesis
+        # 5. Include already-existing docs for this library in synthesis
         if existing_ids:
-            existing_docs_result = await self._db.execute(select(BIReferenceDocORM))
+            existing_docs_result = await self._db.execute(
+                select(BIReferenceDocORM).where(BIReferenceDocORM.library_key == library_key)
+            )
             for existing_doc in existing_docs_result.scalars().all():
                 if existing_doc.extracted_structure and existing_doc.youtube_id not in {
                     v["id"] for v in new_videos
@@ -251,10 +288,12 @@ class CorpusBuilderAgent:
                         pass
 
         # 6. Synthesise patterns across full corpus
-        log.info("corpus_builder.synthesising", doc_count=len(structures))
-        library = await self._synthesise_patterns(saved_docs, structures, titles)
+        log.info("corpus_builder.synthesising", library_key=library_key, doc_count=len(structures))
+        library = await self._synthesise_patterns(
+            saved_docs, structures, titles, channel_label=channel_label
+        )
 
         # 7. Save to DB + cache
-        await self._save_library(library)
-        log.info("corpus_builder.complete", bi_similarity_score=library.doc_count)
+        await self._save_library(library, library_key=library_key)
+        log.info("corpus_builder.complete", library_key=library_key, doc_count=library.doc_count)
         return library

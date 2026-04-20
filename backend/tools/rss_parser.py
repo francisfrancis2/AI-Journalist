@@ -8,14 +8,20 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 from email.utils import parsedate_to_datetime
+from urllib.parse import quote_plus
 
 import feedparser
 import httpx
 import structlog
 
+from backend.config import settings
 from backend.models.research import RawSource, SourceCredibility, SourceType
 
 log = structlog.get_logger(__name__)
+
+GOOGLE_NEWS_RSS_URL = "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
+GOOGLE_NEWS_SEARCH_RSS_BASE = "https://news.google.com/rss/search"
+RSS_FETCH_TIMEOUT_SECONDS = settings.rss_fetch_timeout_seconds
 
 # Curated RSS feeds with pre-assigned credibility ratings
 DEFAULT_FEEDS: dict[str, SourceCredibility] = {
@@ -30,6 +36,8 @@ DEFAULT_FEEDS: dict[str, SourceCredibility] = {
     "https://www.wired.com/feed/rss": SourceCredibility.MEDIUM,
     "https://feeds.feedburner.com/businessinsider": SourceCredibility.MEDIUM,
     "https://www.axios.com/feeds/feed.rss": SourceCredibility.MEDIUM,
+    # Aggregator; article-level credibility varies by original publisher.
+    GOOGLE_NEWS_RSS_URL: SourceCredibility.MEDIUM,
 }
 
 
@@ -63,6 +71,19 @@ def _get_entry_content(entry: feedparser.FeedParserDict) -> str:
     return getattr(entry, "summary", "") or getattr(entry, "description", "")
 
 
+def _build_google_news_search_feed(keyword_filter: Optional[str]) -> Optional[str]:
+    """Return a topic-specific Google News RSS URL when a keyword is available."""
+    if not keyword_filter:
+        return None
+
+    query = keyword_filter.strip()
+    if not query:
+        return None
+
+    encoded_query = quote_plus(query)
+    return f"{GOOGLE_NEWS_SEARCH_RSS_BASE}?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+
+
 class RSSParserTool:
     """
     Polls RSS/Atom feeds and returns structured RawSource objects.
@@ -75,7 +96,23 @@ class RSSParserTool:
     """
 
     def __init__(self, feeds: Optional[dict[str, SourceCredibility]] = None) -> None:
-        self._feeds = feeds or DEFAULT_FEEDS
+        self._uses_default_feeds = feeds is None
+        self._feeds = feeds if feeds is not None else DEFAULT_FEEDS
+
+    async def _download_feed(self, url: str) -> bytes:
+        timeout = httpx.Timeout(
+            RSS_FETCH_TIMEOUT_SECONDS,
+            connect=4.0,
+            read=RSS_FETCH_TIMEOUT_SECONDS,
+        )
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            headers={"User-Agent": "AI-Journalist RSS Reader/0.1"},
+        ) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.content
 
     async def fetch_feed(
         self,
@@ -99,11 +136,18 @@ class RSSParserTool:
         """
         log.info("rss.fetch", url=url)
 
-        loop = asyncio.get_event_loop()
         try:
-            parsed: feedparser.FeedParserDict = await loop.run_in_executor(
-                None, lambda: feedparser.parse(url)
+            content = await asyncio.wait_for(
+                self._download_feed(url),
+                timeout=RSS_FETCH_TIMEOUT_SECONDS + 2,
             )
+            loop = asyncio.get_running_loop()
+            parsed: feedparser.FeedParserDict = await loop.run_in_executor(
+                None, lambda: feedparser.parse(content)
+            )
+        except asyncio.TimeoutError:
+            log.warning("rss.fetch_timeout", url=url)
+            return []
         except Exception as exc:
             log.warning("rss.fetch_failed", url=url, error=str(exc))
             return []
@@ -169,7 +213,16 @@ class RSSParserTool:
                     url, cred, max_entries_per_feed, keyword_filter
                 )
 
-        tasks = [_fetch(url, cred) for url, cred in self._feeds.items()]
+        feeds = dict(self._feeds)
+        google_news_search_feed = (
+            _build_google_news_search_feed(keyword_filter)
+            if self._uses_default_feeds
+            else None
+        )
+        if google_news_search_feed and google_news_search_feed not in feeds:
+            feeds[google_news_search_feed] = SourceCredibility.MEDIUM
+
+        tasks = [_fetch(url, cred) for url, cred in feeds.items()]
         nested = await asyncio.gather(*tasks, return_exceptions=True)
 
         seen: set[str] = set()

@@ -2,17 +2,25 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FilePen, Clock, LogOut } from "lucide-react";
-import { removeToken } from "@/lib/auth";
+import { FilePen, Clock, LogOut, Search, Gauge, ShieldCheck, UserCircle } from "lucide-react";
+import { removeToken, getUserInfo } from "@/lib/auth";
 
 const NAV = [
-  { href: "/",        label: "New Story", icon: FilePen },
-  { href: "/history", label: "History",   icon: Clock },
+  { href: "/",             label: "New Story",    icon: FilePen },
+  { href: "/research",     label: "Research",     icon: Search },
+  { href: "/benchmarking", label: "Benchmarking", icon: Gauge },
+  { href: "/history",      label: "History",      icon: Clock },
+];
+
+const ADMIN_NAV = [
+  { href: "/admin", label: "Admin Console", icon: ShieldCheck },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const user = getUserInfo();
+  const isAdmin = user?.is_admin ?? false;
 
   const handleLogout = () => {
     removeToken();
@@ -89,11 +97,41 @@ export function Sidebar() {
             );
           })}
         </div>
+
+        {isAdmin && (
+          <div style={{ marginTop: 16 }}>
+            <p
+              style={{
+                fontSize: 11,
+                fontWeight: 500,
+                color: "var(--color-text-tertiary)",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+                padding: "6px 10px 8px",
+              }}
+            >
+              Administration
+            </p>
+            {ADMIN_NAV.map(({ href, label, icon: Icon }) => {
+              const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+              return (
+                <Link key={href} href={href} className={`nav-item ${active ? "active" : ""}`}>
+                  <Icon size={15} />
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </nav>
 
       {/* Footer */}
       <div style={{ padding: "8px 8px 12px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-        <button onClick={handleLogout} className="nav-item" style={{ width: "100%", border: "none", background: "none" }}>
+        <Link href="/profile" className={`nav-item ${pathname === "/profile" ? "active" : ""}`}>
+          <UserCircle size={15} />
+          {user?.email ?? "Profile"}
+        </Link>
+        <button onClick={handleLogout} className="nav-item" style={{ width: "100%", border: "none", background: "none", marginTop: 2 }}>
           <LogOut size={15} />
           Sign out
         </button>

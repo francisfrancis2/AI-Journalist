@@ -14,8 +14,12 @@ from backend.models.research import (
     StorylineProposal,
 )
 from backend.models.story import (
+    BenchmarkComparison,
     FinalScript,
     ScriptSection,
+    ScriptAuditCriteria,
+    ScriptAuditReport,
+    ScriptSectionAudit,
     StoryCreate,
     StoryListItem,
     StoryORM,
@@ -46,4 +50,8 @@ __all__ = [
     "StoryListItem",
     "ScriptSection",
     "FinalScript",
+    "ScriptAuditCriteria",
+    "ScriptSectionAudit",
+    "BenchmarkComparison",
+    "ScriptAuditReport",
 ]

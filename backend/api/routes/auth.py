@@ -2,7 +2,6 @@
 Auth routes — register, login, and current-user endpoints.
 """
 
-import uuid
 from datetime import datetime, timedelta, timezone
 
 import structlog
@@ -15,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user
 from backend.config import settings
 from backend.db.database import get_db
-from backend.models.user import LoginRequest, Token, UserCreate, UserORM, UserRead
+from backend.models.user import ChangePasswordRequest, LoginRequest, Token, UserORM, UserRead
 
 log = structlog.get_logger(__name__)
 router = APIRouter()
@@ -40,31 +39,6 @@ def _make_token(user_id: str) -> str:
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )
-
-
-@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)) -> Token:
-    """Create a new account and return a JWT."""
-    result = await db.execute(
-        select(UserORM).where(UserORM.email == payload.email.lower().strip())
-    )
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already registered",
-        )
-
-    user = UserORM(
-        id=uuid.uuid4(),
-        email=payload.email.lower().strip(),
-        hashed_password=_hash(payload.password),
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-
-    log.info("auth.registered", user_id=str(user.id))
-    return Token(access_token=_make_token(str(user.id)))
 
 
 @router.post("/login", response_model=Token)
@@ -94,3 +68,36 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> To
 async def me(current_user: UserORM = Depends(get_current_user)) -> UserORM:
     """Return the currently authenticated user."""
     return current_user
+
+
+@router.post("/dismiss-password-change", status_code=status.HTTP_204_NO_CONTENT)
+async def dismiss_password_change(
+    current_user: UserORM = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Allow user to skip the forced password change and continue to the app."""
+    current_user.must_change_password = False
+    await db.commit()
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: UserORM = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Change the authenticated user's password."""
+    if not _verify(payload.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters",
+        )
+    current_user.hashed_password = _hash(payload.new_password)
+    current_user.must_change_password = False
+    await db.commit()
+    log.info("auth.password_changed", user_id=str(current_user.id))

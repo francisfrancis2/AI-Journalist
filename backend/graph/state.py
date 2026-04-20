@@ -20,6 +20,7 @@ from backend.models.research import (
     StorylineProposal,
 )
 from backend.models.story import FinalScript, StoryTone
+from backend.models.story import ScriptAuditReport
 
 
 class JournalistState(TypedDict):
@@ -37,6 +38,8 @@ class JournalistState(TypedDict):
     story_id: str                           # UUID string of the DB story record
     topic: str                              # Original topic provided by the user
     tone: StoryTone                         # Target documentary tone
+    target_duration_minutes: int             # Requested script duration
+    target_audience: Optional[str]           # Optional audience / platform target
 
     # ── Conversation history (LangGraph built-in reducer) ─────────────────────
     messages: Annotated[list[BaseMessage], add_messages]
@@ -54,12 +57,14 @@ class JournalistState(TypedDict):
 
     # ── Evaluation phase ──────────────────────────────────────────────────────
     evaluation_report: Optional[EvaluationReport]
-    benchmark_report: Optional[BenchmarkReport]  # BI benchmark scores (runs parallel to evaluator)
+    benchmark_report: Optional[BenchmarkReport]  # Benchmark scores (runs parallel to evaluator)
     refinement_cycle: int                   # How many times evaluation→refinement has run
 
     # ── Script phase ──────────────────────────────────────────────────────────
     final_script: Optional[FinalScript]
+    script_audit_report: Optional[ScriptAuditReport]
     script_s3_key: Optional[str]            # S3 key of the uploaded script document
+    script_revision_cycle: int              # How many audit-triggered rewrites have run
 
     # ── Control flow flags ────────────────────────────────────────────────────
     needs_more_research: bool
@@ -75,6 +80,8 @@ def create_initial_state(
     topic: str,
     story_id: Optional[str] = None,
     tone: StoryTone = StoryTone.EXPLANATORY,
+    target_duration_minutes: int = 12,
+    target_audience: Optional[str] = None,
 ) -> JournalistState:
     """
     Factory that returns a correctly-initialised JournalistState.
@@ -91,6 +98,8 @@ def create_initial_state(
         story_id=story_id or str(uuid.uuid4()),
         topic=topic,
         tone=tone,
+        target_duration_minutes=target_duration_minutes,
+        target_audience=target_audience,
         messages=[],
         research_package=None,
         research_iteration=0,
@@ -101,7 +110,9 @@ def create_initial_state(
         benchmark_report=None,
         refinement_cycle=0,
         final_script=None,
+        script_audit_report=None,
         script_s3_key=None,
+        script_revision_cycle=0,
         needs_more_research=False,
         approved_for_scripting=False,
         pipeline_complete=False,

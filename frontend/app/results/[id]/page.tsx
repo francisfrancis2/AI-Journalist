@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { apiClient, type Story, type FinalScript } from "@/lib/api";
+import { downloadScriptPdf } from "@/lib/script-export";
 
-type Tab = "script" | "evaluation" | "benchmark";
+type Tab = "script" | "audit" | "evaluation" | "benchmark";
 
 export default function ResultsPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("script");
   const [downloading, setDownloading] = useState(false);
 
@@ -30,10 +32,32 @@ export default function ResultsPage() {
     enabled: story?.status === "completed",
   });
 
+  useEffect(() => {
+    if (!id) return;
+    return apiClient.streamStoryEvents(
+      id,
+      (nextStory) => {
+        queryClient.setQueryData(["story", id], nextStory);
+        if (nextStory.status === "completed") {
+          queryClient.invalidateQueries({ queryKey: ["script", id] });
+        }
+      },
+      () => undefined
+    );
+  }, [id, queryClient]);
+
+  const rewriteMutation = useMutation({
+    mutationFn: () => apiClient.rewriteStory(id),
+    onSuccess: (nextStory) => {
+      queryClient.setQueryData(["story", id], nextStory);
+      setTab("script");
+    },
+  });
+
   const handleDownload = async () => {
     if (!script) return;
     setDownloading(true);
-    try { downloadScriptFile(script); } finally { setDownloading(false); }
+    try { downloadScriptPdf(script); } finally { setDownloading(false); }
   };
 
   if (isLoading) {
@@ -59,8 +83,9 @@ export default function ResultsPage() {
 
   const TABS: { id: Tab; label: string; available: boolean }[] = [
     { id: "script",     label: "Script",       available: isComplete },
+    { id: "audit",      label: "Script Audit", available: !!story.script_audit_data },
     { id: "evaluation", label: "Evaluation",   available: !!story.evaluation_data },
-    { id: "benchmark",  label: "BI Benchmark", available: !!story.benchmark_data },
+    { id: "benchmark",  label: "Benchmark", available: isComplete },
   ];
 
   return (
@@ -122,15 +147,32 @@ export default function ResultsPage() {
                       Grade <strong style={{ color: "var(--color-text-primary)" }}>{story.benchmark_data.grade}</strong>
                     </span>
                   )}
+                  {story.script_audit_data && (
+                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                      Script Audit <strong style={{ color: "var(--color-text-primary)" }}>{story.script_audit_data.grade}</strong>
+                    </span>
+                  )}
                 </div>
               )}
             </div>
 
             {isComplete && script && (
-              <button onClick={handleDownload} disabled={downloading} className="btn-secondary" style={{ flexShrink: 0, marginLeft: 16 }}>
-                {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                Download PDF
-              </button>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 16 }}>
+                {story.script_audit_data && (
+                  <button
+                    onClick={() => rewriteMutation.mutate()}
+                    disabled={rewriteMutation.isPending}
+                    className="btn-secondary"
+                  >
+                    {rewriteMutation.isPending && <Loader2 size={13} className="animate-spin" />}
+                    Rewrite from audit
+                  </button>
+                )}
+                <button onClick={handleDownload} disabled={downloading} className="btn-secondary">
+                  {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  Download PDF
+                </button>
+              </div>
             )}
           </div>
 
@@ -168,8 +210,10 @@ export default function ResultsPage() {
         {isRunning  && <PipelineStatus story={story} />}
         {isFailed   && <FailedState story={story} />}
         {isComplete && tab === "script"     && script                && <ScriptPanel script={script} />}
+        {isComplete && tab === "audit"      && story.script_audit_data && <ScriptAuditPanel data={story.script_audit_data} storyId={id} />}
         {isComplete && tab === "evaluation" && story.evaluation_data && <EvaluationPanel data={story.evaluation_data} />}
-        {isComplete && tab === "benchmark"  && story.benchmark_data  && <BenchmarkPanel data={story.benchmark_data} />}
+        {isComplete && tab === "benchmark"  && story.benchmark_data  && <BenchmarkPanel data={story.benchmark_data} storyId={id} />}
+        {isComplete && tab === "benchmark"  && !story.benchmark_data && <BenchmarkUnavailablePanel />}
       </div>
     </div>
   );
@@ -284,7 +328,11 @@ function ScriptPanel({ script }: { script: FinalScript }) {
           </div>
 
           {/* Acts */}
-          {script.sections.map((section, i) => (
+          {script.sections.map((section, i) => {
+            const sectionSources = (section.source_ids ?? [])
+              .map((sourceId) => script.sources.find((source) => source.source_id === sourceId))
+              .filter(Boolean) as FinalScript["sources"];
+            return (
             <div key={i} className="card" style={{ marginBottom: 10, overflow: "hidden" }}>
               <button
                 onClick={() => toggle(i)}
@@ -327,13 +375,34 @@ function ScriptPanel({ script }: { script: FinalScript }) {
                 </div>
               </button>
 
-              {open.includes(i) && (
-                <div style={{ padding: "16px 20px 20px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                  <p style={{ fontSize: 13, lineHeight: 1.8 }}>{section.narration}</p>
-                </div>
-              )}
-            </div>
-          ))}
+	              {open.includes(i) && (
+	                <div style={{ padding: "16px 20px 20px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+	                  <p style={{ fontSize: 13, lineHeight: 1.8 }}>{section.narration}</p>
+                    {sectionSources.length > 0 && (
+                      <div style={{ marginTop: 14, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {sectionSources.map((source, sourceIndex) => (
+                          source.url
+                            ? <a
+                                key={`${source.source_id}-${sourceIndex}`}
+                                href={source.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="source-chip"
+                                style={{ textDecoration: "none", color: "var(--color-action)" }}
+                              >
+                                {source.title.slice(0, 32)}{source.title.length > 32 ? "..." : ""}
+                              </a>
+                            : <span key={`${source.source_id}-${sourceIndex}`} className="source-chip">
+                                {source.title.slice(0, 32)}{source.title.length > 32 ? "..." : ""}
+                              </span>
+                        ))}
+                      </div>
+                    )}
+	                </div>
+	              )}
+	            </div>
+            );
+          })}
 
           {/* Closing */}
           <div className="card" style={{ padding: "18px 20px" }}>
@@ -425,8 +494,256 @@ function EvaluationPanel({ data }: { data: NonNullable<Story["evaluation_data"]>
   );
 }
 
+/* ── Script audit panel ── */
+function researchHref(storyId: string, objective: string) {
+  return `/research?story=${storyId}&objective=${encodeURIComponent(objective)}`;
+}
+
+function ScriptAuditPanel({ data, storyId }: { data: NonNullable<Story["script_audit_data"]>; storyId: string }) {
+  const criteria = [
+    { key: "hook_strength", label: "Hook Strength" },
+    { key: "narrative_flow", label: "Narrative Flow" },
+    { key: "evidence_and_specificity", label: "Evidence & Specificity" },
+    { key: "pacing", label: "Pacing" },
+    { key: "writing_quality", label: "Writing Quality" },
+    { key: "production_readiness", label: "Production Readiness" },
+  ] as const;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="card" style={{ padding: "18px 20px", display: "flex", alignItems: "center", gap: 20 }}>
+        <div
+          style={{
+            width: 64,
+            height: 64,
+            background: "var(--color-action)",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 12,
+            fontSize: 26,
+            fontWeight: 600,
+            flexShrink: 0,
+          }}
+        >
+          {data.grade}
+        </div>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
+            Script score: {(data.overall_score * 100).toFixed(0)}%
+          </p>
+          <span className={data.ready_for_production ? "badge badge-success" : "badge badge-danger"} style={{ fontSize: 11, marginBottom: 8 }}>
+            {data.ready_for_production ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
+            {data.ready_for_production ? "Ready for production" : "Needs another script pass"}
+          </span>
+          {data.audit_summary && (
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, marginTop: 8 }}>
+              {data.audit_summary}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: "18px 20px" }}>
+        <div className="section-rule"><span>Criteria breakdown</span></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {criteria.map(({ key, label }) => {
+            const score = data.criteria[key] ?? 0;
+            return (
+              <div key={key}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
+                </div>
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${score * 100}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="card" style={{ padding: "16px 18px" }}>
+          <p className="section-label" style={{ color: "var(--color-success)" }}>Strengths</p>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+            {data.strengths.map((item, i) => (
+              <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="card" style={{ padding: "16px 18px" }}>
+          <p className="section-label" style={{ color: "var(--color-danger)" }}>Weaknesses</p>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+            {data.weaknesses.map((item, i) => (
+              <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                <XCircle size={13} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 1 }} />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {data.rewrite_priorities.length > 0 && (
+        <div className="card" style={{ padding: "16px 18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10 }}>
+            <p className="section-label" style={{ marginBottom: 0 }}>Rewrite priorities</p>
+            <Link
+              href={researchHref(storyId, data.rewrite_priorities[0] ?? "Find stronger sources for the weakest script sections.")}
+              className="btn-secondary"
+              style={{ textDecoration: "none" }}
+            >
+              Run focused research
+            </Link>
+          </div>
+          <ol style={{ margin: 0, padding: "0 0 0 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+            {data.rewrite_priorities.map((item, i) => (
+              <li key={i} style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                {item}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {data.benchmark_comparison && (
+        <div className="card" style={{ padding: "18px 20px" }}>
+          <div className="section-rule"><span>Best-in-class comparison</span></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+              {sanitizeBenchmarkText(data.benchmark_comparison.alignment_summary)}
+            </p>
+            {[
+              ["Hook", data.benchmark_comparison.hook_comparison],
+              ["Structure", data.benchmark_comparison.structure_comparison],
+              ["Data Density", data.benchmark_comparison.data_density_comparison],
+              ["Closing", data.benchmark_comparison.closing_comparison],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-tertiary)", marginBottom: 3 }}>
+                  {label}
+                </p>
+                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                  {sanitizeBenchmarkText(value)}
+                </p>
+              </div>
+            ))}
+            {data.benchmark_comparison.best_in_class_takeaways.length > 0 && (
+              <div>
+                <p className="section-label" style={{ marginBottom: 8 }}>Takeaways</p>
+                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+                  {data.benchmark_comparison.best_in_class_takeaways.map((item, i) => (
+                    <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                      <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
+                      {sanitizeBenchmarkText(item)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {data.section_audits.map((section) => (
+          <div key={section.section_number} className="card" style={{ padding: "16px 18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 500 }}>
+                  Section {section.section_number}: {section.title}
+                </p>
+                <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 }}>
+                  {section.summary}
+                </p>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", flexShrink: 0 }}>
+                {(section.score * 100).toFixed(0)}%
+              </div>
+            </div>
+
+            {(section.strengths.length > 0 || section.weaknesses.length > 0) && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 10 }}>
+                <div>
+                  <p className="section-label" style={{ color: "var(--color-success)", marginBottom: 6 }}>Strengths</p>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {section.strengths.map((item, i) => (
+                      <li key={i} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <p className="section-label" style={{ color: "var(--color-danger)", marginBottom: 6 }}>Weaknesses</p>
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {section.weaknesses.map((item, i) => (
+                      <li key={i} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {section.benchmark_notes.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <p className="section-label" style={{ marginBottom: 6 }}>Benchmark notes</p>
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  {section.benchmark_notes.map((item, i) => (
+                    <li key={i} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                      {sanitizeBenchmarkText(item)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div
+              style={{
+                borderTop: "0.5px solid var(--color-border-tertiary)",
+                paddingTop: 10,
+                fontSize: 12,
+                color: "var(--color-text-secondary)",
+                lineHeight: 1.6,
+              }}
+            >
+              <strong style={{ color: "var(--color-text-primary)" }}>Rewrite recommendation:</strong>{" "}
+              {section.rewrite_recommendation}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BenchmarkUnavailablePanel() {
+  return (
+    <div className="card" style={{ padding: "24px 26px", maxWidth: 560 }}>
+      <div className="section-rule"><span>Benchmark unavailable</span></div>
+      <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: 14 }}>
+        This story finished without a benchmark score. That usually means the benchmark corpus
+        has not been built yet, the cache is missing, or the library needs a refresh.
+      </p>
+      <Link href="/benchmarking" className="btn-secondary" style={{ textDecoration: "none" }}>
+        Open Benchmarking Admin
+      </Link>
+    </div>
+  );
+}
+
+const BENCHMARK_SOURCE_NAMES = /\b(Business Insider|CNBC Make It|CNBC Making It|Vox|Johnny Harris|BI)\b/gi;
+
+function sanitizeBenchmarkText(value: string) {
+  return value.replace(BENCHMARK_SOURCE_NAMES, "benchmark corpus");
+}
+
 /* ── Benchmark panel ── */
-function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }) {
+function BenchmarkPanel({ data, storyId }: { data: NonNullable<Story["benchmark_data"]>; storyId: string }) {
   const metrics = [
     { key: "hook_potency",              label: "Hook Potency" },
     { key: "title_formula_fit",         label: "Title Formula Fit" },
@@ -436,6 +753,9 @@ function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }
     { key: "tension_release_rhythm",    label: "Tension / Release" },
     { key: "closing_device",            label: "Closing Device" },
   ] as const;
+  const detailByCriterion = new Map(
+    (data.criterion_details ?? []).map((detail) => [detail.criterion, detail])
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -460,11 +780,14 @@ function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }
         </div>
         <div>
           <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
-            BI Similarity: {(data.bi_similarity_score * 100).toFixed(0)}%
+            Benchmark score: {(data.bi_similarity_score * 100).toFixed(0)}%
           </p>
-          {data.closest_reference_title && (
-            <p style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-              Closest reference: <em>{data.closest_reference_title}</em>
+          <p style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+            Evaluation across narrative structure, evidence, pacing, and audience engagement criteria.
+          </p>
+          {data.stale && (
+            <p style={{ fontSize: 12, color: "var(--color-warning)", marginTop: 4 }}>
+              Benchmark corpus is stale. Scores may be directionally useful but should be refreshed.
             </p>
           )}
         </div>
@@ -472,10 +795,11 @@ function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }
 
       {/* Metrics */}
       <div className="card" style={{ padding: "18px 20px" }}>
-        <div className="section-rule"><span>Metric scores</span></div>
+        <div className="section-rule"><span>Evaluation criteria</span></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {metrics.map(({ key, label }) => {
             const score = (data[key] as number) ?? 0;
+            const detail = detailByCriterion.get(key);
             return (
               <div key={key}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -485,6 +809,28 @@ function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }
                 <div className="progress-track">
                   <div className="progress-fill" style={{ width: `${score * 100}%` }} />
                 </div>
+                {detail && (
+                  <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                    <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                      {sanitizeBenchmarkText(detail.assessment)}
+                    </p>
+                    {detail.improvement && (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                        <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+                          <strong style={{ color: "var(--color-text-secondary)" }}>Improve:</strong>{" "}
+                          {sanitizeBenchmarkText(detail.improvement)}
+                        </p>
+                        <Link
+                          href={researchHref(storyId, detail.improvement)}
+                          className="btn-ghost"
+                          style={{ textDecoration: "none", flexShrink: 0 }}
+                        >
+                          Research
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -499,7 +845,7 @@ function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }
             {data.strengths.map((s, i) => (
               <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
                 <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
-                {s}
+                {sanitizeBenchmarkText(s)}
               </li>
             ))}
           </ul>
@@ -510,61 +856,25 @@ function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }
             {data.gaps.map((g, i) => (
               <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
                 <XCircle size={13} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 1 }} />
-                {g}
+                {sanitizeBenchmarkText(g)}
               </li>
             ))}
           </ul>
         </div>
       </div>
+
+      {data.status_notes && data.status_notes.length > 0 && (
+        <div className="card" style={{ padding: "16px 18px" }}>
+          <p className="section-label" style={{ marginBottom: 8 }}>Corpus notes</p>
+          <ul style={{ margin: 0, paddingLeft: 16 }}>
+            {data.status_notes.map((note, i) => (
+              <li key={i} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                {sanitizeBenchmarkText(note)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
-}
-
-function downloadScriptFile(script: FinalScript) {
-  const actsHtml = script.sections.map(s => `
-    <div class="act">
-      <h3>Act ${s.section_number}: ${s.title}
-        <span class="dur">${Math.floor(s.estimated_seconds / 60)}:${String(s.estimated_seconds % 60).padStart(2, "0")}</span>
-      </h3>
-      <p>${s.narration.replace(/\n/g, "<br>")}</p>
-    </div>`).join("");
-
-  const sourcesHtml = script.sources.map((s, i) =>
-    `<li>${i + 1}. <strong>[${s.credibility?.toUpperCase()}]</strong> ${
-      s.url ? `<a href="${s.url}">${s.title}</a>` : s.title
-    }</li>`
-  ).join("");
-
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>${script.title}</title>
-<style>
-  body{font-family:Georgia,serif;max-width:680px;margin:40px auto;color:#111;font-size:13px;line-height:1.8}
-  h1{font-size:20px;margin-bottom:4px}
-  .logline{font-style:italic;color:#555;margin-bottom:24px}
-  .hook{background:#f4f4f8;border-left:3px solid #1c26a8;padding:12px 16px;margin-bottom:28px}
-  .hook-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#1c26a8;margin-bottom:6px;font-weight:bold}
-  .act{margin-bottom:24px;page-break-inside:avoid}
-  .act h3{font-size:13px;font-weight:bold;border-bottom:1px solid #e0e0e0;padding-bottom:4px;margin-bottom:6px;display:flex;justify-content:space-between}
-  .dur{font-size:11px;color:#888;font-weight:normal}
-  .closing{border-top:1px solid #ddd;padding-top:20px;margin-top:28px}
-  .sources-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#1c26a8;font-weight:bold;margin-bottom:8px}
-  ul.src{font-size:11px;color:#555;padding-left:16px;line-height:1.6}
-  a{color:#1c26a8}
-  @media print{body{margin:20px}}
-</style></head><body>
-<h1>${script.title}</h1>
-<p class="logline">"${script.logline}"</p>
-<div class="hook"><div class="hook-label">Opening Hook</div><p>${script.opening_hook}</p></div>
-${actsHtml}
-<div class="closing"><h3>Closing Statement</h3><p>${script.closing_statement}</p></div>
-<br><div class="sources-label">Sources (${script.sources.length})</div>
-<ul class="src">${sourcesHtml}</ul>
-</body></html>`;
-
-  const win = window.open("", "_blank");
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 400);
 }

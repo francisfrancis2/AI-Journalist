@@ -15,8 +15,11 @@ class TestCreateInitialState:
         state = create_initial_state(topic=sample_topic)
         assert state["topic"] == sample_topic
         assert state["tone"] == StoryTone.EXPLANATORY
+        assert state["target_duration_minutes"] == 12
+        assert state["target_audience"] is None
         assert state["research_iteration"] == 0
         assert state["refinement_cycle"] == 0
+        assert state["script_revision_cycle"] == 0
         assert state["needs_more_research"] is False
         assert state["approved_for_scripting"] is False
         assert state["pipeline_complete"] is False
@@ -24,6 +27,7 @@ class TestCreateInitialState:
         assert state["analysis_result"] is None
         assert state["selected_storyline"] is None
         assert state["final_script"] is None
+        assert state["script_audit_report"] is None
         assert state["error"] is None
 
     def test_custom_story_id(self, sample_topic):
@@ -40,6 +44,15 @@ class TestCreateInitialState:
     def test_custom_tone(self, sample_topic):
         state = create_initial_state(topic=sample_topic, tone=StoryTone.INVESTIGATIVE)
         assert state["tone"] == StoryTone.INVESTIGATIVE
+
+    def test_custom_script_targets(self, sample_topic):
+        state = create_initial_state(
+            topic=sample_topic,
+            target_duration_minutes=15,
+            target_audience="Business YouTube viewers",
+        )
+        assert state["target_duration_minutes"] == 15
+        assert state["target_audience"] == "Business YouTube viewers"
 
     def test_empty_messages(self, sample_topic):
         state = create_initial_state(topic=sample_topic)

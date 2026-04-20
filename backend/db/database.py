@@ -14,18 +14,28 @@ from sqlalchemy.orm import DeclarativeBase
 
 from backend.config import settings
 
-# Convert a standard postgres:// URL to the asyncpg driver scheme
-_db_url = settings.database_url.replace(
-    "postgresql://", "postgresql+asyncpg://"
-).replace("postgres://", "postgresql+asyncpg://")
+_raw_url = settings.database_url
+
+# asyncpg uses ssl=True connect_arg — strip sslmode from URL to avoid TypeError
+_needs_ssl = "sslmode=require" in _raw_url
+_db_url = (
+    _raw_url
+    .replace("postgresql://", "postgresql+asyncpg://")
+    .replace("postgres://", "postgresql+asyncpg://")
+    .replace("?sslmode=require", "")
+    .replace("&sslmode=require", "")
+    .replace("sslmode=require&", "")
+)
 
 # SQLite (used in tests) doesn't support connection pool args
 _is_sqlite = _db_url.startswith("sqlite")
-_engine_kwargs = {} if _is_sqlite else {
+_engine_kwargs: dict = {} if _is_sqlite else {
     "pool_size": settings.db_pool_size,
     "max_overflow": settings.db_max_overflow,
     "pool_timeout": settings.db_pool_timeout,
 }
+if _needs_ssl:
+    _engine_kwargs["connect_args"] = {"ssl": True}
 
 engine = create_async_engine(
     _db_url,

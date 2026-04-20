@@ -5,14 +5,31 @@ ORM and Pydantic models for Story, Storyline, and Script entities.
 import uuid
 from datetime import datetime
 from enum import Enum
+import re
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import JSON, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from backend.api.security import validate_topic
+from backend.config import settings
 from backend.db.database import Base
+
+
+_BENCHMARK_SOURCE_RE = re.compile(
+    r"\b(Business Insider|CNBC Make It|CNBC Making It|Vox|Johnny Harris|BI)\b",
+    re.IGNORECASE,
+)
+
+
+def _neutralize_benchmark_source_names(value: str) -> str:
+    return _BENCHMARK_SOURCE_RE.sub("benchmark corpus", value)
+
+
+def _neutralize_many(values: list[str]) -> list[str]:
+    return [_neutralize_benchmark_source_names(value) for value in values]
 
 
 # ── Enumerations ──────────────────────────────────────────────────────────────
@@ -50,6 +67,8 @@ class StoryORM(Base):
     topic: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(64), default=StoryStatus.PENDING)
     tone: Mapped[str] = mapped_column(String(64), default=StoryTone.EXPLANATORY)
+    target_duration_minutes: Mapped[int] = mapped_column(Integer, default=12, nullable=False)
+    target_audience: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
 
     # Research artefacts (JSON blobs)
     research_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -57,6 +76,7 @@ class StoryORM(Base):
     storyline_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     evaluation_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     script_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    script_audit_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Quality metrics
     quality_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -66,7 +86,7 @@ class StoryORM(Base):
     # S3 reference for the final script document
     script_s3_key: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
 
-    # BI benchmark scores
+    # Benchmark scores
     benchmark_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Error tracking
@@ -89,13 +109,19 @@ class StoryCreate(BaseModel):
     title: Optional[str] = Field(None, max_length=512, description="Optional working title")
     tone: StoryTone = StoryTone.EXPLANATORY
     target_duration_minutes: int = Field(12, ge=10, le=15)
+    target_audience: Optional[str] = Field(
+        None,
+        max_length=256,
+        description="Optional audience or platform target for the script",
+    )
 
     @field_validator("topic")
     @classmethod
     def topic_not_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Topic cannot be blank")
-        return v.strip()
+        v = v.strip()
+        return validate_topic(v)
 
 
 class StoryRead(BaseModel):
@@ -105,6 +131,8 @@ class StoryRead(BaseModel):
     topic: str
     status: StoryStatus
     tone: StoryTone
+    target_duration_minutes: int
+    target_audience: Optional[str]
     quality_score: Optional[float]
     word_count: Optional[int]
     estimated_duration_minutes: Optional[float]
@@ -113,6 +141,7 @@ class StoryRead(BaseModel):
     iteration_count: int
     evaluation_data: Optional[dict] = None
     benchmark_data: Optional[dict] = None
+    script_audit_data: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
 
@@ -126,6 +155,8 @@ class StoryListItem(BaseModel):
     topic: str
     status: StoryStatus
     tone: StoryTone
+    target_duration_minutes: int
+    target_audience: Optional[str]
     quality_score: Optional[float]
     estimated_duration_minutes: Optional[float]
     created_at: datetime
@@ -139,6 +170,7 @@ class ScriptSection(BaseModel):
     title: str
     narration: str
     estimated_seconds: int = 60
+    source_ids: list[str] = Field(default_factory=list)
 
 
 class FinalScript(BaseModel):
@@ -153,3 +185,104 @@ class FinalScript(BaseModel):
     estimated_duration_minutes: float
     sources: list[dict[str, Any]]
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScriptAuditCriteria(BaseModel):
+    """Scores (0-1) for the quality of the finished script itself."""
+
+    hook_strength: float = Field(0.0, ge=0.0, le=1.0)
+    narrative_flow: float = Field(0.0, ge=0.0, le=1.0)
+    evidence_and_specificity: float = Field(0.0, ge=0.0, le=1.0)
+    pacing: float = Field(0.0, ge=0.0, le=1.0)
+    writing_quality: float = Field(0.0, ge=0.0, le=1.0)
+    production_readiness: float = Field(0.0, ge=0.0, le=1.0)
+
+    @property
+    def overall_score(self) -> float:
+        weights = {
+            "hook_strength": 0.20,
+            "narrative_flow": 0.20,
+            "evidence_and_specificity": 0.20,
+            "pacing": 0.15,
+            "writing_quality": 0.15,
+            "production_readiness": 0.10,
+        }
+        return sum(getattr(self, field) * weight for field, weight in weights.items())
+
+
+class ScriptSectionAudit(BaseModel):
+    """Section-by-section audit output for the final script."""
+
+    section_number: int
+    title: str
+    score: float = Field(0.0, ge=0.0, le=1.0)
+    summary: str
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    benchmark_notes: list[str] = Field(default_factory=list)
+    rewrite_recommendation: str = ""
+
+    @model_validator(mode="after")
+    def neutralize_benchmark_sources(self) -> "ScriptSectionAudit":
+        self.summary = _neutralize_benchmark_source_names(self.summary)
+        self.strengths = _neutralize_many(self.strengths)
+        self.weaknesses = _neutralize_many(self.weaknesses)
+        self.benchmark_notes = _neutralize_many(self.benchmark_notes)
+        self.rewrite_recommendation = _neutralize_benchmark_source_names(self.rewrite_recommendation)
+        return self
+
+
+class BenchmarkComparison(BaseModel):
+    """Best-in-class comparison summary against the benchmark corpus."""
+
+    closest_reference_title: Optional[str] = None
+    alignment_summary: str = ""
+    hook_comparison: str = ""
+    structure_comparison: str = ""
+    data_density_comparison: str = ""
+    closing_comparison: str = ""
+    best_in_class_takeaways: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def neutralize_benchmark_sources(self) -> "BenchmarkComparison":
+        self.closest_reference_title = None
+        self.alignment_summary = _neutralize_benchmark_source_names(self.alignment_summary)
+        self.hook_comparison = _neutralize_benchmark_source_names(self.hook_comparison)
+        self.structure_comparison = _neutralize_benchmark_source_names(self.structure_comparison)
+        self.data_density_comparison = _neutralize_benchmark_source_names(self.data_density_comparison)
+        self.closing_comparison = _neutralize_benchmark_source_names(self.closing_comparison)
+        self.best_in_class_takeaways = _neutralize_many(self.best_in_class_takeaways)
+        return self
+
+
+class ScriptAuditReport(BaseModel):
+    """Full post-script audit report with rewrite guidance."""
+
+    criteria: ScriptAuditCriteria
+    overall_score: float = 0.0
+    grade: str = "C"
+    ready_for_production: bool = False
+    audit_summary: str = ""
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    rewrite_priorities: list[str] = Field(default_factory=list)
+    section_audits: list[ScriptSectionAudit] = Field(default_factory=list)
+    benchmark_comparison: Optional[BenchmarkComparison] = None
+
+    @model_validator(mode="after")
+    def neutralize_benchmark_sources(self) -> "ScriptAuditReport":
+        self.audit_summary = _neutralize_benchmark_source_names(self.audit_summary)
+        self.strengths = _neutralize_many(self.strengths)
+        self.weaknesses = _neutralize_many(self.weaknesses)
+        self.rewrite_priorities = _neutralize_many(self.rewrite_priorities)
+        return self
+
+    def compute_overall(self) -> None:
+        self.overall_score = self.criteria.overall_score
+        self.ready_for_production = self.overall_score >= settings.script_audit_score_threshold
+        self.grade = (
+            "A" if self.overall_score >= 0.85
+            else "B" if self.overall_score >= 0.70
+            else "C" if self.overall_score >= 0.55
+            else "D"
+        )

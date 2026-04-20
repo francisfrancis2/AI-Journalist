@@ -4,13 +4,18 @@ WORKDIR /app
 # ── Dependencies ──────────────────────────────────────────────────────────────
 FROM base AS deps
 COPY package.json package-lock.json* ./
-RUN npm install --frozen-lockfile || npm install
+RUN npm ci
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Proxy target baked into Next.js rewrites at build time.
+ARG BACKEND_INTERNAL_URL=http://backend:8000
+ENV BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL}
+# Empty string forces the browser bundle to use relative URLs → proxied by Next.js rewrites
+ENV NEXT_PUBLIC_API_URL=""
 RUN npm run build
 
 # ── Runner ────────────────────────────────────────────────────────────────────

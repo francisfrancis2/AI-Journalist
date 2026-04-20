@@ -41,7 +41,7 @@ User Topic
 - **Orchestration**: LangGraph `StateGraph`
 - **Web Search**: Tavily API
 - **Web Scraping**: Playwright (headless Chromium)
-- **Data Sources**: NewsAPI, Alpha Vantage, RSS/Atom feeds
+- **Data Sources**: NewsAPI, Alpha Vantage, RSS/Atom feeds including Google News RSS
 - **Backend**: FastAPI + SQLAlchemy (async) + PostgreSQL
 - **Storage**: AWS S3 (LocalStack for local dev)
 - **Frontend**: Next.js 15 + React Query + Tailwind CSS
@@ -146,7 +146,10 @@ AI-Journalist/
 | `POST` | `/api/v1/stories/` | Create story + launch pipeline |
 | `GET` | `/api/v1/stories/` | List all stories |
 | `GET` | `/api/v1/stories/{id}` | Get story details + status |
+| `GET` | `/api/v1/stories/{id}/events` | Stream live story status updates |
 | `GET` | `/api/v1/stories/{id}/script` | Retrieve final script |
+| `POST` | `/api/v1/stories/{id}/focused-research` | Run a story-aware follow-up research pass |
+| `POST` | `/api/v1/stories/{id}/rewrite` | Run an audit-guided script rewrite |
 | `DELETE` | `/api/v1/stories/{id}` | Delete a story |
 
 ### Research Tools
@@ -159,7 +162,7 @@ AI-Journalist/
 | `POST` | `/api/v1/research/financial/prices` | Stock price history |
 | `GET` | `/api/v1/research/financial/search` | Ticker symbol search |
 | `GET` | `/api/v1/research/rss/fetch` | Parse a single RSS feed |
-| `GET` | `/api/v1/research/rss/defaults` | Poll all default feeds |
+| `GET` | `/api/v1/research/rss/defaults` | Poll all default feeds, including Google News RSS |
 
 ## Configuration
 
@@ -170,10 +173,14 @@ All settings live in `backend/config.py` and are loaded from `.env`:
 | `ANTHROPIC_API_KEY` | Claude API key |
 | `TAVILY_API_KEY` | Tavily search API key |
 | `NEWS_API_KEY` | NewsAPI key |
+| `RSS_FETCH_TIMEOUT_SECONDS` | Per-feed RSS timeout in seconds (default: 8) |
 | `ALPHA_VANTAGE_API_KEY` | Alpha Vantage key |
 | `DATABASE_URL` | PostgreSQL connection string |
+| `RUN_MIGRATIONS_ON_STARTUP` | Apply Alembic migrations when the backend starts (default: true) |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | AWS credentials (use `test`/`test` with LocalStack) |
-| `CLAUDE_MODEL` | Defaults to `claude-opus-4-6` |
+| `JWT_SECRET_KEY` | JWT signing secret |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Optional first admin account; created with `must_change_password=true` and never reset automatically after creation |
+| `CLAUDE_MODEL` | Defaults to `claude-sonnet-4-6` |
 | `MAX_RESEARCH_ITERATIONS` | How many times the researcher can re-run (default: 3) |
 | `MAX_REFINEMENT_CYCLES` | Evaluator→refinement loops before forcing output (default: 2) |
-| `QUALITY_SCORE_THRESHOLD` | Minimum score (0–1) to approve a storyline (default: 0.75) |
+| `QUALITY_SCORE_THRESHOLD` | Minimum score (0–1) to approve a storyline (default: 0.70) |

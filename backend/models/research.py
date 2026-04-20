@@ -3,6 +3,7 @@ Pydantic models that represent intermediate research and analysis artefacts
 flowing through the LangGraph pipeline.
 """
 
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
@@ -32,6 +33,7 @@ class SourceCredibility(str, Enum):
 
 class RawSource(BaseModel):
     """A single piece of information gathered from any data source."""
+    source_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     source_type: SourceType
     url: Optional[str] = None
     title: str
@@ -71,12 +73,35 @@ class ResearchPackage(BaseModel):
         return sorted(self.sources, key=lambda s: s.relevance_score, reverse=True)[:n]
 
 
+# ── Focused follow-up research ────────────────────────────────────────────────
+
+class FocusedResearchPlan(BaseModel):
+    """Story-aware plan for a follow-up research pass."""
+    objective: str
+    evaluation_focus: list[str] = Field(default_factory=list)
+    source_strategy: list[str] = Field(default_factory=list)
+    source_strategy_reasoning: str = ""
+    primary_queries: list[str] = Field(default_factory=list)
+    deep_dive_queries: list[str] = Field(default_factory=list)
+    financial_symbols: list[str] = Field(default_factory=list)
+    rss_keyword: str = ""
+    expected_improvements: list[str] = Field(default_factory=list)
+
+
+class FocusedResearchRun(BaseModel):
+    """Result returned by the focused research agent."""
+    plan: FocusedResearchPlan
+    summary: str
+    sources: list[RawSource] = Field(default_factory=list)
+
+
 # ── Analysis ──────────────────────────────────────────────────────────────────
 
 class KeyFinding(BaseModel):
     """A single verified fact or insight extracted from raw sources."""
     claim: str
     supporting_sources: list[str] = Field(default_factory=list)  # source URLs / titles
+    supporting_source_ids: list[str] = Field(default_factory=list)
     confidence: float = Field(0.5, ge=0.0, le=1.0)
     category: str = "general"  # e.g. "financial", "human_interest", "trend"
 

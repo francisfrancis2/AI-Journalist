@@ -22,6 +22,10 @@ from backend.models.research import (
     StorylineProposal,
 )
 from backend.models.story import (
+    BenchmarkComparison,
+    ScriptAuditCriteria,
+    ScriptAuditReport,
+    ScriptSectionAudit,
     FinalScript,
     ScriptSection,
     StoryCreate,
@@ -39,6 +43,7 @@ class TestRawSource:
             title="Test Article",
             content="Some content here.",
         )
+        assert uuid.UUID(src.source_id)
         assert src.source_type == SourceType.WEB_SEARCH
         assert src.credibility == SourceCredibility.MEDIUM
         assert src.relevance_score == 0.5
@@ -163,6 +168,85 @@ class TestEvaluationReport:
         assert report.approved_for_scripting is False
 
 
+# ── ScriptAuditCriteria / Report ─────────────────────────────────────────────
+
+class TestScriptAuditCriteria:
+    def test_overall_score_weighted(self):
+        criteria = ScriptAuditCriteria(
+            hook_strength=1.0,
+            narrative_flow=1.0,
+            evidence_and_specificity=1.0,
+            pacing=1.0,
+            writing_quality=1.0,
+            production_readiness=1.0,
+        )
+        assert criteria.overall_score == pytest.approx(1.0)
+
+
+class TestScriptAuditReport:
+    def test_compute_overall_assigns_grade(self):
+        report = ScriptAuditReport(
+            criteria=ScriptAuditCriteria(
+                hook_strength=0.9,
+                narrative_flow=0.9,
+                evidence_and_specificity=0.9,
+                pacing=0.9,
+                writing_quality=0.9,
+                production_readiness=0.9,
+            ),
+            audit_summary="Strong final script.",
+        )
+        report.compute_overall()
+        assert report.ready_for_production is True
+        assert report.grade == "A"
+
+    def test_compute_overall_rejects_weak_script(self):
+        report = ScriptAuditReport(
+            criteria=ScriptAuditCriteria(
+                hook_strength=0.3,
+                narrative_flow=0.4,
+                evidence_and_specificity=0.4,
+                pacing=0.4,
+                writing_quality=0.5,
+                production_readiness=0.5,
+            ),
+            audit_summary="Needs heavy revision.",
+        )
+        report.compute_overall()
+        assert report.ready_for_production is False
+
+    def test_benchmark_source_names_are_neutralized(self):
+        report = ScriptAuditReport(
+            criteria=ScriptAuditCriteria(),
+            audit_summary="Close to Business Insider pacing.",
+            strengths=["CNBC Make It-style character framing."],
+            rewrite_priorities=["Add Vox-like explanation."],
+            section_audits=[
+                ScriptSectionAudit(
+                    section_number=1,
+                    title="Hook",
+                    summary="Johnny Harris-style setup.",
+                    benchmark_notes=["BI-style opening."],
+                    rewrite_recommendation="Use less Business Insider framing.",
+                )
+            ],
+            benchmark_comparison=BenchmarkComparison(
+                closest_reference_title="A real reference title",
+                alignment_summary="Very Vox-like.",
+                best_in_class_takeaways=["Avoid naming CNBC Making It."],
+            ),
+        )
+
+        dumped = str(report.model_dump())
+        assert "Business Insider" not in dumped
+        assert "CNBC Make It" not in dumped
+        assert "CNBC Making It" not in dumped
+        assert "Vox" not in dumped
+        assert "Johnny Harris" not in dumped
+        assert report.benchmark_comparison is not None
+        assert report.benchmark_comparison.closest_reference_title is None
+
+
 # ── StorylineProposal ─────────────────────────────────────────────────────────
 
 class TestStorylineProposal:
@@ -197,6 +281,24 @@ class TestStoryCreate:
     def test_valid_creation(self):
         story = StoryCreate(topic="This is a valid topic of sufficient length.")
         assert story.tone == StoryTone.EXPLANATORY
+        assert story.target_duration_minutes == 12
+        assert story.target_audience is None
+
+    def test_valid_targeting_options(self):
+        story = StoryCreate(
+            topic="This is a valid topic of sufficient length.",
+            target_duration_minutes=15,
+            target_audience="Founders and operators",
+        )
+        assert story.target_duration_minutes == 15
+        assert story.target_audience == "Founders and operators"
+
+    def test_duration_must_stay_in_supported_range(self):
+        with pytest.raises(Exception):
+            StoryCreate(
+                topic="This is a valid topic of sufficient length.",
+                target_duration_minutes=20,
+            )
 
     def test_topic_too_short(self):
         with pytest.raises(Exception):

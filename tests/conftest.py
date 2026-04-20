@@ -27,6 +27,10 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-key-for-tests-only")
 # ── Now it's safe to import backend modules ───────────────────────────────────
 from backend.api.deps import get_current_user
 from backend.db.database import Base, get_db
+from backend.models.benchmark import (  # noqa: F401 — registers benchmark tables with metadata
+    BIPatternLibraryORM,
+    BIReferenceDocORM,
+)
 from backend.models.user import UserORM
 from backend.models.story import StoryORM  # noqa: F401 — registers table with metadata
 

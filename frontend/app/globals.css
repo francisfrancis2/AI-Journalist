@@ -39,6 +39,8 @@
     /* ── Layout ── */
     --sidebar-w:                  220px;
     --font-sans:                  -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --font-serif:                 var(--font-fraunces), Georgia, serif;
+    --font-mono:                  var(--font-jetbrains), ui-monospace, monospace;
   }
 
   *, *::before, *::after { box-sizing: border-box; }

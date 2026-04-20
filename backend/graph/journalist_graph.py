@@ -3,6 +3,7 @@ LangGraph StateGraph definition for the AI Journalist multi-agent pipeline.
 
 Pipeline stages:
   researcher → analyst → storyline_creator → evaluator → [scriptwriter | researcher]
+                                              scriptwriter → script_evaluator → [script_rewriter | END]
 
 Routing logic:
   - After evaluator: if approved → scriptwriter, else if cycles < max → storyline_creator,
@@ -19,6 +20,8 @@ from backend.agents.analyst import AnalystAgent
 from backend.agents.benchmarker import BenchmarkAgent
 from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.researcher import ResearcherAgent
+from backend.agents.script_evaluator import ScriptEvaluatorAgent
+from backend.agents.script_rewriter import ScriptRewriterAgent
 from backend.agents.scriptwriter import ScriptwriterAgent
 from backend.agents.storyline_creator import StorylineCreatorAgent
 from backend.config import settings
@@ -33,6 +36,8 @@ _storyline_creator = StorylineCreatorAgent()
 _evaluator = EvaluatorAgent()
 _benchmarker = BenchmarkAgent()
 _scriptwriter = ScriptwriterAgent()
+_script_evaluator = ScriptEvaluatorAgent()
+_script_rewriter = ScriptRewriterAgent()
 
 
 # ── Node functions ─────────────────────────────────────────────────────────────
@@ -99,11 +104,30 @@ async def scriptwriter_node(state: JournalistState) -> dict:
     """Run the Scriptwriter agent to produce the final production-ready script."""
     log.info("graph.node.scriptwriter", story_id=state["story_id"])
     try:
-        updates = await _scriptwriter.run(state)
-        return {**updates, "pipeline_complete": True}
+        return await _scriptwriter.run(state)
     except Exception as exc:
         log.error("graph.node.scriptwriter.error", error=str(exc))
         return {"error": str(exc), "failed_node": "scriptwriter"}
+
+
+async def script_evaluator_node(state: JournalistState) -> dict:
+    """Run the post-script evaluator. Fail open so the completed script is preserved."""
+    log.info("graph.node.script_evaluator", story_id=state["story_id"])
+    try:
+        return await _script_evaluator.run(state)
+    except Exception as exc:
+        log.warning("graph.node.script_evaluator.error", error=str(exc))
+        return {"script_audit_report": None}
+
+
+async def script_rewriter_node(state: JournalistState) -> dict:
+    """Run one audit-driven script revision pass."""
+    log.info("graph.node.script_rewriter", story_id=state["story_id"])
+    try:
+        return await _script_rewriter.run(state)
+    except Exception as exc:
+        log.warning("graph.node.script_rewriter.error", error=str(exc))
+        return {"error": str(exc), "failed_node": "script_rewriter"}
 
 
 # ── Conditional routing ────────────────────────────────────────────────────────
@@ -148,6 +172,21 @@ def route_after_storyline_creator(state: JournalistState) -> str:
     return "evaluator"
 
 
+def route_after_script_evaluator(state: JournalistState) -> str:
+    """Rewrite the script once when the post-script audit is below threshold."""
+    if state.get("error"):
+        return END
+    audit = state.get("script_audit_report")
+    if audit is None:
+        return END
+    if (
+        audit.overall_score < settings.script_audit_score_threshold
+        and state.get("script_revision_cycle", 0) < settings.max_script_revision_cycles
+    ):
+        return "script_rewriter"
+    return END
+
+
 def route_after_researcher(state: JournalistState) -> str:
     """Always continue to analyst after research (error guard only)."""
     if state.get("error"):
@@ -172,6 +211,8 @@ def build_journalist_graph() -> StateGraph:
     graph.add_node("storyline_creator", storyline_creator_node)
     graph.add_node("evaluator", evaluator_node)
     graph.add_node("scriptwriter", scriptwriter_node)
+    graph.add_node("script_evaluator", script_evaluator_node)
+    graph.add_node("script_rewriter", script_rewriter_node)
 
     # Entry point
     graph.set_entry_point("researcher")
@@ -199,8 +240,12 @@ def build_journalist_graph() -> StateGraph:
         },
     )
 
-    # Terminal edge
-    graph.add_edge("scriptwriter", END)
+    graph.add_edge("scriptwriter", "script_evaluator")
+    graph.add_conditional_edges("script_evaluator", route_after_script_evaluator, {
+        "script_rewriter": "script_rewriter",
+        END: END,
+    })
+    graph.add_edge("script_rewriter", "script_evaluator")
 
     return graph.compile()
 

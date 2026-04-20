@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { isAuthenticated } from "@/lib/auth";
+import { isAuthenticated, getUserInfo } from "@/lib/auth";
 
-const PUBLIC_PATHS = ["/login", "/register"]; // /register now redirects to /login tabs
+const PUBLIC_PATHS = ["/login", "/register"];
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -12,15 +12,21 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    setReady(false);
     if (PUBLIC_PATHS.includes(pathname)) {
       setReady(true);
       return;
     }
     if (!isAuthenticated()) {
       router.replace("/login");
-    } else {
-      setReady(true);
+      return;
     }
+    const user = getUserInfo();
+    if (user?.must_change_password && !user.is_admin && pathname !== "/change-password") {
+      router.replace("/change-password");
+      return;
+    }
+    setReady(true);
   }, [pathname, router]);
 
   if (!ready) return null;
