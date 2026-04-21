@@ -3,13 +3,13 @@ WORKDIR /app
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 FROM base AS deps
-COPY package.json package-lock.json* ./
+COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY frontend/ .
 ENV NEXT_TELEMETRY_DISABLED=1
 # Proxy target baked into Next.js rewrites at build time.
 ARG BACKEND_INTERNAL_URL=http://backend:8000
