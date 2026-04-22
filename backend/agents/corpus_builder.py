@@ -20,7 +20,7 @@ from typing import Optional
 import structlog
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,6 +84,13 @@ class _PatternSynthesisOutput(BaseModel):
     human_story_act_avg: float
     sample_hooks: list[str] = Field(max_length=5)
     key_observations: list[str]
+
+    @field_validator("sample_hooks", "key_observations", mode="before")
+    @classmethod
+    def _coerce_str_to_list(cls, v: object) -> object:
+        if isinstance(v, str):
+            return [v]
+        return v
 
 
 _SYNTHESISE_SYSTEM_TEMPLATE = """You are a documentary research analyst. Given structural data from multiple
@@ -218,6 +225,195 @@ class CorpusBuilderAgent:
             version=version,
             doc_count=library.doc_count,
         )
+
+    @staticmethod
+    def _structure_from_doc(doc: BIReferenceDocORM) -> Optional[DocStructure]:
+        if not doc.extracted_structure:
+            return None
+        try:
+            return DocStructure(**doc.extracted_structure)
+        except Exception:
+            return None
+
+    async def refresh_latest_fraction(
+        self,
+        max_docs: int = 50,
+        library_key: str = "bi",
+        channel_label: str = "Business Insider",
+        channel_identifier: Optional[str] = None,
+        refresh_fraction: float = 0.25,
+    ) -> BIPatternLibrary:
+        """
+        Refresh up to a fraction of an existing corpus with the newest channel videos.
+
+        If the corpus is missing or under the minimum size, this falls back to the
+        full build path because there is no healthy baseline to partially rotate.
+        """
+        channel_id = channel_identifier or settings.get_channel_identifier(library_key)
+        fraction = min(max(refresh_fraction, 0.0), 1.0)
+
+        existing_result = await self._db.execute(
+            select(BIReferenceDocORM)
+            .where(BIReferenceDocORM.library_key == library_key)
+            .order_by(BIReferenceDocORM.created_at.asc())
+        )
+        existing_docs = list(existing_result.scalars().all())
+        if len(existing_docs) < settings.bi_corpus_min_docs or fraction <= 0:
+            log.info(
+                "corpus_builder.refresh_fallback_full_build",
+                library_key=library_key,
+                existing_docs=len(existing_docs),
+                refresh_fraction=fraction,
+            )
+            return await self.build(
+                max_docs=max_docs,
+                library_key=library_key,
+                channel_label=channel_label,
+                channel_identifier=channel_id,
+            )
+
+        refresh_count = max(1, int(len(existing_docs) * fraction))
+        candidate_limit = max(max_docs, refresh_count * 4, refresh_count + 10)
+        existing_ids = {doc.youtube_id for doc in existing_docs}
+
+        log.info(
+            "corpus_builder.refresh_start",
+            library_key=library_key,
+            channel_label=channel_label,
+            existing_docs=len(existing_docs),
+            refresh_count=refresh_count,
+            candidate_limit=candidate_limit,
+        )
+
+        videos = await self._fetcher.get_channel_videos(
+            channel_id=channel_id,
+            max_results=candidate_limit,
+            order="date",
+        )
+        fresh_videos = [video for video in videos if video["id"] not in existing_ids]
+        log.info(
+            "corpus_builder.refresh_candidates",
+            library_key=library_key,
+            fetched_videos=len(videos),
+            fresh_videos=len(fresh_videos),
+        )
+
+        new_docs: list[BIReferenceDocORM] = []
+        new_structures: list[DocStructure] = []
+        new_titles: list[str] = []
+        missing_transcript_count = 0
+        extraction_failure_count = 0
+
+        for video in fresh_videos:
+            transcripts = await self._fetcher.get_transcripts_batch(
+                [video["id"]], concurrency=1
+            )
+            transcript = transcripts.get(video["id"])
+            if not transcript:
+                missing_transcript_count += 1
+                log.warning(
+                    "corpus_builder.no_transcript",
+                    video_id=video["id"],
+                    title=video["title"],
+                )
+                continue
+
+            structure = await self._extract_structure(video["title"], transcript)
+            if not structure:
+                extraction_failure_count += 1
+                continue
+
+            new_docs.append(
+                BIReferenceDocORM(
+                    id=uuid.uuid4(),
+                    library_key=library_key,
+                    youtube_id=video["id"],
+                    title=video["title"],
+                    description=video["description"],
+                    view_count=video["view_count"],
+                    like_count=video["like_count"],
+                    duration_seconds=video["duration_seconds"],
+                    transcript=transcript,
+                    extracted_structure=structure.model_dump(),
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
+            new_structures.append(structure)
+            new_titles.append(video["title"])
+            log.info(
+                "corpus_builder.refresh_doc_processed",
+                title=video["title"],
+                library_key=library_key,
+            )
+            if len(new_docs) >= refresh_count:
+                break
+
+        if not new_docs:
+            raise RuntimeError(
+                f"Benchmark corpus '{library_key}' could not refresh: no new usable "
+                f"fresh videos were found. Fetched {len(videos)} candidate videos, "
+                f"{missing_transcript_count} had no transcript, and "
+                f"{extraction_failure_count} failed structure extraction."
+            )
+
+        docs_to_replace = existing_docs[:len(new_docs)]
+        replace_ids = {doc.youtube_id for doc in docs_to_replace}
+        retained_docs = [doc for doc in existing_docs if doc.youtube_id not in replace_ids]
+
+        structures: list[DocStructure] = []
+        titles: list[str] = []
+        for doc in retained_docs:
+            structure = self._structure_from_doc(doc)
+            if structure is not None:
+                structures.append(structure)
+                titles.append(doc.title)
+        structures.extend(new_structures)
+        titles.extend(new_titles)
+
+        if len(structures) < settings.bi_corpus_min_docs:
+            log.error(
+                "corpus_builder.refresh_insufficient_docs",
+                library_key=library_key,
+                have=len(structures),
+                need=settings.bi_corpus_min_docs,
+                fetched_videos=len(videos),
+                new_videos=len(new_docs),
+                missing_transcripts=missing_transcript_count,
+                extraction_failures=extraction_failure_count,
+            )
+            raise InsufficientBenchmarkCorpusError(
+                library_key=library_key,
+                have=len(structures),
+                need=settings.bi_corpus_min_docs,
+                fetched_videos=len(videos),
+                new_videos=len(new_docs),
+                missing_transcripts=missing_transcript_count,
+                extraction_failures=extraction_failure_count,
+            )
+
+        log.info(
+            "corpus_builder.refresh_synthesising",
+            library_key=library_key,
+            doc_count=len(structures),
+            replaced_docs=len(new_docs),
+        )
+        library = await self._synthesise_patterns(
+            new_docs, structures, titles, channel_label=channel_label
+        )
+
+        for doc in docs_to_replace:
+            await self._db.delete(doc)
+        self._db.add_all(new_docs)
+        await self._save_library(library, library_key=library_key)
+
+        log.info(
+            "corpus_builder.refresh_complete",
+            library_key=library_key,
+            doc_count=library.doc_count,
+            replaced_docs=len(new_docs),
+            requested_refresh_docs=refresh_count,
+        )
+        return library
 
     async def build(
         self,
