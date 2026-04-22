@@ -43,6 +43,7 @@ bcrypt==4.0.1
 
 # ── YouTube / Benchmarking ─────────────────────────────────────────────────────
 google-api-python-client==2.154.0
+youtube-transcript-api>=1.0.3
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 python-dotenv==1.0.1

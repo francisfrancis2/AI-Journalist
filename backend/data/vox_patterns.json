@@ -1,14 +1,58 @@
 {
-  "version": 1,
-  "doc_count": 0,
-  "avg_act_count": 0.0,
-  "avg_act_duration_seconds": 0.0,
-  "hook_type_distribution": {},
-  "title_formula_distribution": {},
-  "closing_device_distribution": {},
-  "avg_stat_count": 0.0,
-  "avg_rhetorical_questions": 0.0,
-  "human_story_act_avg": 0.0,
-  "sample_hooks": [],
-  "sample_titles": []
+  "version": 2,
+  "doc_count": 13,
+  "avg_act_count": 4.31,
+  "avg_act_duration_seconds": 233.15,
+  "hook_type_distribution": {
+    "narrative anecdote/incident": 0.38,
+    "historical context/problem setup": 0.15,
+    "statistic": 0.08,
+    "personal testimony": 0.08,
+    "question": 0.08,
+    "visual demonstration": 0.08,
+    "rapid montage": 0.08,
+    "dramatic contrast": 0.07
+  },
+  "title_formula_distribution": {
+    "How + [Subject/Action/Process]": 0.38,
+    "Why + [Problem/Phenomenon]": 0.23,
+    "Historical event + catalytic trigger": 0.08,
+    "Person + explanatory phrase": 0.08,
+    "Year + time format": 0.08,
+    "Problem + solution format": 0.08,
+    "Investigative Why + claim + explanation": 0.07
+  },
+  "closing_device_distribution": {
+    "thematic callback to opening hook": 0.31,
+    "call to action / policy recommendation": 0.23,
+    "rhetorical question / expert commentary": 0.15,
+    "logical conclusion with evidence": 0.15,
+    "philosophical reflection": 0.08,
+    "thematic summary / forward-looking implication": 0.08
+  },
+  "avg_stat_count": 7.38,
+  "avg_rhetorical_questions": 2.15,
+  "human_story_act_avg": 2.0,
+  "sample_hooks": [
+    "On August 19, 2020, Russian politician Alexei Navalny was shooting this campaign video... Navalny had been poisoned. (Doc 5 — narrative incident)",
+    "On January 23rd, a family in China traveled from Wuhan... Within a few days, other members of the family started showing symptoms. (Doc 4 — narrative anecdote)",
+    "I was adopted by a white missionary couple... they took the idea that they were saving me, saving us from ourselves. (Doc 10 — personal testimony)",
+    "On March 5th, 2022, Russian gymnast Ivan Kuliak stepped on the podium... attaching this symbol to his uniform: three pieces of white tape, forming the letter Z. (Doc 7 — anecdotal/event-based)",
+    "This chart shows China's birth and death rate over the last 60 years... in 2022, China had more deaths than births for the first time in 6 decades. (Doc 9 — statistic)"
+  ],
+  "sample_titles": [
+    "This photo triggered China's Cultural Revolution",
+    "Why people think this photo of JFK's killer is fake",
+    "2019, in 6 minutes",
+    "How coronavirus spreads outdoors vs. indoors",
+    "How Alexei Navalny became Putin's greatest threat",
+    "Why roller coaster loops aren't circular",
+    "How “Z” became Putin’s new propaganda meme",
+    "The gun solution we're not talking about",
+    "Why China's population is shrinking",
+    "How the US stole thousands of Native American children",
+    "How the British royal family makes money",
+    "The rise of Xi Jinping, explained",
+    "How Olympic divers make the perfect tiny splash"
+  ]
 }

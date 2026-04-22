@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
+from backend.db.database import AsyncSessionLocal
 from backend.models.benchmark import (
     BIPatternLibrary,
     BIPatternLibraryORM,
@@ -180,14 +181,15 @@ class CorpusBuilderAgent:
         )
 
     async def _get_next_version(self, library_key: str) -> int:
-        result = await self._db.execute(
-            select(BIPatternLibraryORM)
-            .where(BIPatternLibraryORM.library_key == library_key)
-            .order_by(BIPatternLibraryORM.version.desc())
-            .limit(1)
-        )
-        latest = result.scalar_one_or_none()
-        return (latest.version + 1) if latest else 1
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(BIPatternLibraryORM)
+                .where(BIPatternLibraryORM.library_key == library_key)
+                .order_by(BIPatternLibraryORM.version.desc())
+                .limit(1)
+            )
+            latest = result.scalar_one_or_none()
+            return (latest.version + 1) if latest else 1
 
     async def _save_library(
         self, library: BIPatternLibrary, library_key: str
@@ -211,8 +213,9 @@ class CorpusBuilderAgent:
             patterns=library.model_dump(),
             created_at=datetime.now(timezone.utc),
         )
-        self._db.add(orm)
-        await self._db.commit()
+        async with AsyncSessionLocal() as session:
+            session.add(orm)
+            await session.commit()
 
         # Write JSON cache for fast loading in BenchmarkAgent
         cache_path = Path(settings.get_pattern_cache_path(library_key))
@@ -252,12 +255,13 @@ class CorpusBuilderAgent:
         channel_id = channel_identifier or settings.get_channel_identifier(library_key)
         fraction = min(max(refresh_fraction, 0.0), 1.0)
 
-        existing_result = await self._db.execute(
-            select(BIReferenceDocORM)
-            .where(BIReferenceDocORM.library_key == library_key)
-            .order_by(BIReferenceDocORM.created_at.asc())
-        )
-        existing_docs = list(existing_result.scalars().all())
+        async with AsyncSessionLocal() as session:
+            existing_result = await session.execute(
+                select(BIReferenceDocORM)
+                .where(BIReferenceDocORM.library_key == library_key)
+                .order_by(BIReferenceDocORM.created_at.asc())
+            )
+            existing_docs = list(existing_result.scalars().all())
         if len(existing_docs) < settings.bi_corpus_min_docs or fraction <= 0:
             log.info(
                 "corpus_builder.refresh_fallback_full_build",
@@ -401,9 +405,11 @@ class CorpusBuilderAgent:
             new_docs, structures, titles, channel_label=channel_label
         )
 
-        for doc in docs_to_replace:
-            await self._db.delete(doc)
-        self._db.add_all(new_docs)
+        async with AsyncSessionLocal() as session:
+            for doc in docs_to_replace:
+                await session.delete(await session.merge(doc))
+            session.add_all(new_docs)
+            await session.commit()
         await self._save_library(library, library_key=library_key)
 
         log.info(
@@ -449,11 +455,12 @@ class CorpusBuilderAgent:
         log.info("corpus_builder.videos_fetched", count=len(videos))
 
         # 2. Skip videos already in DB for this library
-        existing = await self._db.execute(
-            select(BIReferenceDocORM.youtube_id)
-            .where(BIReferenceDocORM.library_key == library_key)
-        )
-        existing_ids = {row[0] for row in existing.fetchall()}
+        async with AsyncSessionLocal() as session:
+            existing = await session.execute(
+                select(BIReferenceDocORM.youtube_id)
+                .where(BIReferenceDocORM.library_key == library_key)
+            )
+            existing_ids = {row[0] for row in existing.fetchall()}
         new_videos = [v for v in videos if v["id"] not in existing_ids][:max_docs]
         log.info("corpus_builder.new_videos", count=len(new_videos))
 
@@ -494,8 +501,9 @@ class CorpusBuilderAgent:
                 extracted_structure=structure.model_dump(),
                 created_at=datetime.now(timezone.utc),
             )
-            self._db.add(doc)
-            await self._db.commit()
+            async with AsyncSessionLocal() as session:
+                session.add(doc)
+                await session.commit()
 
             structures.append(structure)
             titles.append(video["title"])
@@ -505,16 +513,17 @@ class CorpusBuilderAgent:
         # 5. Include already-existing docs for this library in synthesis
         new_video_ids = {v["id"] for v in new_videos}
         if existing_ids:
-            existing_docs_result = await self._db.execute(
-                select(BIReferenceDocORM).where(BIReferenceDocORM.library_key == library_key)
-            )
-            for existing_doc in existing_docs_result.scalars().all():
-                if existing_doc.extracted_structure and existing_doc.youtube_id not in new_video_ids:
-                    try:
-                        structures.append(DocStructure(**existing_doc.extracted_structure))
-                        titles.append(existing_doc.title)
-                    except Exception:
-                        pass
+            async with AsyncSessionLocal() as session:
+                existing_docs_result = await session.execute(
+                    select(BIReferenceDocORM).where(BIReferenceDocORM.library_key == library_key)
+                )
+                for existing_doc in existing_docs_result.scalars().all():
+                    if existing_doc.extracted_structure and existing_doc.youtube_id not in new_video_ids:
+                        try:
+                            structures.append(DocStructure(**existing_doc.extracted_structure))
+                            titles.append(existing_doc.title)
+                        except Exception:
+                            pass
 
         if len(structures) < settings.bi_corpus_min_docs:
             log.error(
