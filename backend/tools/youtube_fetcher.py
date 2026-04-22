@@ -4,13 +4,11 @@ Used by the CorpusBuilderAgent to collect documentary data.
 """
 
 import asyncio
-import http.cookiejar
 import os
 import re
 import tempfile
 from typing import Optional
 
-import requests
 import structlog
 from googleapiclient.discovery import build
 
@@ -42,7 +40,6 @@ def _resolve_cookies_path() -> Optional[str]:
 
     content = settings.youtube_cookies_content
     if content:
-        # Write inline content to a temp file so MozillaCookieJar can load it.
         tmp = tempfile.NamedTemporaryFile(
             mode="w", suffix=".txt", prefix="yt_cookies_", delete=False
         )
@@ -55,52 +52,111 @@ def _resolve_cookies_path() -> Optional[str]:
     return None
 
 
-def _build_http_session() -> requests.Session:
-    """Build a requests.Session with YouTube cookies if configured."""
-    session = requests.Session()
-    session.headers["User-Agent"] = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0.0.0 Safari/537.36"
-    )
+def _fetch_transcript_sync(video_id: str) -> Optional[str]:
+    """Fetch transcript via yt-dlp subtitle extraction."""
+    import yt_dlp
+
     cookies_path = _resolve_cookies_path()
+
+    ydl_opts: dict = {
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["en", "en-US", "en-GB"],
+        "subtitlesformat": "json3",
+        "outtmpl": "%(id)s",
+        "quiet": True,
+        "no_warnings": True,
+        "logger": _YtDlpLogger(),
+    }
     if cookies_path:
-        jar = http.cookiejar.MozillaCookieJar(cookies_path)
+        ydl_opts["cookiefile"] = cookies_path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ydl_opts["paths"] = {"home": tmpdir}
+
         try:
-            jar.load()
-            session.cookies = jar
-            log.info("youtube_fetcher.cookies_loaded", path=cookies_path)
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={video_id}",
+                    download=True,
+                )
+        except yt_dlp.utils.DownloadError as exc:
+            msg = str(exc).lower()
+            if "subtitles" in msg or "no subtitles" in msg or "caption" in msg:
+                return None
+            log.warning("youtube_fetcher.transcript_error", video_id=video_id, error=str(exc)[:300])
+            return None
         except Exception as exc:
-            log.warning("youtube_fetcher.cookies_load_failed", path=cookies_path, error=str(exc))
-    return session
+            log.warning("youtube_fetcher.transcript_error", video_id=video_id, error=str(exc)[:300])
+            return None
+
+        # yt-dlp writes subtitle files; find and parse the first .json3 file
+        for fname in os.listdir(tmpdir):
+            if fname.endswith(".json3"):
+                fpath = os.path.join(tmpdir, fname)
+                try:
+                    return _parse_json3_subtitles(fpath)
+                except Exception as exc:
+                    log.warning("youtube_fetcher.subtitle_parse_error", video_id=video_id, error=str(exc))
+                    return None
+
+        # Fall back to VTT if json3 wasn't written
+        for fname in os.listdir(tmpdir):
+            if fname.endswith(".vtt"):
+                fpath = os.path.join(tmpdir, fname)
+                try:
+                    return _parse_vtt(fpath)
+                except Exception as exc:
+                    log.warning("youtube_fetcher.vtt_parse_error", video_id=video_id, error=str(exc))
+                    return None
+
+    return None
 
 
-def _fetch_transcript_sync(video_id: str, session: requests.Session) -> Optional[str]:
-    """Fetch transcript using youtube-transcript-api v1.x with cookie session."""
-    from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api._errors import IpBlocked, NoTranscriptFound, TranscriptsDisabled
+def _parse_json3_subtitles(path: str) -> str:
+    """Extract plain text from a yt-dlp json3 subtitle file."""
+    import json
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    parts = []
+    for event in data.get("events", []):
+        for seg in event.get("segs", []):
+            text = seg.get("utf8", "").strip()
+            if text and text != "\n":
+                parts.append(text)
+    return " ".join(parts)
 
-    try:
-        api = YouTubeTranscriptApi(http_client=session)
-        transcript = api.fetch(video_id, languages=["en", "en-US", "en-GB"])
-        return " ".join(s.text for s in transcript.snippets)
-    except IpBlocked:
-        log.warning(
-            "youtube_fetcher.ip_blocked",
-            video_id=video_id,
-            hint="IP is blocked by YouTube. Run corpus build from Fly.io or wait for the ban to expire.",
-        )
-        raise
-    except (TranscriptsDisabled, NoTranscriptFound):
-        return None
-    except Exception as exc:
-        log.warning("youtube_fetcher.transcript_error", video_id=video_id, error=str(exc)[:200])
-        return None
+
+def _parse_vtt(path: str) -> str:
+    """Extract plain text from a WebVTT subtitle file."""
+    with open(path, encoding="utf-8") as f:
+        content = f.read()
+    # Strip VTT header, timestamps, and tags
+    lines = []
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("WEBVTT") or "-->" in line:
+            continue
+        # Remove inline tags like <00:00:00.000>, <c>, </c>
+        line = re.sub(r"<[^>]+>", "", line)
+        if line:
+            lines.append(line)
+    return " ".join(lines)
+
+
+class _YtDlpLogger:
+    def debug(self, msg: str) -> None:
+        pass
+    def warning(self, msg: str) -> None:
+        log.debug("yt_dlp.warning", msg=msg)
+    def error(self, msg: str) -> None:
+        log.warning("yt_dlp.error", msg=msg)
 
 
 class YouTubeFetcher:
     """
-    Wraps the YouTube Data API v3 and youtube-transcript-api v1.x.
+    Wraps the YouTube Data API v3 and yt-dlp for transcript extraction.
 
     Example::
 
@@ -113,7 +169,6 @@ class YouTubeFetcher:
         if not settings.youtube_api_key:
             raise RuntimeError("YOUTUBE_API_KEY is not set in environment")
         self._service = build("youtube", "v3", developerKey=settings.youtube_api_key)
-        self._session = _build_http_session()
 
     def _resolve_channel_id_sync(self, identifier: str) -> str:
         if not identifier.startswith("@"):
@@ -196,13 +251,11 @@ class YouTubeFetcher:
 
     async def get_transcript(self, video_id: str) -> Optional[str]:
         """
-        Fetch the English transcript for a YouTube video.
-        Returns None on unavailable transcripts; raises IpBlocked if the IP is banned.
+        Fetch the English transcript for a YouTube video via yt-dlp.
+        Returns None if no subtitles are available.
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, _fetch_transcript_sync, video_id, self._session
-        )
+        return await loop.run_in_executor(None, _fetch_transcript_sync, video_id)
 
     async def get_transcripts_batch(
         self, video_ids: list[str], concurrency: int = 1
