@@ -78,13 +78,7 @@ class Settings(BaseSettings):
 
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")
-    # Path to a Netscape-format cookies.txt file exported from your browser.
-    # Needed when running in Docker/cloud where YouTube blocks unauthenticated transcript requests.
-    youtube_cookies_path: Optional[str] = Field(None, env="YOUTUBE_COOKIES_PATH")
-    # Alternative to a file: set the full Netscape cookie file content as an env var.
-    # Fly.io doesn't support file mounts, so use `fly secrets set YOUTUBE_COOKIES_CONTENT="$(cat youtube_cookies.txt)"`.
-    # If both are set, the file path takes precedence.
-    youtube_cookies_content: Optional[str] = Field(None, env="YOUTUBE_COOKIES_CONTENT")
+    supadata_api_key: Optional[str] = Field(None, env="SUPADATA_API_KEY")
 
     # Channel identifiers (ID or @handle — fetcher resolves handles automatically)
     bi_channel_id: str = "UCcyq283he07B7_KUX07mmtA"     # Business Insider
@@ -98,9 +92,10 @@ class Settings(BaseSettings):
     vox_pattern_cache_path: str = "backend/data/vox_patterns.json"
     jh_pattern_cache_path: str = "backend/data/jh_patterns.json"
 
-    bi_corpus_min_docs: int = 20          # min docs before patterns are considered valid
+    bi_corpus_min_docs: int = 5           # min docs before patterns are considered valid
     benchmark_corpus_stale_after_days: int = 14
     benchmark_default_rebuild_docs: int = 50  # fixed corpus size for all libraries
+    benchmark_admin_refresh_fraction: float = 0.25
     benchmark_seed_on_startup: bool = False
 
     # ── Auth / JWT ────────────────────────────────────────────────────────────
@@ -112,7 +107,10 @@ class Settings(BaseSettings):
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     # Comma-separated list of allowed origins, e.g. "http://localhost:3000,https://myapp.fly.dev"
-    cors_origins_str: str = Field("http://localhost:3000", env="CORS_ORIGINS")
+    cors_origins_str: str = Field(
+        "http://localhost:3000",
+        validation_alias="CORS_ORIGINS",
+    )
 
     @property
     def cors_origins(self) -> list[str]:
@@ -121,7 +119,8 @@ class Settings(BaseSettings):
     # ── Trusted hosts (rejects requests with unexpected Host headers) ─────────
     # Comma-separated list of trusted hostnames
     trusted_hosts_str: str = Field(
-        "localhost,127.0.0.1,backend,*.localhost", env="TRUSTED_HOSTS"
+        "localhost,127.0.0.1,backend,*.localhost",
+        validation_alias="TRUSTED_HOSTS",
     )
 
     @property
