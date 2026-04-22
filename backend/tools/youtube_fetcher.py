@@ -7,6 +7,7 @@ import asyncio
 import http.cookiejar
 import os
 import re
+import tempfile
 from typing import Optional
 
 import requests
@@ -33,6 +34,27 @@ def _parse_iso_duration(duration: str) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
+def _resolve_cookies_path() -> Optional[str]:
+    """Return a usable cookies file path, writing inline content to a temp file if needed."""
+    path = settings.youtube_cookies_path
+    if path and os.path.exists(path):
+        return path
+
+    content = settings.youtube_cookies_content
+    if content:
+        # Write inline content to a temp file so MozillaCookieJar can load it.
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", prefix="yt_cookies_", delete=False
+        )
+        tmp.write(content)
+        tmp.flush()
+        tmp.close()
+        log.info("youtube_fetcher.cookies_written_from_env", path=tmp.name)
+        return tmp.name
+
+    return None
+
+
 def _build_http_session() -> requests.Session:
     """Build a requests.Session with YouTube cookies if configured."""
     session = requests.Session()
@@ -41,8 +63,8 @@ def _build_http_session() -> requests.Session:
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/122.0.0.0 Safari/537.36"
     )
-    cookies_path = settings.youtube_cookies_path
-    if cookies_path and os.path.exists(cookies_path):
+    cookies_path = _resolve_cookies_path()
+    if cookies_path:
         jar = http.cookiejar.MozillaCookieJar(cookies_path)
         try:
             jar.load()

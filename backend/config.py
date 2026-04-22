@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     # Path to a Netscape-format cookies.txt file exported from your browser.
     # Needed when running in Docker/cloud where YouTube blocks unauthenticated transcript requests.
     youtube_cookies_path: Optional[str] = Field(None, env="YOUTUBE_COOKIES_PATH")
+    # Alternative to a file: set the full Netscape cookie file content as an env var.
+    # Fly.io doesn't support file mounts, so use `fly secrets set YOUTUBE_COOKIES_CONTENT="$(cat youtube_cookies.txt)"`.
+    # If both are set, the file path takes precedence.
+    youtube_cookies_content: Optional[str] = Field(None, env="YOUTUBE_COOKIES_CONTENT")
 
     # Channel identifiers (ID or @handle — fetcher resolves handles automatically)
     bi_channel_id: str = "UCcyq283he07B7_KUX07mmtA"     # Business Insider
