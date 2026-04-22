@@ -36,6 +36,37 @@ from backend.tools.youtube_fetcher import YouTubeFetcher
 log = structlog.get_logger(__name__)
 
 
+class InsufficientBenchmarkCorpusError(RuntimeError):
+    """Raised when a rebuild cannot produce enough usable reference docs."""
+
+    def __init__(
+        self,
+        *,
+        library_key: str,
+        have: int,
+        need: int,
+        fetched_videos: int = 0,
+        new_videos: int = 0,
+        missing_transcripts: int = 0,
+        extraction_failures: int = 0,
+    ) -> None:
+        detail = (
+            f"Benchmark corpus '{library_key}' has {have} usable docs; "
+            f"minimum is {need}. Aborting without saving a pattern library."
+        )
+        if fetched_videos or new_videos or missing_transcripts or extraction_failures:
+            detail = (
+                f"{detail} Fetched {fetched_videos} candidate videos, "
+                f"processed {new_videos} new videos, "
+                f"{missing_transcripts} had no transcript, "
+                f"and {extraction_failures} failed structure extraction."
+            )
+        super().__init__(detail)
+        self.library_key = library_key
+        self.have = have
+        self.need = need
+
+
 # ── Structure extraction prompt ───────────────────────────────────────────────
 
 _EXTRACT_SYSTEM = """You are a documentary structure analyst. Given a YouTube documentary transcript,
@@ -155,6 +186,13 @@ class CorpusBuilderAgent:
         self, library: BIPatternLibrary, library_key: str
     ) -> None:
         """Persist pattern library to DB and local JSON cache."""
+        if library.doc_count < settings.bi_corpus_min_docs:
+            raise InsufficientBenchmarkCorpusError(
+                library_key=library_key,
+                have=library.doc_count,
+                need=settings.bi_corpus_min_docs,
+            )
+
         version = await self._get_next_version(library_key)
         library.version = version
 
@@ -232,15 +270,19 @@ class CorpusBuilderAgent:
         structures: list[DocStructure] = []
         titles: list[str] = []
         saved_docs: list[BIReferenceDocORM] = []
+        missing_transcript_count = 0
+        extraction_failure_count = 0
 
         for video in new_videos:
             transcript = transcripts.get(video["id"])
             if not transcript:
+                missing_transcript_count += 1
                 log.warning("corpus_builder.no_transcript", video_id=video["id"], title=video["title"])
                 continue
 
             structure = await self._extract_structure(video["title"], transcript)
             if not structure:
+                extraction_failure_count += 1
                 continue
 
             doc = BIReferenceDocORM(
@@ -264,28 +306,40 @@ class CorpusBuilderAgent:
             saved_docs.append(doc)
             log.info("corpus_builder.doc_processed", title=video["title"], library_key=library_key)
 
-        if len(structures) < settings.bi_corpus_min_docs:
-            log.warning(
-                "corpus_builder.insufficient_docs",
-                library_key=library_key,
-                have=len(structures),
-                need=settings.bi_corpus_min_docs,
-            )
-
         # 5. Include already-existing docs for this library in synthesis
+        new_video_ids = {v["id"] for v in new_videos}
         if existing_ids:
             existing_docs_result = await self._db.execute(
                 select(BIReferenceDocORM).where(BIReferenceDocORM.library_key == library_key)
             )
             for existing_doc in existing_docs_result.scalars().all():
-                if existing_doc.extracted_structure and existing_doc.youtube_id not in {
-                    v["id"] for v in new_videos
-                }:
+                if existing_doc.extracted_structure and existing_doc.youtube_id not in new_video_ids:
                     try:
                         structures.append(DocStructure(**existing_doc.extracted_structure))
                         titles.append(existing_doc.title)
                     except Exception:
                         pass
+
+        if len(structures) < settings.bi_corpus_min_docs:
+            log.error(
+                "corpus_builder.insufficient_docs",
+                library_key=library_key,
+                have=len(structures),
+                need=settings.bi_corpus_min_docs,
+                fetched_videos=len(videos),
+                new_videos=len(new_videos),
+                missing_transcripts=missing_transcript_count,
+                extraction_failures=extraction_failure_count,
+            )
+            raise InsufficientBenchmarkCorpusError(
+                library_key=library_key,
+                have=len(structures),
+                need=settings.bi_corpus_min_docs,
+                fetched_videos=len(videos),
+                new_videos=len(new_videos),
+                missing_transcripts=missing_transcript_count,
+                extraction_failures=extraction_failure_count,
+            )
 
         # 6. Synthesise patterns across full corpus
         log.info("corpus_builder.synthesising", library_key=library_key, doc_count=len(structures))

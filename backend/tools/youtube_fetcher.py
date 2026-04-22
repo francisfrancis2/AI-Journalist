@@ -1,23 +1,25 @@
 """
 YouTube Data API v3 + transcript fetcher.
-Used by the CorpusBuilderAgent to collect Business Insider documentary data.
+Used by the CorpusBuilderAgent to collect documentary data.
 """
 
 import asyncio
+import http.cookiejar
+import os
 import re
 from typing import Optional
 
+import requests
 import structlog
 from googleapiclient.discovery import build
-from youtube_transcript_api import NoTranscriptFound, TranscriptsDisabled, YouTubeTranscriptApi
 
 from backend.config import settings
 
 log = structlog.get_logger(__name__)
 
-# BI documentaries are 5–20 minutes long
+# Documentaries are typically 5–60 minutes long
 _MIN_DURATION_SECONDS = 300
-_MAX_DURATION_SECONDS = 1200
+_MAX_DURATION_SECONDS = 3600
 
 
 def _parse_iso_duration(duration: str) -> int:
@@ -31,9 +33,52 @@ def _parse_iso_duration(duration: str) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
+def _build_http_session() -> requests.Session:
+    """Build a requests.Session with YouTube cookies if configured."""
+    session = requests.Session()
+    session.headers["User-Agent"] = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    )
+    cookies_path = settings.youtube_cookies_path
+    if cookies_path and os.path.exists(cookies_path):
+        jar = http.cookiejar.MozillaCookieJar(cookies_path)
+        try:
+            jar.load()
+            session.cookies = jar
+            log.info("youtube_fetcher.cookies_loaded", path=cookies_path)
+        except Exception as exc:
+            log.warning("youtube_fetcher.cookies_load_failed", path=cookies_path, error=str(exc))
+    return session
+
+
+def _fetch_transcript_sync(video_id: str, session: requests.Session) -> Optional[str]:
+    """Fetch transcript using youtube-transcript-api v1.x with cookie session."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import IpBlocked, NoTranscriptFound, TranscriptsDisabled
+
+    try:
+        api = YouTubeTranscriptApi(http_client=session)
+        transcript = api.fetch(video_id, languages=["en", "en-US", "en-GB"])
+        return " ".join(s.text for s in transcript.snippets)
+    except IpBlocked:
+        log.warning(
+            "youtube_fetcher.ip_blocked",
+            video_id=video_id,
+            hint="IP is blocked by YouTube. Run corpus build from Fly.io or wait for the ban to expire.",
+        )
+        raise
+    except (TranscriptsDisabled, NoTranscriptFound):
+        return None
+    except Exception as exc:
+        log.warning("youtube_fetcher.transcript_error", video_id=video_id, error=str(exc)[:200])
+        return None
+
+
 class YouTubeFetcher:
     """
-    Wraps the YouTube Data API v3 and youtube-transcript-api.
+    Wraps the YouTube Data API v3 and youtube-transcript-api v1.x.
 
     Example::
 
@@ -45,30 +90,21 @@ class YouTubeFetcher:
     def __init__(self) -> None:
         if not settings.youtube_api_key:
             raise RuntimeError("YOUTUBE_API_KEY is not set in environment")
-        # Build is synchronous — done once at init
         self._service = build("youtube", "v3", developerKey=settings.youtube_api_key)
+        self._session = _build_http_session()
 
     def _resolve_channel_id_sync(self, identifier: str) -> str:
-        """
-        Resolve a channel identifier to a channel ID.
-        Handles both raw IDs (UC...) and @handles.
-        Synchronous — call via run_in_executor.
-        """
         if not identifier.startswith("@"):
-            return identifier  # already a channel ID
+            return identifier
 
         handle = identifier.lstrip("@")
-        resp = self._service.channels().list(
-            part="id",
-            forHandle=handle,
-        ).execute()
+        resp = self._service.channels().list(part="id", forHandle=handle).execute()
         items = resp.get("items", [])
         if not items:
             raise ValueError(f"Could not resolve YouTube handle '{identifier}' to a channel ID")
         return items[0]["id"]
 
     async def resolve_channel_identifier(self, identifier: str) -> str:
-        """Async wrapper around handle resolution."""
         if not identifier.startswith("@"):
             return identifier
         loop = asyncio.get_event_loop()
@@ -82,13 +118,6 @@ class YouTubeFetcher:
         """
         Fetch video metadata from a channel, filtered to documentary-length content.
         Returns videos ordered by view count (most successful first).
-
-        Args:
-            channel_id: YouTube channel ID or @handle. Defaults to BI channel from config.
-            max_results: Maximum number of qualifying videos to return.
-
-        Returns:
-            List of dicts with id, title, description, view_count, like_count, duration_seconds.
         """
         raw_identifier = channel_id or settings.bi_channel_id
         channel_id = await self.resolve_channel_identifier(raw_identifier)
@@ -99,7 +128,6 @@ class YouTubeFetcher:
             page_token: Optional[str] = None
 
             while len(results) < max_results:
-                # Search for videos in the channel
                 search_resp = self._service.search().list(
                     part="id,snippet",
                     channelId=channel_id,
@@ -109,23 +137,17 @@ class YouTubeFetcher:
                     order="viewCount",
                 ).execute()
 
-                video_ids = [
-                    item["id"]["videoId"]
-                    for item in search_resp.get("items", [])
-                ]
+                video_ids = [item["id"]["videoId"] for item in search_resp.get("items", [])]
                 if not video_ids:
                     break
 
-                # Fetch full details including duration + statistics
                 details_resp = self._service.videos().list(
                     part="contentDetails,statistics,snippet",
                     id=",".join(video_ids),
                 ).execute()
 
                 for item in details_resp.get("items", []):
-                    duration = _parse_iso_duration(
-                        item["contentDetails"]["duration"]
-                    )
+                    duration = _parse_iso_duration(item["contentDetails"]["duration"])
                     if not (_MIN_DURATION_SECONDS <= duration <= _MAX_DURATION_SECONDS):
                         continue
                     results.append({
@@ -153,36 +175,22 @@ class YouTubeFetcher:
     async def get_transcript(self, video_id: str) -> Optional[str]:
         """
         Fetch the English transcript for a YouTube video.
-
-        Returns:
-            Full transcript as a single string, or None if unavailable.
+        Returns None on unavailable transcripts; raises IpBlocked if the IP is banned.
         """
         loop = asyncio.get_event_loop()
-
-        def _fetch() -> Optional[str]:
-            try:
-                entries = YouTubeTranscriptApi.get_transcript(
-                    video_id, languages=["en", "en-US", "en-GB"]
-                )
-                return " ".join(e["text"] for e in entries)
-            except (TranscriptsDisabled, NoTranscriptFound):
-                return None
-            except Exception as exc:
-                log.warning("youtube_fetcher.transcript_failed", video_id=video_id, error=str(exc))
-                return None
-
-        return await loop.run_in_executor(None, _fetch)
+        return await loop.run_in_executor(
+            None, _fetch_transcript_sync, video_id, self._session
+        )
 
     async def get_transcripts_batch(
-        self, video_ids: list[str], concurrency: int = 5
+        self, video_ids: list[str], concurrency: int = 1
     ) -> dict[str, Optional[str]]:
-        """Fetch transcripts for multiple videos with concurrency control."""
-        semaphore = asyncio.Semaphore(concurrency)
-
-        async def _fetch_one(vid: str) -> tuple[str, Optional[str]]:
-            async with semaphore:
-                transcript = await self.get_transcript(vid)
-                return vid, transcript
-
-        pairs = await asyncio.gather(*[_fetch_one(vid) for vid in video_ids])
-        return dict(pairs)
+        """Fetch transcripts sequentially with a delay to avoid rate limits."""
+        results: dict[str, Optional[str]] = {}
+        for vid in video_ids:
+            try:
+                results[vid] = await self.get_transcript(vid)
+            except Exception:
+                results[vid] = None
+            await asyncio.sleep(2.0)
+        return results

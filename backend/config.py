@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     db_pool_size: int = 10
     db_max_overflow: int = 20
     db_pool_timeout: int = 30
+    db_pool_recycle_seconds: int = 300
 
     # ── AWS / S3 ──────────────────────────────────────────────────────────────
     aws_access_key_id: Optional[str] = Field(None, env="AWS_ACCESS_KEY_ID")
@@ -77,6 +78,9 @@ class Settings(BaseSettings):
 
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")
+    # Path to a Netscape-format cookies.txt file exported from your browser.
+    # Needed when running in Docker/cloud where YouTube blocks unauthenticated transcript requests.
+    youtube_cookies_path: Optional[str] = Field(None, env="YOUTUBE_COOKIES_PATH")
 
     # Channel identifiers (ID or @handle — fetcher resolves handles automatically)
     bi_channel_id: str = "UCcyq283he07B7_KUX07mmtA"     # Business Insider
@@ -93,6 +97,7 @@ class Settings(BaseSettings):
     bi_corpus_min_docs: int = 20          # min docs before patterns are considered valid
     benchmark_corpus_stale_after_days: int = 14
     benchmark_default_rebuild_docs: int = 50  # fixed corpus size for all libraries
+    benchmark_seed_on_startup: bool = False
 
     # ── Auth / JWT ────────────────────────────────────────────────────────────
     jwt_secret_key: str = Field(..., env="JWT_SECRET_KEY")

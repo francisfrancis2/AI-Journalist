@@ -14,6 +14,16 @@ import respx
 from backend.models.research import SourceCredibility, SourceType
 
 
+# ── YouTubeFetcher ────────────────────────────────────────────────────────────
+
+def test_classify_transcript_error_identifies_rate_limit():
+    from backend.tools.youtube_fetcher import _classify_transcript_error
+
+    exc = RuntimeError("429 Client Error: Too Many Requests for url")
+
+    assert _classify_transcript_error(exc) == "youtube_rate_limited"
+
+
 # ── WebSearchTool ─────────────────────────────────────────────────────────────
 
 class TestWebSearchTool:

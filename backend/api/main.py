@@ -25,6 +25,7 @@ from backend.config import settings
 from backend.db.database import AsyncSessionLocal, create_tables
 from backend.models import benchmark as _benchmark_models  # noqa: F401 — registers BIReferenceDocORM, BIPatternLibraryORM
 from backend.models import user as _user_models  # noqa: F401 — ensures UserORM is registered with Base
+from backend.models.benchmark import BIReferenceDocORM
 from backend.models.user import UserORM
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -93,6 +94,28 @@ async def _seed_admin() -> None:
 log = structlog.get_logger(__name__)
 
 
+async def _seed_benchmark_corpus_if_empty() -> None:
+    """On first deployment, kick off a background corpus rebuild if no docs exist."""
+    if not settings.youtube_api_key:
+        log.warning("benchmarking.seed_skipped", reason="YOUTUBE_API_KEY not configured")
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(BIReferenceDocORM).limit(1))
+        if result.scalar_one_or_none() is not None:
+            log.info("benchmarking.seed_skipped", reason="corpus already has documents")
+            return
+
+    log.info("benchmarking.seed_starting", reason="no corpus docs found on startup")
+    from backend.services.benchmarking import run_benchmark_rebuild
+    asyncio.create_task(
+        run_benchmark_rebuild(
+            library_key="combined",
+            max_docs=settings.benchmark_default_rebuild_docs,
+        )
+    )
+
+
 def create_app() -> FastAPI:
     """
     Construct and configure the FastAPI application instance.
@@ -144,6 +167,7 @@ def create_app() -> FastAPI:
         await _run_database_migrations()
         await _seed_admin()
         log.info("app.database_ready")
+        await _seed_benchmark_corpus_if_empty()
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:

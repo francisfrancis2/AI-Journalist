@@ -229,7 +229,9 @@ async def load_benchmark_library(
 
     if cache_exists:
         try:
-            cache_library = BIPatternLibrary.model_validate_json(cache_path.read_text())
+            parsed = BIPatternLibrary.model_validate_json(cache_path.read_text())
+            if parsed.doc_count > 0:
+                cache_library = parsed
         except Exception as exc:
             notes.append("Cache file exists but could not be parsed.")
             log.warning("benchmarking.cache_invalid", library_key=library_key, error=str(exc))
@@ -395,6 +397,7 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
     library_statuses: list[BenchmarkLibraryStatus] = []
     any_stale = False
     any_missing = False
+    any_not_ready = False
 
     for item in _SUPPORTED_LIBRARY_CATALOG:
         key = str(item["key"])
@@ -402,6 +405,8 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
         library_statuses.append(lib_status)
         if not lib_status.available:
             any_missing = True
+        if not lib_status.ready_for_scoring:
+            any_not_ready = True
         elif lib_status.stale:
             any_stale = True
 
@@ -410,12 +415,18 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
             "One or more benchmark libraries have not been built yet. "
             "Run a complete corpus rebuild to enable full benchmarking coverage."
         )
+    elif any_not_ready:
+        recommended_action = (
+            f"One or more benchmark libraries are below the minimum of "
+            f"{settings.bi_corpus_min_docs} documents. Run a complete corpus rebuild."
+        )
     elif any_stale:
         recommended_action = "One or more benchmark libraries are stale and should be refreshed."
     else:
         recommended_action = "All benchmark libraries are healthy."
 
     combined_missing = any_missing
+    combined_not_ready = any_not_ready
     combined_stale = any_stale
     combined_built_dates = [status.built_at for status in library_statuses if status.built_at]
     combined_cache_dates = [status.cache_mtime for status in library_statuses if status.cache_mtime]
@@ -437,7 +448,7 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
                 description=str(_COMBINED_LIBRARY_META["description"]),
                 implemented=True,
                 active=True,
-                available=not combined_missing,
+                available=not combined_missing and not combined_not_ready,
                 ready_for_scoring=not combined_missing and all(
                     status.ready_for_scoring for status in library_statuses
                 ),
@@ -450,6 +461,8 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
                 notes=(
                     ["One or more component corpora are missing."]
                     if combined_missing
+                    else ["One or more component corpora are below the minimum document count."]
+                    if combined_not_ready
                     else ["One or more component corpora should be refreshed."]
                     if combined_stale
                     else []

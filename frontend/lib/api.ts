@@ -7,7 +7,31 @@ import axios, { AxiosInstance } from "axios";
 import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import { getToken } from "@/lib/auth";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_TIMEOUT_MS = 60_000;
+
+function isLocalHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function resolveBaseUrl(value: string | undefined): string {
+  const configured = value?.trim() ?? "";
+  if (!configured) return "";
+
+  if (typeof window !== "undefined") {
+    try {
+      const target = new URL(configured);
+      if (isLocalHostname(target.hostname) && !isLocalHostname(window.location.hostname)) {
+        return "";
+      }
+    } catch {
+      return configured;
+    }
+  }
+
+  return configured.replace(/\/+$/, "");
+}
+
+const BASE_URL = resolveBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -294,7 +318,7 @@ class AIJournalistAPIClient {
     this.http = axios.create({
       baseURL,
       headers: { "Content-Type": "application/json" },
-      timeout: 30_000,
+      timeout: API_TIMEOUT_MS,
     });
 
     // Attach JWT token to every request
@@ -310,6 +334,16 @@ class AIJournalistAPIClient {
     this.http.interceptors.response.use(
       (res: AxiosResponse) => res,
       (err: AxiosError<{ detail?: string; message?: string }>) => {
+        const timedOut =
+          err.code === "ECONNABORTED" ||
+          err.message.toLowerCase().includes("timeout");
+
+        if (timedOut) {
+          return Promise.reject(new Error(
+            "The backend did not respond in time. It may still be starting up; please try again in a moment."
+          ));
+        }
+
         const message =
           err.response?.data?.detail ??
           err.response?.data?.message ??

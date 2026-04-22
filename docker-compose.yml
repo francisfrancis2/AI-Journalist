@@ -72,6 +72,10 @@ services:
         condition: service_started
     volumes:
       - ./backend:/app/backend
+      # Optional: mount YouTube cookies to bypass transcript rate limits in Docker.
+      # Export from browser as Netscape format, save to ./youtube_cookies.txt, then set
+      # YOUTUBE_COOKIES_PATH=/app/youtube_cookies.txt in your .env file.
+      - ./youtube_cookies.txt:/app/youtube_cookies.txt
     command: uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload
 
   # ── Next.js Frontend ────────────────────────────────────────────────────────

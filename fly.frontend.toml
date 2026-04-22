@@ -7,7 +7,7 @@ primary_region = "sin"
 
   [build.args]
     # Points the Next.js server-side proxy at the backend Fly app
-    BACKEND_INTERNAL_URL = "https://aijournalist-backend.fly.dev"
+    BACKEND_INTERNAL_URL = "http://aijournalist-backend.internal:8000"
 
 [env]
   NODE_ENV              = "production"
@@ -15,7 +15,7 @@ primary_region = "sin"
   # Empty → browser uses relative URLs, proxied by Next.js rewrites
   NEXT_PUBLIC_API_URL   = ""
   # Runtime target for Next.js server-side rewrites
-  BACKEND_INTERNAL_URL  = "https://aijournalist-backend.fly.dev"
+  BACKEND_INTERNAL_URL  = "http://aijournalist-backend.internal:8000"
 
 [http_service]
   internal_port        = 3000
