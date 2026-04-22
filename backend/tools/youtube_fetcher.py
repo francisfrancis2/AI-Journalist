@@ -33,36 +33,52 @@ def _parse_iso_duration(duration: str) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
-def _fetch_transcript_sync(video_id: str) -> Optional[str]:
-    """Fetch transcript from Supadata.ai transcript API."""
+def _fetch_transcript_sync(video_id: str, retries: int = 3) -> Optional[str]:
+    """Fetch transcript from Supadata.ai transcript API with retry on 429."""
+    import time
+
     api_key = settings.supadata_api_key
     if not api_key:
         log.warning("youtube_fetcher.supadata_key_missing", video_id=video_id)
         return None
 
-    try:
-        resp = requests.get(
-            _SUPADATA_TRANSCRIPT_URL,
-            params={"videoId": video_id, "lang": "en"},
-            headers={"x-api-key": api_key},
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        log.warning("youtube_fetcher.request_error", video_id=video_id, error=str(exc))
-        return None
+    delay = 10.0
+    for attempt in range(retries):
+        try:
+            resp = requests.get(
+                _SUPADATA_TRANSCRIPT_URL,
+                params={"videoId": video_id, "lang": "en"},
+                headers={"x-api-key": api_key},
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            log.warning("youtube_fetcher.request_error", video_id=video_id, error=str(exc))
+            return None
 
-    if resp.status_code == 404:
-        return None
-    if resp.status_code != 200:
-        log.warning("youtube_fetcher.transcript_error", video_id=video_id, status=resp.status_code)
-        return None
+        if resp.status_code == 404:
+            return None
 
-    data = resp.json()
-    segments = data.get("content", [])
-    if not segments:
-        return None
+        if resp.status_code == 429:
+            if attempt < retries - 1:
+                log.warning("youtube_fetcher.rate_limited", video_id=video_id, retry_in=delay)
+                time.sleep(delay)
+                delay *= 2
+                continue
+            log.warning("youtube_fetcher.transcript_error", video_id=video_id, status=429)
+            return None
 
-    return " ".join(s["text"] for s in segments if s.get("text", "").strip())
+        if resp.status_code != 200:
+            log.warning("youtube_fetcher.transcript_error", video_id=video_id, status=resp.status_code)
+            return None
+
+        data = resp.json()
+        segments = data.get("content", [])
+        if not segments:
+            return None
+
+        return " ".join(s["text"] for s in segments if s.get("text", "").strip())
+
+    return None
 
 
 class YouTubeFetcher:
@@ -111,12 +127,16 @@ class YouTubeFetcher:
         self,
         channel_id: Optional[str] = None,
         max_results: int = 50,
+        order: str = "viewCount",
     ) -> list[dict]:
         """
         Fetch video metadata from a channel's uploads playlist, filtered to
-        documentary-length content and sorted by view count.
+        documentary-length content and sorted by the requested order.
         Uses the uploads playlist (not search) to access all videos, not just top-50.
         """
+        if order not in {"viewCount", "date"}:
+            raise ValueError("YouTube video order must be 'viewCount' or 'date'")
+
         raw_identifier = channel_id or settings.bi_channel_id
         channel_id = await self.resolve_channel_identifier(raw_identifier)
         loop = asyncio.get_event_loop()
@@ -158,6 +178,7 @@ class YouTubeFetcher:
                         "id": item["id"],
                         "title": item["snippet"]["title"],
                         "description": item["snippet"].get("description", ""),
+                        "published_at": item["snippet"].get("publishedAt"),
                         "view_count": int(item["statistics"].get("viewCount", 0)),
                         "like_count": int(item["statistics"].get("likeCount", 0)),
                         "duration_seconds": duration,
@@ -167,13 +188,13 @@ class YouTubeFetcher:
                 if not page_token:
                     break
 
-            # Return the most-viewed qualifying videos
-            candidates.sort(key=lambda v: v["view_count"], reverse=True)
+            if order == "viewCount":
+                candidates.sort(key=lambda v: v["view_count"], reverse=True)
             return candidates[:max_results]
 
-        log.info("youtube_fetcher.get_videos.start", channel_id=channel_id)
+        log.info("youtube_fetcher.get_videos.start", channel_id=channel_id, order=order)
         videos = await loop.run_in_executor(None, _fetch)
-        log.info("youtube_fetcher.get_videos.complete", count=len(videos))
+        log.info("youtube_fetcher.get_videos.complete", count=len(videos), order=order)
         return videos
 
     async def get_transcript(self, video_id: str) -> Optional[str]:
@@ -191,5 +212,5 @@ class YouTubeFetcher:
                 results[vid] = await self.get_transcript(vid)
             except Exception:
                 results[vid] = None
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(3.0)
         return results
