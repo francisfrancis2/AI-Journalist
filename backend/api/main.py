@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import ORJSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,6 +95,28 @@ async def _seed_admin() -> None:
 log = structlog.get_logger(__name__)
 
 
+class _SelectiveTrustedHostMiddleware:
+    """TrustedHostMiddleware that bypasses the host check for /health.
+
+    Fly.io's internal health prober sends the machine's IPv6 address as the
+    Host header (e.g. fdaa:6d:97e7:a7b:…), which Starlette's built-in
+    TrustedHostMiddleware rejects with 400.  The /health path carries no
+    sensitive data, so skipping the check there is safe.
+    """
+
+    _BYPASS_PATHS = frozenset({"/health", "/healthz", "/ready"})
+
+    def __init__(self, app: ASGIApp, allowed_hosts: list[str]) -> None:
+        self._inner = TrustedHostMiddleware(app, allowed_hosts=allowed_hosts)
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") == "http" and scope.get("path") in self._BYPASS_PATHS:
+            await self._app(scope, receive, send)
+        else:
+            await self._inner(scope, receive, send)
+
+
 async def _seed_benchmark_corpus_if_empty() -> None:
     """On first deployment, kick off a background corpus rebuild if no docs exist."""
     if not settings.youtube_api_key:
@@ -138,8 +161,10 @@ def create_app() -> FastAPI:
     )
 
     # ── Trusted host guard (reject requests with unexpected Host headers) ─────
+    # Uses _SelectiveTrustedHostMiddleware to bypass the check for /health,
+    # where Fly.io's internal prober sends the machine's IPv6 as Host header.
     app.add_middleware(
-        TrustedHostMiddleware,
+        _SelectiveTrustedHostMiddleware,
         allowed_hosts=settings.trusted_hosts,
     )
 
