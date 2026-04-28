@@ -10,6 +10,12 @@ import { downloadScriptPdf } from "@/lib/script-export";
 
 type Tab = "script" | "evaluation";
 
+const SCRIPT_GRADE_HELP =
+  "Measures final script quality across hook, flow, evidence, pacing, writing, and production readiness.";
+const BENCHMARK_GRADE_HELP =
+  "Measures how closely the story matches the benchmark corpus in hook, structure, data density, human narrative, and closing pattern.";
+const GRADE_SCALE_HELP = "Letter scale: A 85%+, B 70-84%, C 55-69%, D below 55%.";
+
 export default function ResultsPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -81,8 +87,12 @@ export default function ResultsPage() {
   const isFailed   = story.status === "failed";
   const isRunning  = !isComplete && !isFailed;
 
+  const scriptVersionNumber = story.script_versions?.length
+    ? story.script_versions.length + 1
+    : null;
+
   const TABS: { id: Tab; label: string; available: boolean }[] = [
-    { id: "script",     label: "Script",            available: isComplete },
+    { id: "script",     label: scriptVersionNumber ? `Script v${scriptVersionNumber}` : "Script", available: isComplete },
     { id: "evaluation", label: "Script Evaluation", available: isComplete },
   ];
 
@@ -141,13 +151,13 @@ export default function ResultsPage() {
                     </span>
                   )}
                   {story.benchmark_data && (
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                      Grade <strong style={{ color: "var(--color-text-primary)" }}>{story.benchmark_data.grade}</strong>
+                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }} title={BENCHMARK_GRADE_HELP}>
+                      Benchmark <strong style={{ color: "var(--color-text-primary)" }}>{story.benchmark_data.grade}</strong>
                     </span>
                   )}
                   {story.script_audit_data && (
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                      Script Audit <strong style={{ color: "var(--color-text-primary)" }}>{story.script_audit_data.grade}</strong>
+                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }} title={SCRIPT_GRADE_HELP}>
+                      Script Grade <strong style={{ color: "var(--color-text-primary)" }}>{story.script_audit_data.grade}</strong>
                     </span>
                   )}
                 </div>
@@ -207,7 +217,7 @@ export default function ResultsPage() {
       <div style={{ padding: "28px", maxWidth: 800 }}>
         {isRunning  && <PipelineStatus story={story} />}
         {isFailed   && <FailedState story={story} />}
-        {isComplete && tab === "script"     && script && <ScriptPanel script={script} />}
+        {isComplete && tab === "script"     && script && <ScriptPanel script={script} versionNumber={scriptVersionNumber} />}
         {isComplete && tab === "evaluation" && <ScriptEvaluationPanel story={story} storyId={id} />}
       </div>
     </div>
@@ -251,12 +261,34 @@ function FailedState({ story }: { story: Story }) {
 }
 
 /* ── Script panel ── */
-function ScriptPanel({ script }: { script: FinalScript }) {
+function ScriptPanel({ script, versionNumber }: { script: FinalScript; versionNumber: number | null }) {
   const [open, setOpen] = useState<number[]>([0]);
   const toggle = (i: number) => setOpen(p => p.includes(i) ? p.filter(x => x !== i) : [...p, i]);
 
   return (
     <div>
+      {versionNumber && (
+        <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "3px 10px",
+              background: "var(--color-action)",
+              color: "#fff",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: "0.03em",
+            }}
+          >
+            v{versionNumber}
+          </span>
+          <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+            Revision {versionNumber} — previous versions saved in history
+          </span>
+        </div>
+      )}
       {/* Two-column layout */}
       <div style={{ display: "flex", gap: 24 }}>
         {/* Left: TOC + Sources */}
@@ -528,6 +560,12 @@ function ScriptAuditPanel({ data, storyId }: { data: NonNullable<Story["script_a
           <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
             Script score: {(data.overall_score * 100).toFixed(0)}%
           </p>
+          <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+            {SCRIPT_GRADE_HELP}
+          </p>
+          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
+            {GRADE_SCALE_HELP}
+          </p>
           <span className={data.ready_for_production ? "badge badge-success" : "badge badge-danger"} style={{ fontSize: 11, marginBottom: 8 }}>
             {data.ready_for_production ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
             {data.ready_for_production ? "Ready for production" : "Needs another script pass"}
@@ -787,20 +825,26 @@ function ScriptEvaluationPanel({ story, storyId: _storyId }: { story: Story; sto
           <div style={{ width: "0.5px", height: 40, background: "var(--color-border-tertiary)", flexShrink: 0 }} />
         )}
         {audit_data && (
-          <div style={{ textAlign: "center" }}>
+          <div style={{ textAlign: "center", maxWidth: 190 }}>
             <p style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, color: "var(--color-action)" }}>{audit_data.grade}</p>
             <p style={{ fontSize: 11, fontWeight: 500, marginTop: 4, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Script Grade</p>
             <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>{(audit_data.overall_score * 100).toFixed(0)}% audit score</p>
+            <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, lineHeight: 1.5 }}>
+              Final script quality.
+            </p>
           </div>
         )}
         {audit_data && bm_data && (
           <div style={{ width: "0.5px", height: 40, background: "var(--color-border-tertiary)", flexShrink: 0 }} />
         )}
         {bm_data && (
-          <div style={{ textAlign: "center" }}>
+          <div style={{ textAlign: "center", maxWidth: 190 }}>
             <p style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, color: "var(--color-action)" }}>{bm_data.grade}</p>
             <p style={{ fontSize: 11, fontWeight: 500, marginTop: 4, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Benchmark Grade</p>
             <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>{Math.round(bm_data.bi_similarity_score * 100)}% similarity</p>
+            <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, lineHeight: 1.5 }}>
+              Match to benchmark corpus.
+            </p>
           </div>
         )}
         {audit_data && (
@@ -829,69 +873,94 @@ function ScriptEvaluationPanel({ story, storyId: _storyId }: { story: Story; sto
         </div>
       )}
 
-      {/* All heuristics */}
+      {/* Grade breakdown */}
       <div className="card" style={{ padding: "18px 20px" }}>
-        <div className="section-rule"><span>All heuristics</span></div>
+        <div className="section-rule"><span>Grade breakdown</span></div>
 
-        {eval_data && (
-          <>
-            <p className="section-label" style={{ marginTop: 8, marginBottom: 10 }}>Content quality</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
-              {evalCriteria.map(({ key, label }) => {
-                const score = eval_data.criteria[key] ?? 0;
-                return (
-                  <div key={key}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-                      <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: eval_data || audit_data
+              ? bm_data
+                ? "repeat(auto-fit, minmax(260px, 1fr))"
+                : "minmax(0, 1fr)"
+              : "minmax(0, 1fr)",
+            gap: 20,
+            alignItems: "start",
+          }}
+        >
+          {(eval_data || audit_data) && (
+            <div style={{ minWidth: 0 }}>
+              <p className="section-label" style={{ marginTop: 8, marginBottom: 6 }}>Script Grade</p>
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+                {SCRIPT_GRADE_HELP}
+              </p>
 
-        {audit_data && (
-          <>
-            <p className="section-label" style={{ marginBottom: 10 }}>Script craft</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: bm_data ? 18 : 0 }}>
-              {auditCriteria.map(({ key, label }) => {
-                const score = audit_data.criteria[key] ?? 0;
-                return (
-                  <div key={key}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-                      <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
+              {eval_data && (
+                <div style={{ marginBottom: audit_data ? 18 : 0 }}>
+                  <p className="section-label" style={{ marginBottom: 10 }}>Content quality</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {evalCriteria.map(({ key, label }) => {
+                      const score = eval_data.criteria[key] ?? 0;
+                      return (
+                        <div key={key}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
+                            <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
+                          </div>
+                          <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+                </div>
+              )}
 
-        {bm_data && (
-          <>
-            <p className="section-label" style={{ marginBottom: 10 }}>Benchmark metrics</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {bmMetrics.map(({ key, label }) => {
-                const score = (bm_data[key] as number) ?? 0;
-                return (
-                  <div key={key}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-                      <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
+              {audit_data && (
+                <div>
+                  <p className="section-label" style={{ marginBottom: 10 }}>Final script audit</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {auditCriteria.map(({ key, label }) => {
+                      const score = audit_data.criteria[key] ?? 0;
+                      return (
+                        <div key={key}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
+                            <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
+                          </div>
+                          <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              )}
             </div>
-          </>
-        )}
+          )}
+
+          {bm_data && (
+            <div style={{ minWidth: 0 }}>
+              <p className="section-label" style={{ marginTop: 8, marginBottom: 6 }}>Benchmark Grade</p>
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+                {BENCHMARK_GRADE_HELP}
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {bmMetrics.map(({ key, label }) => {
+                  const score = (bm_data[key] as number) ?? 0;
+                  return (
+                    <div key={key}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                        <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
+                        <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
+                      </div>
+                      <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Strengths + weaknesses */}
@@ -1028,8 +1097,11 @@ function BenchmarkPanel({ data, storyId }: { data: NonNullable<Story["benchmark_
           <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
             Benchmark score: {(data.bi_similarity_score * 100).toFixed(0)}%
           </p>
-          <p style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-            Evaluation across narrative structure, evidence, pacing, and audience engagement criteria.
+          <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+            {BENCHMARK_GRADE_HELP}
+          </p>
+          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
+            {GRADE_SCALE_HELP}
           </p>
           {data.stale && (
             <p style={{ fontSize: 12, color: "var(--color-warning)", marginTop: 4 }}>

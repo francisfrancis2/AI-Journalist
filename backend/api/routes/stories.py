@@ -582,6 +582,20 @@ def _hydrate_existing_story_state(story: StoryORM) -> dict[str, Any]:
     }
 
 
+async def _archive_script_version(story: StoryORM, reason: str) -> list:
+    """Return an updated script_versions list with the current script appended."""
+    import datetime as _dt
+    current_versions = list(story.script_versions or [])
+    if story.script_data:
+        current_versions.append({
+            "version": len(current_versions) + 1,
+            "script": story.script_data,
+            "created_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "reason": reason,
+        })
+    return current_versions
+
+
 async def _run_manual_script_rewrite(story_id: str) -> None:
     """Run a single audit-driven rewrite for an already completed story."""
     from backend.db.database import AsyncSessionLocal
@@ -593,10 +607,11 @@ async def _run_manual_script_rewrite(story_id: str) -> None:
         if not story:
             log.warning("manual_rewrite.story_missing", story_id=story_id)
             return
+        new_versions = await _archive_script_version(story, "pre_manual_rewrite")
         await db.execute(
             update(StoryORM)
             .where(StoryORM.id == uuid.UUID(story_id))
-            .values(status=StoryStatus.SCRIPTING, error_message=None)
+            .values(status=StoryStatus.SCRIPTING, error_message=None, script_versions=new_versions)
         )
         await db.commit()
         try:
@@ -736,10 +751,11 @@ async def _run_script_regeneration(story_id: str) -> None:
             log.warning("regenerate.story_missing", story_id=story_id)
             return
 
+        new_versions = await _archive_script_version(story, "pre_regeneration")
         await db.execute(
             update(StoryORM)
             .where(StoryORM.id == uuid.UUID(story_id))
-            .values(status=StoryStatus.ANALYSING, error_message=None)
+            .values(status=StoryStatus.ANALYSING, error_message=None, script_versions=new_versions)
         )
         await db.commit()
 
