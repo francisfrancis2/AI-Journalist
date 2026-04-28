@@ -160,6 +160,14 @@ def route_after_evaluator(state: JournalistState) -> str:
     return "scriptwriter"
 
 
+def route_after_analyst(state: JournalistState) -> str:
+    """Proceed to storyline_creator, or END early if analyst failed without a result."""
+    if state.get("error") or not state.get("analysis_result"):
+        log.error("graph.route.analyst_failed", story_id=state.get("story_id"), error=state.get("error"))
+        return END
+    return "storyline_creator"
+
+
 def route_after_storyline_creator(state: JournalistState) -> str:
     """Route to evaluator, or END early if storyline_creator failed."""
     if state.get("error") or not state.get("selected_storyline"):
@@ -222,7 +230,10 @@ def build_journalist_graph() -> StateGraph:
         "analyst": "analyst",
         END: END,
     })
-    graph.add_edge("analyst", "storyline_creator")
+    graph.add_conditional_edges("analyst", route_after_analyst, {
+        "storyline_creator": "storyline_creator",
+        END: END,
+    })
     graph.add_conditional_edges("storyline_creator", route_after_storyline_creator, {
         "evaluator": "evaluator",
         END: END,

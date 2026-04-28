@@ -8,7 +8,7 @@ import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, Chevr
 import { apiClient, type Story, type FinalScript } from "@/lib/api";
 import { downloadScriptPdf } from "@/lib/script-export";
 
-type Tab = "script" | "audit" | "evaluation" | "benchmark";
+type Tab = "script" | "evaluation";
 
 export default function ResultsPage() {
   const { id } = useParams<{ id: string }>();
@@ -82,10 +82,8 @@ export default function ResultsPage() {
   const isRunning  = !isComplete && !isFailed;
 
   const TABS: { id: Tab; label: string; available: boolean }[] = [
-    { id: "script",     label: "Script",       available: isComplete },
-    { id: "audit",      label: "Script Audit", available: !!story.script_audit_data },
-    { id: "evaluation", label: "Evaluation",   available: !!story.evaluation_data },
-    { id: "benchmark",  label: "Benchmark", available: isComplete },
+    { id: "script",     label: "Script",            available: isComplete },
+    { id: "evaluation", label: "Script Evaluation", available: isComplete },
   ];
 
   return (
@@ -209,11 +207,8 @@ export default function ResultsPage() {
       <div style={{ padding: "28px", maxWidth: 800 }}>
         {isRunning  && <PipelineStatus story={story} />}
         {isFailed   && <FailedState story={story} />}
-        {isComplete && tab === "script"     && script                && <ScriptPanel script={script} />}
-        {isComplete && tab === "audit"      && story.script_audit_data && <ScriptAuditPanel data={story.script_audit_data} storyId={id} />}
-        {isComplete && tab === "evaluation" && story.evaluation_data && <EvaluationPanel data={story.evaluation_data} />}
-        {isComplete && tab === "benchmark"  && story.benchmark_data  && <BenchmarkPanel data={story.benchmark_data} storyId={id} />}
-        {isComplete && tab === "benchmark"  && !story.benchmark_data && <BenchmarkUnavailablePanel />}
+        {isComplete && tab === "script"     && script && <ScriptPanel script={script} />}
+        {isComplete && tab === "evaluation" && <ScriptEvaluationPanel story={story} storyId={id} />}
       </div>
     </div>
   );
@@ -717,6 +712,257 @@ function ScriptAuditPanel({ data, storyId }: { data: NonNullable<Story["script_a
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ── Combined Script Evaluation panel ── */
+function ScriptEvaluationPanel({ story, storyId: _storyId }: { story: Story; storyId: string }) {
+  const eval_data = story.evaluation_data;
+  const audit_data = story.script_audit_data;
+  const bm_data = story.benchmark_data;
+
+  const evalCriteria = [
+    { key: "factual_accuracy",       label: "Factual Accuracy" },
+    { key: "narrative_coherence",    label: "Narrative Coherence" },
+    { key: "audience_engagement",    label: "Audience Engagement" },
+    { key: "source_diversity",       label: "Source Diversity" },
+    { key: "originality",            label: "Originality" },
+    { key: "production_feasibility", label: "Production Feasibility" },
+  ] as const;
+
+  const auditCriteria = [
+    { key: "hook_strength",              label: "Hook Strength" },
+    { key: "narrative_flow",             label: "Narrative Flow" },
+    { key: "evidence_and_specificity",   label: "Evidence & Specificity" },
+    { key: "pacing",                     label: "Pacing" },
+    { key: "writing_quality",            label: "Writing Quality" },
+    { key: "production_readiness",       label: "Production Readiness" },
+  ] as const;
+
+  const bmMetrics = [
+    { key: "hook_potency",              label: "Hook Potency" },
+    { key: "title_formula_fit",         label: "Title Formula Fit" },
+    { key: "act_architecture",          label: "Act Architecture" },
+    { key: "data_density",              label: "Data Density" },
+    { key: "human_narrative_placement", label: "Human Narrative" },
+    { key: "tension_release_rhythm",    label: "Tension / Release" },
+    { key: "closing_device",            label: "Closing Device" },
+  ] as const;
+
+  const allStrengths = [
+    ...(eval_data?.strengths ?? []),
+    ...(audit_data?.strengths ?? []),
+    ...(bm_data?.strengths ?? []),
+  ];
+  const allWeaknesses = [
+    ...(eval_data?.weaknesses ?? []),
+    ...(audit_data?.weaknesses ?? []),
+    ...(bm_data?.gaps ?? []),
+  ];
+
+  const bc = audit_data?.benchmark_comparison ?? null;
+
+  if (!eval_data && !audit_data && !bm_data) {
+    return (
+      <div className="card" style={{ padding: "32px", textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
+        <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>No evaluation data available for this story.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Score summary */}
+      <div className="card" style={{ padding: "18px 24px", display: "flex", gap: 32, flexWrap: "wrap", alignItems: "center" }}>
+        {eval_data && (
+          <div style={{ textAlign: "center" }}>
+            <p style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, color: "var(--color-action)" }}>
+              {(eval_data.overall_score * 100).toFixed(0)}<span style={{ fontSize: 16, color: "var(--color-text-tertiary)" }}>%</span>
+            </p>
+            <p style={{ fontSize: 11, fontWeight: 500, marginTop: 4, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Content Quality</p>
+          </div>
+        )}
+        {eval_data && (audit_data || bm_data) && (
+          <div style={{ width: "0.5px", height: 40, background: "var(--color-border-tertiary)", flexShrink: 0 }} />
+        )}
+        {audit_data && (
+          <div style={{ textAlign: "center" }}>
+            <p style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, color: "var(--color-action)" }}>{audit_data.grade}</p>
+            <p style={{ fontSize: 11, fontWeight: 500, marginTop: 4, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Script Grade</p>
+            <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>{(audit_data.overall_score * 100).toFixed(0)}% audit score</p>
+          </div>
+        )}
+        {audit_data && bm_data && (
+          <div style={{ width: "0.5px", height: 40, background: "var(--color-border-tertiary)", flexShrink: 0 }} />
+        )}
+        {bm_data && (
+          <div style={{ textAlign: "center" }}>
+            <p style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, color: "var(--color-action)" }}>{bm_data.grade}</p>
+            <p style={{ fontSize: 11, fontWeight: 500, marginTop: 4, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Benchmark Grade</p>
+            <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>{Math.round(bm_data.bi_similarity_score * 100)}% similarity</p>
+          </div>
+        )}
+        {audit_data && (
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <span className={audit_data.ready_for_production ? "badge badge-success" : "badge badge-danger"} style={{ fontSize: 11 }}>
+              {audit_data.ready_for_production ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
+              {audit_data.ready_for_production ? "Ready for production" : "Needs another pass"}
+            </span>
+            {audit_data.audit_summary && (
+              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, marginTop: 8 }}>
+                {audit_data.audit_summary}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Evaluator notes */}
+      {eval_data?.evaluator_notes && (
+        <div className="card" style={{ padding: "14px 20px" }}>
+          <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.7 }}>{eval_data.evaluator_notes}</p>
+          <span className={eval_data.approved_for_scripting ? "badge badge-success" : "badge badge-danger"} style={{ fontSize: 11, marginTop: 8, display: "inline-flex" }}>
+            {eval_data.approved_for_scripting ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
+            {eval_data.approved_for_scripting ? "Approved for scripting" : "Not approved"}
+          </span>
+        </div>
+      )}
+
+      {/* All heuristics */}
+      <div className="card" style={{ padding: "18px 20px" }}>
+        <div className="section-rule"><span>All heuristics</span></div>
+
+        {eval_data && (
+          <>
+            <p className="section-label" style={{ marginTop: 8, marginBottom: 10 }}>Content quality</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+              {evalCriteria.map(({ key, label }) => {
+                const score = eval_data.criteria[key] ?? 0;
+                return (
+                  <div key={key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
+                      <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {audit_data && (
+          <>
+            <p className="section-label" style={{ marginBottom: 10 }}>Script craft</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: bm_data ? 18 : 0 }}>
+              {auditCriteria.map(({ key, label }) => {
+                const score = audit_data.criteria[key] ?? 0;
+                return (
+                  <div key={key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
+                      <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {bm_data && (
+          <>
+            <p className="section-label" style={{ marginBottom: 10 }}>Benchmark metrics</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {bmMetrics.map(({ key, label }) => {
+                const score = (bm_data[key] as number) ?? 0;
+                return (
+                  <div key={key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
+                      <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Strengths + weaknesses */}
+      {(allStrengths.length > 0 || allWeaknesses.length > 0) && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {allStrengths.length > 0 && (
+            <div className="card" style={{ padding: "16px 18px" }}>
+              <p className="section-label" style={{ color: "var(--color-success)" }}>Strengths</p>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+                {allStrengths.map((s, i) => (
+                  <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                    <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
+                    {sanitizeBenchmarkText(s)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {allWeaknesses.length > 0 && (
+            <div className="card" style={{ padding: "16px 18px" }}>
+              <p className="section-label" style={{ color: "var(--color-danger)" }}>Areas to improve</p>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+                {allWeaknesses.map((w, i) => (
+                  <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                    <XCircle size={13} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 1 }} />
+                    {sanitizeBenchmarkText(w)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Best-in-class comparison */}
+      {bc && (
+        <div className="card" style={{ padding: "18px 20px" }}>
+          <div className="section-rule"><span>Best-in-class comparison</span></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {bc.alignment_summary && (
+              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                {sanitizeBenchmarkText(bc.alignment_summary)}
+              </p>
+            )}
+            {([
+              ["Hook", bc.hook_comparison],
+              ["Structure", bc.structure_comparison],
+              ["Data Density", bc.data_density_comparison],
+              ["Closing", bc.closing_comparison],
+            ] as [string, string][]).filter(([, v]) => v).map(([label, value]) => (
+              <div key={label}>
+                <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-tertiary)", marginBottom: 3 }}>{label}</p>
+                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{sanitizeBenchmarkText(value)}</p>
+              </div>
+            ))}
+            {bc.best_in_class_takeaways.length > 0 && (
+              <div>
+                <p className="section-label" style={{ marginBottom: 8 }}>Takeaways</p>
+                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+                  {bc.best_in_class_takeaways.map((item, i) => (
+                    <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                      <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
+                      {sanitizeBenchmarkText(item)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

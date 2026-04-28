@@ -69,10 +69,9 @@ class ScriptwriterAgent:
 
     def __init__(self) -> None:
         _llm = ChatAnthropic(
-            model=settings.claude_model,
+            model=settings.claude_opus_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=2048,
-            temperature=0.4,
+            max_tokens=4096,
         )
         self._structured_llm = _llm.with_structured_output(ActOutput)
 

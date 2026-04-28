@@ -207,7 +207,7 @@ export default function AdminConsolePage() {
               <Database size={14} /> Corpus Rebuild
             </h2>
             <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: 16 }}>
-              Rebuilds the complete benchmark corpus from Business Insider, CNBC Make It, Vox, and Johnny Harris reference documentaries. Runs in the background — status updates every 10 seconds.
+              Refreshes up to 25% of each healthy benchmark corpus with the newest usable videos from Business Insider, CNBC Make It, Vox, and Johnny Harris. Missing or underbuilt corpora still run a full build. Runs in the background — status updates every 10 seconds.
             </p>
 
             {corpusQuery.isLoading ? (
@@ -240,11 +240,11 @@ export default function AdminConsolePage() {
                   className="btn-primary"
                   disabled={buildBusy}
                 >
-                  {buildBusy ? <><Loader2 size={13} className="animate-spin" /> {corpus?.build_in_progress ? "Running…" : "Starting…"}</> : <><RefreshCw size={13} /> Rebuild benchmark corpus</>}
+                  {buildBusy ? <><Loader2 size={13} className="animate-spin" /> {corpus?.build_in_progress ? "Running…" : "Starting…"}</> : <><RefreshCw size={13} /> Refresh benchmark corpus</>}
                 </button>
 
                 {rebuildMutation.isSuccess && !corpus?.build_in_progress && (
-                  <p style={{ fontSize: 12, color: "#16a34a", marginTop: 10 }}>Rebuild started in the background.</p>
+                  <p style={{ fontSize: 12, color: "#16a34a", marginTop: 10 }}>Benchmark refresh started in the background.</p>
                 )}
                 {rebuildMutation.isError && (
                   <p style={{ fontSize: 12, color: "var(--color-danger)", marginTop: 10 }}>{(rebuildMutation.error as Error).message}</p>

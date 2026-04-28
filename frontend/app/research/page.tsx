@@ -9,25 +9,17 @@ import {
   CheckCircle2,
   ExternalLink,
   Loader2,
-  Newspaper,
   Radar,
   Search,
-  Send,
   Sparkles,
 } from "lucide-react";
 import {
   apiClient,
-  type ChatMessage,
   type FocusedResearchRun,
   type RawSource,
   type ResearchSource,
   type Story,
-  type YouTubeVideo,
 } from "@/lib/api";
-
-type WorkspaceMessage = ChatMessage & {
-  youtube_results?: YouTubeVideo[];
-};
 
 function credibilityStyle(level: string) {
   if (level === "high") return { background: "var(--color-success-bg)", color: "var(--color-success)", borderColor: "#bbf7d0" };
@@ -211,8 +203,6 @@ function ResearchPageInner() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const [selectedStoryId, setSelectedStoryId] = useState<string>("");
-  const [messages, setMessages] = useState<WorkspaceMessage[]>([]);
-  const [messageInput, setMessageInput] = useState("");
   const [researchObjective, setResearchObjective] = useState("");
   const [researchRun, setResearchRun] = useState<FocusedResearchRun | null>(null);
   const storyParam = searchParams.get("story");
@@ -245,16 +235,12 @@ function ResearchPageInner() {
   });
 
   useEffect(() => {
-    setMessages([]);
-    setMessageInput("");
     setResearchRun(null);
   }, [selectedStoryId]);
 
   const focusedResearchMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedStoryId) {
-        throw new Error("Choose a story before starting research.");
-      }
+      if (!selectedStoryId) throw new Error("Choose a story before starting research.");
       return apiClient.startFocusedResearch(selectedStoryId, researchObjective.trim());
     },
     onSuccess: async (response) => {
@@ -264,47 +250,14 @@ function ResearchPageInner() {
     },
   });
 
-  const chatMutation = useMutation({
-    mutationFn: async (outgoing: string) => {
-      if (!selectedStoryId) {
-        throw new Error("Choose a story before opening the story assistant.");
-      }
-      const history: ChatMessage[] = messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-      }));
-      return apiClient.chat(selectedStoryId, outgoing, history);
-    },
-    onSuccess: (response) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: response.content,
-          youtube_results: response.youtube_results,
-        },
-      ]);
-    },
-    onError: (error) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: (error as Error).message,
-        },
-      ]);
-    },
-  });
-
-  const rewriteMutation = useMutation({
+  const regenerateMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedStoryId) {
-        throw new Error("Choose a story before rewriting.");
-      }
-      return apiClient.rewriteStory(selectedStoryId);
+      if (!selectedStoryId) throw new Error("Choose a story first.");
+      return apiClient.regenerateScript(selectedStoryId);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["stories"] });
+      await queryClient.invalidateQueries({ queryKey: ["story", selectedStoryId] });
     },
   });
 
@@ -313,17 +266,11 @@ function ResearchPageInner() {
     focusedResearchMutation.mutate();
   };
 
-  const handleSendMessage = () => {
-    const outgoing = messageInput.trim();
-    if (!outgoing || !selectedStoryId || chatMutation.isPending) return;
-    setMessages((prev) => [...prev, { role: "user", content: outgoing }]);
-    setMessageInput("");
-    chatMutation.mutate(outgoing);
-  };
-
   const highCredSources = (storySources ?? []).filter((source) => source.credibility === "high").length;
   const evaluation = selectedStory?.evaluation_data;
   const scriptAudit = selectedStory?.script_audit_data;
+
+  const isRegenerating = selectedStory && !["completed", "failed"].includes(selectedStory.status ?? "");
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
@@ -341,7 +288,7 @@ function ResearchPageInner() {
         <div>
           <span style={{ fontSize: 18, fontWeight: 500 }}>Research Workspace</span>
           <span style={{ fontSize: 12, color: "var(--color-text-secondary)", marginLeft: 10 }}>
-            Start a story-aware research pass that targets evaluation and script weaknesses.
+            Run targeted follow-up research, then apply it to generate a new script version.
           </span>
         </div>
         {selectedStory && (
@@ -352,6 +299,7 @@ function ResearchPageInner() {
       </div>
 
       <div style={{ padding: 28, display: "grid", gridTemplateColumns: "minmax(320px, 420px) minmax(0, 1fr)", gap: 18 }}>
+        {/* Left panel */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <div className="card" style={{ padding: "18px 20px" }}>
             <div className="section-rule"><span>Story workspace</span></div>
@@ -432,92 +380,9 @@ function ResearchPageInner() {
               </div>
             )}
           </div>
-
-          <div className="card" style={{ padding: "18px 20px" }}>
-            <div className="section-rule"><span>Story assistant</span></div>
-            {!selectedStoryId ? (
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                Choose a story to ask for more sources, YouTube references, or rewrite ideas.
-              </p>
-            ) : (
-              <>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 280, overflow: "auto", marginBottom: 12 }}>
-                  {messages.length === 0 && (
-                    <div style={{ padding: "12px 14px", borderRadius: 10, background: "var(--color-background-secondary)" }}>
-                      <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-                        Ask follow-up questions, request source interpretation, or ask how to use new research in the script.
-                      </p>
-                    </div>
-                  )}
-                  {messages.map((message, index) => (
-                    <div
-                      key={index}
-                      style={{
-                        alignSelf: message.role === "user" ? "flex-end" : "stretch",
-                        background: message.role === "user" ? "var(--color-action)" : "var(--color-background-secondary)",
-                        color: message.role === "user" ? "#fff" : "var(--color-text-primary)",
-                        padding: "12px 14px",
-                        borderRadius: 12,
-                      }}
-                    >
-                      <p style={{ fontSize: 12, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{message.content}</p>
-                      {message.youtube_results && message.youtube_results.length > 0 && (
-                        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                          {message.youtube_results.map((video) => (
-                            <a
-                              key={video.url}
-                              href={video.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                textDecoration: "none",
-                                padding: "10px 12px",
-                                borderRadius: 10,
-                                background: "rgba(255,255,255,0.08)",
-                                color: message.role === "user" ? "#fff" : "var(--color-text-primary)",
-                              }}
-                            >
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                <Newspaper size={13} />
-                                <span style={{ fontSize: 12, fontWeight: 500 }}>{video.title}</span>
-                              </div>
-                              <p style={{ fontSize: 11, opacity: 0.8 }}>{video.channel}</p>
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {chatMutation.isPending && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--color-text-secondary)" }}>
-                      <Loader2 size={14} className="animate-spin" />
-                      <span style={{ fontSize: 12 }}>Assistant is thinking...</span>
-                    </div>
-                  )}
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    value={messageInput}
-                    onChange={(event) => setMessageInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    placeholder="Ask about sources, data gaps, or script improvements..."
-                    className="input"
-                  />
-                  <button onClick={handleSendMessage} className="btn-primary" disabled={!messageInput.trim() || chatMutation.isPending}>
-                    {chatMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                    Send
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
         </div>
 
+        {/* Right panel */}
         <div className="card" style={{ padding: "18px 20px" }}>
           <div className="section-rule"><span>Focused research</span></div>
           <div style={{ marginBottom: 16 }}>
@@ -566,21 +431,46 @@ function ResearchPageInner() {
           {researchRun ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <ResearchRunPanel run={researchRun} />
-              {selectedStory?.status === "completed" && (
-                <div className="card" style={{ padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                  <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                    Use the expanded source pack to run one audit-guided rewrite pass.
-                  </p>
-                  <button
-                    onClick={() => rewriteMutation.mutate()}
-                    className="btn-secondary"
-                    disabled={rewriteMutation.isPending}
-                  >
-                    {rewriteMutation.isPending && <Loader2 size={13} className="animate-spin" />}
-                    Rewrite script
-                  </button>
-                </div>
-              )}
+
+              {/* Apply research to story */}
+              <div
+                className="card"
+                style={{
+                  padding: "16px 18px",
+                  background: "rgba(28, 38, 168, 0.04)",
+                  borderColor: "rgba(28, 38, 168, 0.18)",
+                }}
+              >
+                {isRegenerating ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <Loader2 size={14} className="animate-spin" style={{ color: "var(--color-action)" }} />
+                    <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
+                      Regenerating script — running analysis, storyline, and scripting pipeline…
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Apply research to story</p>
+                    <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
+                      Use the expanded source pack to run a full re-generation: re-analysis → new storyline → evaluation → new script.
+                    </p>
+                    <button
+                      onClick={() => regenerateMutation.mutate()}
+                      className="btn-primary"
+                      disabled={regenerateMutation.isPending || !selectedStoryId}
+                    >
+                      {regenerateMutation.isPending
+                        ? <><Loader2 size={13} className="animate-spin" />Starting…</>
+                        : <><Sparkles size={13} />Apply research to story</>}
+                    </button>
+                    {regenerateMutation.isError && (
+                      <p style={{ fontSize: 12, color: "var(--color-danger)", marginTop: 8 }}>
+                        {(regenerateMutation.error as Error).message}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           ) : (
             <div
@@ -595,7 +485,7 @@ function ResearchPageInner() {
               <CheckCircle2 size={18} style={{ margin: "0 auto 10px", color: "var(--color-text-tertiary)" }} />
               <p style={{ fontSize: 13, marginBottom: 4 }}>No focused research run yet.</p>
               <p style={{ fontSize: 12 }}>
-                Enter a research objective and use the single Start research button. Source routing happens in the backend.
+                Enter a research objective and click Start research. After it completes, apply it to the story to generate a new script version.
               </p>
             </div>
           )}

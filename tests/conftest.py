@@ -79,6 +79,7 @@ async def api_client(db_session):
         email="test@example.com",
         hashed_password="not-a-real-hash",
         is_active=True,
+        is_admin=True,
     )
 
     async def _override_get_db():

@@ -89,6 +89,9 @@ class StoryORM(Base):
     # Benchmark scores
     benchmark_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # Previous script versions (list of {version, script, created_at})
+    script_versions: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
+
     # Error tracking
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     iteration_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -108,7 +111,7 @@ class StoryCreate(BaseModel):
     topic: str = Field(..., min_length=10, max_length=1000, description="Research topic or question")
     title: Optional[str] = Field(None, max_length=512, description="Optional working title")
     tone: StoryTone = StoryTone.EXPLANATORY
-    target_duration_minutes: int = Field(12, ge=10, le=15)
+    target_duration_minutes: int = Field(10, ge=5, le=15)
     target_audience: Optional[str] = Field(
         None,
         max_length=256,
@@ -142,6 +145,7 @@ class StoryRead(BaseModel):
     evaluation_data: Optional[dict] = None
     benchmark_data: Optional[dict] = None
     script_audit_data: Optional[dict] = None
+    script_versions: Optional[list] = None
     created_at: datetime
     updated_at: datetime
 
@@ -159,6 +163,7 @@ class StoryListItem(BaseModel):
     target_audience: Optional[str]
     quality_score: Optional[float]
     estimated_duration_minutes: Optional[float]
+    benchmark_data: Optional[dict] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

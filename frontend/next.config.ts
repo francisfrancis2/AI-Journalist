@@ -6,6 +6,10 @@ const BACKEND = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Prevent Next.js from stripping trailing slashes before rewrites run.
+  // Without this, POST /api/v1/stories/ becomes /api/v1/stories causing
+  // FastAPI to 307-redirect, which creates an infinite redirect loop.
+  skipTrailingSlashRedirect: true,
 
   async rewrites() {
     return [

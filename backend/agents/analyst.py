@@ -115,6 +115,31 @@ class AnalystAgent:
         )
         self._structured_llm = _llm.with_structured_output(AnalysisOutput)
 
+    @staticmethod
+    def _build_fallback_output(topic: str, package: ResearchPackage) -> AnalysisOutput:
+        """Minimal analysis built directly from source titles/content when the LLM fails."""
+        top = package.top_sources(8)
+        findings = [
+            KeyFindingOutput(
+                claim=src.title or src.content[:120],
+                supporting_sources=[src.url or src.title or ""],
+                supporting_source_ids=[src.source_id],
+                confidence=src.relevance_score,
+                category="general",
+            )
+            for src in top[:6]
+            if src.title or src.content
+        ] or [KeyFindingOutput(claim=f"Research gathered on: {topic}", confidence=0.5, category="general")]
+        return AnalysisOutput(
+            executive_summary=f"Research analysis for: {topic}. Based on {package.total_sources} sources.",
+            key_findings=findings,
+            narrative_angles=[f"Exploring {topic} through available evidence"],
+            data_gaps=["Further primary sources would strengthen this story"],
+            recommended_tone="explanatory",
+            controversies=[],
+            notable_quotes=[],
+        )
+
     async def run(self, state: dict) -> dict:
         package: ResearchPackage = state["research_package"]
         topic: str = state["topic"]
@@ -144,7 +169,8 @@ class AnalystAgent:
                 log.warning("analyst.retry", attempt=attempt, error=str(exc))
 
         if output is None:
-            raise ValueError(f"Analyst failed after 3 attempts: {last_exc}")
+            log.error("analyst.using_deterministic_fallback", topic=topic, error=str(last_exc))
+            output = self._build_fallback_output(topic, package)
 
         source_id_by_ref: dict[str, str] = {}
         for i, src in enumerate(package.top_sources(12), 1):

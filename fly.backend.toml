@@ -13,6 +13,8 @@ primary_region = "sin"  # Singapore — closest to Neon ap-southeast-1
   S3_BUCKET_ASSETS  = "ai-journalist-assets"
   LOG_LEVEL        = "INFO"
   DEBUG            = "false"
+  CORS_ORIGINS     = "https://aijournalist-frontend.fly.dev"
+  TRUSTED_HOSTS    = "aijournalist-backend.fly.dev,aijournalist-backend.internal,localhost,127.0.0.1,backend,*.localhost"
 
 [http_service]
   internal_port        = 8000

@@ -218,8 +218,16 @@ export interface Story {
   evaluation_data: EvaluationData | null;
   benchmark_data: BenchmarkData | null;
   script_audit_data: ScriptAuditData | null;
+  script_versions: ScriptVersion[] | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ScriptVersion {
+  version: number;
+  script: FinalScript;
+  created_at: string;
+  reason: string;
 }
 
 export interface ScriptSection {
@@ -401,7 +409,7 @@ class AIJournalistAPIClient {
   async listStories(limit = 20, offset = 0, status?: StoryStatus): Promise<Story[]> {
     const params: Record<string, unknown> = { limit, offset };
     if (status) params.status = status;
-    const { data } = await this.http.get<Story[]>("/api/v1/stories/", { params });
+    const { data } = await this.http.get<Story[]>("/api/v1/stories", { params });
     return data;
   }
 
@@ -419,6 +427,16 @@ class AIJournalistAPIClient {
 
   async rewriteStory(storyId: string): Promise<Story> {
     const { data } = await this.http.post<Story>(`/api/v1/stories/${storyId}/rewrite`);
+    return data;
+  }
+
+  async regenerateScript(storyId: string): Promise<Story> {
+    const { data } = await this.http.post<Story>(`/api/v1/stories/${storyId}/regenerate`);
+    return data;
+  }
+
+  async implementRecommendations(storyId: string, recommendations: string[]): Promise<Story> {
+    const { data } = await this.http.post<Story>(`/api/v1/stories/${storyId}/implement-recommendations`, { recommendations });
     return data;
   }
 

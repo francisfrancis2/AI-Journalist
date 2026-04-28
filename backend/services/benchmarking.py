@@ -517,6 +517,7 @@ async def run_benchmark_rebuild(
     *,
     library_key: str = "bi",
     max_docs: Optional[int] = None,
+    refresh_fraction: Optional[float] = None,
 ) -> None:
     """Run a corpus rebuild in-process and update admin-visible build state."""
     from backend.agents.corpus_builder import CorpusBuilderAgent
@@ -547,12 +548,21 @@ async def run_benchmark_rebuild(
                 meta = _CATALOG_META[target_key]
                 channel_label = str(meta["label"])
                 channel_identifier = settings.get_channel_identifier(target_key)
-                await agent.build(
-                    max_docs=docs,
-                    library_key=target_key,
-                    channel_label=channel_label,
-                    channel_identifier=channel_identifier,
-                )
+                if refresh_fraction is not None:
+                    await agent.refresh_latest_fraction(
+                        max_docs=docs,
+                        library_key=target_key,
+                        channel_label=channel_label,
+                        channel_identifier=channel_identifier,
+                        refresh_fraction=refresh_fraction,
+                    )
+                else:
+                    await agent.build(
+                        max_docs=docs,
+                        library_key=target_key,
+                        channel_label=channel_label,
+                        channel_identifier=channel_identifier,
+                    )
         _BUILD_STATE["finished_at"] = _utc_now()
         _BUILD_STATE["error"] = None
     except Exception as exc:

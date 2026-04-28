@@ -17,9 +17,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.agents.analyst import AnalystAgent
+from backend.agents.benchmarker import BenchmarkAgent
+from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.focused_researcher import FocusedResearchAgent
 from backend.agents.script_evaluator import ScriptEvaluatorAgent
 from backend.agents.script_rewriter import ScriptRewriterAgent
+from backend.agents.scriptwriter import ScriptwriterAgent
+from backend.agents.storyline_creator import StorylineCreatorAgent
 from backend.api.security import validate_user_input
 from backend.config import settings
 from backend.db.database import get_db
@@ -48,6 +53,10 @@ router = APIRouter()
 
 
 # ── Chat / Research models ────────────────────────────────────────────────────
+
+class ImplementRecommendationsRequest(BaseModel):
+    recommendations: list[str] = Field(..., min_length=1, description="Selected recommendation strings to implement")
+
 
 class ChatMessage(BaseModel):
     role: str  # "user" | "assistant"
@@ -566,9 +575,197 @@ async def _run_manual_script_rewrite(story_id: str) -> None:
     log.info("manual_rewrite.complete", story_id=story_id)
 
 
+async def _run_implement_recommendations(story_id: str, recommendations: list[str]) -> None:
+    """Rewrite the script implementing specific user-selected recommendations, saving the current version."""
+    from backend.db.database import AsyncSessionLocal
+    from backend.models.story import ScriptAuditCriteria, ScriptSectionAudit
+    import datetime as _dt
+
+    log.info("implement_recs.started", story_id=story_id, count=len(recommendations))
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
+        story = result.scalar_one_or_none()
+        if not story or not story.script_data:
+            log.warning("implement_recs.story_missing_or_no_script", story_id=story_id)
+            return
+
+        # Archive current script as a version before rewriting
+        current_versions: list = list(story.script_versions or [])
+        current_versions.append({
+            "version": len(current_versions) + 1,
+            "script": story.script_data,
+            "created_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "reason": "pre_implement_recommendations",
+        })
+
+        await db.execute(
+            update(StoryORM)
+            .where(StoryORM.id == uuid.UUID(story_id))
+            .values(status=StoryStatus.SCRIPTING, error_message=None, script_versions=current_versions)
+        )
+        await db.commit()
+
+        try:
+            # Build a synthetic audit report focused on the selected recommendations
+            criteria = ScriptAuditCriteria(
+                hook_strength=0.5, narrative_flow=0.5, evidence_and_specificity=0.5,
+                pacing=0.5, writing_quality=0.5, production_readiness=0.5,
+            )
+            synthetic_audit = ScriptAuditReport(
+                criteria=criteria,
+                overall_score=0.5,
+                grade="C",
+                ready_for_production=False,
+                audit_summary="User-selected recommendations to implement.",
+                rewrite_priorities=recommendations,
+                section_audits=[
+                    ScriptSectionAudit(
+                        section_number=i + 1,
+                        title=f"Section {i + 1}",
+                        score=0.5,
+                        summary="Implement the selected recommendations in this section where applicable.",
+                        rewrite_recommendation=" | ".join(recommendations),
+                    )
+                    for i in range(len(FinalScript(**story.script_data).sections))
+                ],
+            )
+
+            state = _hydrate_existing_story_state(story)
+            state["script_audit_report"] = synthetic_audit
+            state.update(await ScriptRewriterAgent().run(state))
+            state.update(await ScriptEvaluatorAgent().run(state))
+
+            script: FinalScript = state["final_script"]
+            audit = state.get("script_audit_report")
+            await db.execute(
+                update(StoryORM)
+                .where(StoryORM.id == uuid.UUID(story_id))
+                .values(
+                    status=StoryStatus.COMPLETED,
+                    script_data=script.model_dump(mode="json"),
+                    word_count=script.total_word_count,
+                    estimated_duration_minutes=script.estimated_duration_minutes,
+                    script_audit_data=audit.model_dump(mode="json") if audit else story.script_audit_data,
+                    error_message=None,
+                )
+            )
+            await db.commit()
+            log.info("implement_recs.complete", story_id=story_id)
+
+        except Exception as exc:
+            log.error("implement_recs.failed", story_id=story_id, error=str(exc))
+            async with AsyncSessionLocal() as err_db:
+                await err_db.execute(
+                    update(StoryORM)
+                    .where(StoryORM.id == uuid.UUID(story_id))
+                    .values(status=StoryStatus.FAILED, error_message=str(exc))
+                )
+                await err_db.commit()
+
+
+async def _run_script_regeneration(story_id: str) -> None:
+    """Re-run the full pipeline from Storyline Creator onward using updated research data."""
+    from backend.db.database import AsyncSessionLocal
+
+    log.info("regenerate.started", story_id=story_id)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
+        story = result.scalar_one_or_none()
+        if not story:
+            log.warning("regenerate.story_missing", story_id=story_id)
+            return
+
+        await db.execute(
+            update(StoryORM)
+            .where(StoryORM.id == uuid.UUID(story_id))
+            .values(status=StoryStatus.ANALYSING, error_message=None)
+        )
+        await db.commit()
+
+        try:
+            state: dict[str, Any] = {
+                **create_initial_state(
+                    topic=story.topic,
+                    story_id=str(story.id),
+                    tone=story.tone,
+                    target_duration_minutes=story.target_duration_minutes,
+                    target_audience=story.target_audience,
+                ),
+                "research_package": ResearchPackage(**story.research_data),
+                "analysis_result": AnalysisResult(**story.analysis_data) if story.analysis_data else None,
+                "evaluation_report": EvaluationReport(**story.evaluation_data) if story.evaluation_data else None,
+                "benchmark_report": BenchmarkReport(**story.benchmark_data) if story.benchmark_data else None,
+            }
+
+            # Re-analyse with updated research data
+            await db.execute(update(StoryORM).where(StoryORM.id == uuid.UUID(story_id)).values(status=StoryStatus.ANALYSING))
+            await db.commit()
+            state.update(await AnalystAgent().run(state))
+
+            # Re-build storyline
+            await db.execute(update(StoryORM).where(StoryORM.id == uuid.UUID(story_id)).values(status=StoryStatus.WRITING_STORYLINE))
+            await db.commit()
+            state.update(await StorylineCreatorAgent().run(state))
+
+            # Evaluate
+            await db.execute(update(StoryORM).where(StoryORM.id == uuid.UUID(story_id)).values(status=StoryStatus.EVALUATING))
+            await db.commit()
+            eval_result, bench_result = await asyncio.gather(
+                EvaluatorAgent().run(state),
+                BenchmarkAgent().run(state),
+                return_exceptions=True,
+            )
+            if not isinstance(eval_result, Exception):
+                state.update(eval_result)
+            if not isinstance(bench_result, Exception):
+                state.update(bench_result)
+
+            # Write script
+            await db.execute(update(StoryORM).where(StoryORM.id == uuid.UUID(story_id)).values(status=StoryStatus.SCRIPTING))
+            await db.commit()
+            state.update(await ScriptwriterAgent().run(state))
+            state.update(await ScriptEvaluatorAgent().run(state))
+
+            script: FinalScript = state["final_script"]
+            audit = state.get("script_audit_report")
+            evaluation = state.get("evaluation_report")
+            benchmark = state.get("benchmark_report")
+
+            await db.execute(
+                update(StoryORM)
+                .where(StoryORM.id == uuid.UUID(story_id))
+                .values(
+                    status=StoryStatus.COMPLETED,
+                    title=script.title,
+                    script_data=script.model_dump(mode="json"),
+                    analysis_data=state["analysis_result"].model_dump(mode="json") if state.get("analysis_result") else story.analysis_data,
+                    storyline_data=state["selected_storyline"].model_dump(mode="json") if state.get("selected_storyline") else story.storyline_data,
+                    evaluation_data=evaluation.model_dump(mode="json") if evaluation else story.evaluation_data,
+                    benchmark_data=benchmark.model_dump(mode="json") if benchmark else story.benchmark_data,
+                    script_audit_data=audit.model_dump(mode="json") if audit else story.script_audit_data,
+                    word_count=script.total_word_count,
+                    estimated_duration_minutes=script.estimated_duration_minutes,
+                    quality_score=evaluation.overall_score if evaluation else story.quality_score,
+                    error_message=None,
+                )
+            )
+            await db.commit()
+            log.info("regenerate.complete", story_id=story_id)
+
+        except Exception as exc:
+            log.error("regenerate.failed", story_id=story_id, error=str(exc))
+            async with AsyncSessionLocal() as err_db:
+                await err_db.execute(
+                    update(StoryORM)
+                    .where(StoryORM.id == uuid.UUID(story_id))
+                    .values(status=StoryStatus.FAILED, error_message=str(exc))
+                )
+                await err_db.commit()
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
+@router.post("", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
 async def create_story(
     payload: StoryCreate,
     background_tasks: BackgroundTasks,
@@ -604,7 +801,7 @@ async def create_story(
     return story
 
 
-@router.get("/", response_model=list[StoryListItem])
+@router.get("", response_model=list[StoryListItem])
 async def list_stories(
     db: AsyncSession = Depends(get_db),
     status_filter: Optional[StoryStatus] = Query(None, alias="status"),
@@ -703,6 +900,63 @@ async def rewrite_story_script(
     await db.commit()
     await db.refresh(story)
     background_tasks.add_task(_run_manual_script_rewrite, story_id=str(story_id))
+    return story
+
+
+@router.post("/{story_id}/regenerate", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
+async def regenerate_story_script(
+    story_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> StoryORM:
+    """Re-run the full pipeline from analysis onward, incorporating updated research data."""
+    result = await db.execute(select(StoryORM).where(StoryORM.id == story_id))
+    story = result.scalar_one_or_none()
+    if not story:
+        raise HTTPException(status_code=404, detail=f"Story {story_id} not found")
+    if not story.research_data:
+        raise HTTPException(
+            status_code=status.HTTP_425_TOO_EARLY,
+            detail="No research data available to regenerate from.",
+        )
+    if story.status not in {StoryStatus.COMPLETED, StoryStatus.FAILED}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Story is currently {story.status}; wait for the current run to finish.",
+        )
+
+    story.status = StoryStatus.ANALYSING
+    story.error_message = None
+    await db.commit()
+    await db.refresh(story)
+    background_tasks.add_task(_run_script_regeneration, story_id=str(story_id))
+    return story
+
+
+@router.post("/{story_id}/implement-recommendations", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
+async def implement_recommendations(
+    story_id: uuid.UUID,
+    payload: ImplementRecommendationsRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> StoryORM:
+    """Rewrite the script to implement selected heuristic recommendations, archiving the current version."""
+    result = await db.execute(select(StoryORM).where(StoryORM.id == story_id))
+    story = result.scalar_one_or_none()
+    if not story:
+        raise HTTPException(status_code=404, detail=f"Story {story_id} not found")
+    if not story.script_data:
+        raise HTTPException(status_code=status.HTTP_425_TOO_EARLY, detail="No script to rewrite yet.")
+    if story.status not in {StoryStatus.COMPLETED, StoryStatus.FAILED}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Story is currently {story.status}; wait for the current run to finish.",
+        )
+    story.status = StoryStatus.SCRIPTING
+    story.error_message = None
+    await db.commit()
+    await db.refresh(story)
+    background_tasks.add_task(_run_implement_recommendations, story_id=str(story_id), recommendations=payload.recommendations)
     return story
 
 

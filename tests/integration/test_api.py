@@ -317,7 +317,7 @@ class TestBenchmarkEndpoints:
 
     @pytest.mark.asyncio
     async def test_rebuild_benchmark_accepts_request(self, api_client, mocker):
-        mocker.patch(
+        rebuild = mocker.patch(
             "backend.api.routes.benchmarks.run_benchmark_rebuild",
             new=mocker.AsyncMock(return_value=None),
         )
@@ -332,3 +332,8 @@ class TestBenchmarkEndpoints:
         assert data["accepted"] is True
         assert data["library_key"] == "combined"
         assert data["requested_docs"] == 50
+        rebuild.assert_awaited_once_with(
+            library_key="combined",
+            max_docs=50,
+            refresh_fraction=0.25,
+        )

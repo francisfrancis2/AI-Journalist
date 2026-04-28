@@ -119,6 +119,10 @@ class _SelectiveTrustedHostMiddleware:
 
 async def _seed_benchmark_corpus_if_empty() -> None:
     """On first deployment, kick off a background corpus rebuild if no docs exist."""
+    if not settings.benchmark_seed_on_startup:
+        log.info("benchmarking.seed_skipped", reason="disabled")
+        return
+
     if not settings.youtube_api_key:
         log.warning("benchmarking.seed_skipped", reason="YOUTUBE_API_KEY not configured")
         return

@@ -41,15 +41,34 @@ const TONES: { value: StoryTone; label: string; desc: string; example: string }[
 ];
 
 const PIPELINE_STAGES = [
-  { key: "researching",       label: "Research" },
-  { key: "analysing",         label: "Analysis" },
-  { key: "writing_storyline", label: "Storyline" },
-  { key: "evaluating",        label: "Evaluation" },
-  { key: "scripting",         label: "Script" },
+  { label: "Research",          statuses: ["pending", "researching"] },
+  { label: "Analysis",          statuses: ["analysing", "writing_storyline"] },
+  { label: "Script Writing",    statuses: ["evaluating", "scripting"] },
+  { label: "Script Evaluation", statuses: ["completed"] },
 ];
 
-function stageIndex(status: string) {
-  return PIPELINE_STAGES.findIndex(s => s.key === status);
+const STAGE_MESSAGES: Record<string, string[]> = {
+  pending:           ["Initialising pipeline", "Preparing research agents", "Setting up context"],
+  researching:       ["Scanning news sources", "Querying web for evidence", "Pulling recent articles", "Cross-referencing sources", "Gathering data points"],
+  analysing:         ["Synthesising findings", "Extracting key insights", "Scoring source credibility", "Mapping narrative angles"],
+  writing_storyline: ["Designing documentary structure", "Drafting act breakdowns", "Shaping the story arc", "Selecting strongest angle"],
+  evaluating:        ["Evaluating storyline quality", "Scoring against benchmarks", "Checking narrative coherence", "Running quality checks"],
+  scripting:         ["Writing script narration", "Crafting opening hook", "Building act-by-act script", "Polishing final draft"],
+  completed:         ["Script complete"],
+};
+
+const DEFAULT_TARGET_AUDIENCE =
+  "Entrepreneurs, Founders, Documentary Lovers, Investors, YouTube Content Lovers, Senior Executive and Business Professionals";
+
+function stageIndex(status: string): number {
+  const idx = PIPELINE_STAGES.findIndex(s => s.statuses.includes(status));
+  return idx === -1 ? 0 : idx;
+}
+
+function stagePct(status: string): number {
+  if (status === "completed") return 100;
+  const pcts = [12, 38, 68, 90];
+  return pcts[stageIndex(status)] ?? 12;
 }
 
 function statusBadgeClass(status: string) {
@@ -62,9 +81,10 @@ export default function NewStoryPage() {
   const queryClient = useQueryClient();
   const [topic, setTopic] = useState("");
   const [tone, setTone] = useState<StoryTone>("explanatory");
-  const [targetDuration, setTargetDuration] = useState(12);
-  const [targetAudience, setTargetAudience] = useState("");
+  const [targetDuration, setTargetDuration] = useState(10);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [msgIndex, setMsgIndex] = useState(0);
+  const [dots, setDots] = useState(".");
 
   const { data: stories } = useQuery<Story[]>({
     queryKey: ["stories", "list"],
@@ -87,12 +107,13 @@ export default function NewStoryPage() {
       topic: topic.trim(),
       tone,
       target_duration_minutes: targetDuration,
-      target_audience: targetAudience.trim() || null,
+      target_audience: DEFAULT_TARGET_AUDIENCE,
     }),
     onSuccess: (story) => {
+      // Seed the cache immediately so progress renders without waiting for the first poll
+      queryClient.setQueryData(["story", story.id], story);
       setActiveId(story.id);
       setTopic("");
-      setTargetAudience("");
       queryClient.invalidateQueries({ queryKey: ["stories"] });
     },
   });
@@ -110,6 +131,25 @@ export default function NewStoryPage() {
   }, [activeId, queryClient]);
 
   const isRunning = activeStory && !["completed", "failed"].includes(activeStory.status);
+  const showProgress = activeStory && activeStory.status !== "failed";
+
+  // Cycle through status messages while pipeline is running
+  useEffect(() => {
+    const status = activeStory?.status ?? "pending";
+    const pool = STAGE_MESSAGES[status] ?? ["Working"];
+    setMsgIndex(0);
+    if (!isRunning) return;
+    const t = setInterval(() => setMsgIndex(i => (i + 1) % pool.length), 2800);
+    return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStory?.status, isRunning]);
+
+  // Animated ellipsis
+  useEffect(() => {
+    if (!isRunning) { setDots("."); return; }
+    const t = setInterval(() => setDots(d => d.length >= 3 ? "." : d + "."), 500);
+    return () => clearInterval(t);
+  }, [isRunning]);
   const recent = (stories ?? []).filter(s => s.id !== activeId).slice(0, 6);
   const selectedTone = TONES.find(t => t.value === tone);
 
@@ -195,7 +235,7 @@ export default function NewStoryPage() {
             )}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 14, marginBottom: 16 }}>
+          <div style={{ maxWidth: 180, marginBottom: 16 }}>
             <div>
               <label
                 style={{
@@ -216,32 +256,10 @@ export default function NewStoryPage() {
                 disabled={!!isRunning}
                 className="input"
               >
-                {[10, 11, 12, 13, 14, 15].map((minutes) => (
+                {[5, 10, 15].map((minutes) => (
                   <option key={minutes} value={minutes}>{minutes} minutes</option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  color: "var(--color-text-secondary)",
-                  marginBottom: 8,
-                }}
-              >
-                Audience
-              </label>
-              <input
-                value={targetAudience}
-                onChange={e => setTargetAudience(e.target.value)}
-                placeholder="e.g. finance professionals, founders, general YouTube audience"
-                disabled={!!isRunning}
-                className="input"
-              />
             </div>
           </div>
 
@@ -299,51 +317,70 @@ export default function NewStoryPage() {
             </div>
 
             {/* Stage progress */}
-            {isRunning && (
+            {showProgress && (
               <div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
                   {PIPELINE_STAGES.map((stage, i) => {
                     const current = stageIndex(activeStory.status);
-                    const done = i < current;
-                    const active = i === current;
+                    const done = i < current || activeStory.status === "completed";
+                    const active = i === current && activeStory.status !== "completed";
                     return (
-                      <div key={stage.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: 1 }}>
-                        <div
-                          style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: "50%",
-                            background: done || active
-                              ? "var(--color-action)"
-                              : "var(--color-border-primary)",
-                            transition: "background 0.3s",
-                          }}
-                        />
-                        <span
-                          style={{
-                            fontSize: 10,
-                            color: active
-                              ? "var(--color-text-primary)"
-                              : done
-                              ? "var(--color-text-secondary)"
-                              : "var(--color-text-tertiary)",
-                            fontWeight: active ? 500 : 400,
-                          }}
-                        >
+                      <div key={stage.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+                          {i > 0 && (
+                            <div style={{ flex: 1, height: 1, background: done || active ? "var(--color-action)" : "var(--color-border-primary)", opacity: done ? 1 : 0.4, transition: "background 0.4s" }} />
+                          )}
+                          {active ? (
+                            <Loader2
+                              size={12}
+                              className="animate-spin"
+                              style={{ flexShrink: 0, color: "var(--color-action)" }}
+                            />
+                          ) : (
+                            <div style={{
+                              width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+                              background: done ? "var(--color-action)" : "var(--color-border-primary)",
+                              transition: "background 0.4s",
+                            }} />
+                          )}
+                          {i < PIPELINE_STAGES.length - 1 && (
+                            <div style={{ flex: 1, height: 1, background: done ? "var(--color-action)" : "var(--color-border-primary)", opacity: done ? 1 : 0.4, transition: "background 0.4s" }} />
+                          )}
+                        </div>
+                        <span style={{
+                          fontSize: 10,
+                          textAlign: "center",
+                          color: active ? "var(--color-text-primary)" : done ? "var(--color-action)" : "var(--color-text-tertiary)",
+                          fontWeight: active ? 600 : done ? 500 : 400,
+                          letterSpacing: "0.02em",
+                          transition: "color 0.3s",
+                        }}>
                           {stage.label}
                         </span>
                       </div>
                     );
                   })}
                 </div>
-                <div className="progress-track">
-                  <div
-                    className="progress-fill"
-                    style={{
-                      width: `${Math.max(((stageIndex(activeStory.status) + 1) / PIPELINE_STAGES.length) * 100, 5)}%`,
-                    }}
-                  />
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                  <div className="progress-track" style={{ flex: 1 }}>
+                    <div
+                      className="progress-fill"
+                      style={{ width: `${stagePct(activeStory.status)}%`, transition: "width 0.6s ease" }}
+                    />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: "var(--color-text-secondary)", minWidth: 32, textAlign: "right" }}>
+                    {stagePct(activeStory.status)}%
+                  </span>
                 </div>
+
+                {isRunning && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 10 }}>
+                    <Loader2 size={12} className="animate-spin" style={{ color: "var(--color-action)", flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontStyle: "italic" }}>
+                      {(STAGE_MESSAGES[activeStory.status] ?? ["Working"])[msgIndex]}{dots}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
