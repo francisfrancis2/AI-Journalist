@@ -16,6 +16,7 @@ import {
 import {
   apiClient,
   type FocusedResearchRun,
+  type FocusedResearchStatus,
   type RawSource,
   type ResearchSource,
   type Story,
@@ -236,17 +237,40 @@ function ResearchPageInner() {
 
   useEffect(() => {
     setResearchRun(null);
+    setResearchPending(false);
   }, [selectedStoryId]);
+
+  const [researchPending, setResearchPending] = useState(false);
+
+  const statusQuery = useQuery<FocusedResearchStatus>({
+    queryKey: ["focused-research-status", selectedStoryId],
+    queryFn: () => apiClient.getFocusedResearchStatus(selectedStoryId),
+    enabled: researchPending && !!selectedStoryId,
+    refetchInterval: researchPending ? 3000 : false,
+  });
+
+  useEffect(() => {
+    if (!researchPending) return;
+    const status = statusQuery.data;
+    if (!status) return;
+    if (!status.pending) {
+      setResearchPending(false);
+      if (status.run) {
+        setResearchRun(status.run);
+        queryClient.invalidateQueries({ queryKey: ["story-sources", selectedStoryId] });
+        queryClient.invalidateQueries({ queryKey: ["stories"] });
+      }
+    }
+  }, [statusQuery.data, researchPending, selectedStoryId, queryClient]);
 
   const focusedResearchMutation = useMutation({
     mutationFn: async () => {
       if (!selectedStoryId) throw new Error("Choose a story before starting research.");
-      return apiClient.startFocusedResearch(selectedStoryId, researchObjective.trim());
+      await apiClient.startFocusedResearch(selectedStoryId, researchObjective.trim());
     },
-    onSuccess: async (response) => {
-      setResearchRun(response);
-      await queryClient.invalidateQueries({ queryKey: ["story-sources", selectedStoryId] });
-      await queryClient.invalidateQueries({ queryKey: ["stories"] });
+    onSuccess: () => {
+      setResearchPending(true);
+      queryClient.invalidateQueries({ queryKey: ["focused-research-status", selectedStoryId] });
     },
   });
 
@@ -346,8 +370,11 @@ function ResearchPageInner() {
                         <p style={{ fontSize: 18, fontWeight: 500 }}>{scorePercent(evaluation?.overall_score)}</p>
                       </div>
                       <div className="card" style={{ padding: "10px 12px" }}>
-                        <p style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Script audit</p>
+                        <p style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Script grade</p>
                         <p style={{ fontSize: 18, fontWeight: 500 }}>{scriptAudit?.grade ?? "N/A"}</p>
+                        <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4, lineHeight: 1.4 }}>
+                          Final script quality
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -408,10 +435,10 @@ function ResearchPageInner() {
             <button
               onClick={handleStartResearch}
               className="btn-primary"
-              disabled={!selectedStoryId || researchObjective.trim().length < 3 || focusedResearchMutation.isPending}
+              disabled={!selectedStoryId || researchObjective.trim().length < 3 || focusedResearchMutation.isPending || researchPending}
             >
-              {focusedResearchMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
-              Start research
+              {(focusedResearchMutation.isPending || researchPending) ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+              {researchPending ? "Research running…" : "Start research"}
             </button>
             {!selectedStoryId && (
               <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
@@ -420,15 +447,15 @@ function ResearchPageInner() {
             )}
           </div>
 
-          {focusedResearchMutation.error && (
+          {(focusedResearchMutation.error || statusQuery.data?.error) && (
             <div className="card" style={{ padding: "12px 14px", background: "var(--color-danger-bg)", marginBottom: 14 }}>
               <p style={{ fontSize: 12, color: "var(--color-danger)", lineHeight: 1.6 }}>
-                {(focusedResearchMutation.error as Error).message}
+                {statusQuery.data?.error ?? (focusedResearchMutation.error as Error).message}
               </p>
             </div>
           )}
 
-          {focusedResearchMutation.isPending && (
+          {researchPending && (
             <div
               className="card"
               style={{
@@ -447,7 +474,7 @@ function ResearchPageInner() {
               <div>
                 <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Research in progress…</p>
                 <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
-                  Querying news, web, and data sources. This typically takes 60–120 seconds. Please wait.
+                  Running in the background — you can navigate away and come back. This typically takes 60–120 seconds.
                 </p>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>

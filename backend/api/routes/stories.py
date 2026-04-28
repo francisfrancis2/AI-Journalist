@@ -84,6 +84,12 @@ class FocusedResearchRequest(BaseModel):
     objective: str = Field(..., min_length=3, max_length=1000)
 
 
+class FocusedResearchStatusResponse(BaseModel):
+    pending: bool
+    error: Optional[str] = None
+    run: Optional[FocusedResearchRun] = None
+
+
 # ── Chat helpers ──────────────────────────────────────────────────────────────
 
 def _build_chat_system_prompt(story: StoryORM) -> str:
@@ -370,6 +376,61 @@ def _merge_focused_research_into_story(story: StoryORM, run: FocusedResearchRun)
     research_data["total_sources"] = len(existing_sources)
     research_data["focused_research_runs"] = runs[-10:]
     return research_data
+
+
+# ── Background focused-research runner ───────────────────────────────────────
+
+async def _run_focused_research(story_id: str, objective: str) -> None:
+    """Run focused research in the background so it survives client navigation."""
+    from backend.db.database import AsyncSessionLocal
+
+    log.info("focused_research.bg_started", story_id=story_id)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
+        story = result.scalar_one_or_none()
+        if not story:
+            log.warning("focused_research.story_missing", story_id=story_id)
+            return
+        try:
+            context = _build_focused_research_context(story)
+            agent = FocusedResearchAgent()
+            run = await agent.run(
+                topic=story.topic,
+                user_input=objective,
+                story_context=context,
+            )
+            research_data = _merge_focused_research_into_story(story, run)
+            research_data["focused_research_pending"] = False
+            research_data["focused_research_error"] = None
+            research_data["latest_focused_run"] = run.model_dump(mode="json")
+            await db.execute(
+                update(StoryORM)
+                .where(StoryORM.id == uuid.UUID(story_id))
+                .values(research_data=research_data)
+            )
+            await db.commit()
+            log.info(
+                "focused_research.bg_complete",
+                story_id=story_id,
+                sources=len(run.sources),
+            )
+        except Exception as exc:
+            log.error("focused_research.bg_failed", story_id=story_id, error=str(exc))
+            try:
+                err_result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
+                err_story = err_result.scalar_one_or_none()
+                if err_story:
+                    rd = dict(err_story.research_data or {})
+                    rd["focused_research_pending"] = False
+                    rd["focused_research_error"] = str(exc)
+                    await db.execute(
+                        update(StoryORM)
+                        .where(StoryORM.id == uuid.UUID(story_id))
+                        .values(research_data=rd)
+                    )
+                    await db.commit()
+            except Exception:
+                pass
 
 
 # ── Background pipeline runner ────────────────────────────────────────────────
@@ -995,18 +1056,18 @@ async def get_research_sources(
     ]
 
 
-@router.post("/{story_id}/focused-research", response_model=FocusedResearchRun)
+@router.post("/{story_id}/focused-research", status_code=202)
 async def start_focused_research(
     story_id: uuid.UUID,
     payload: FocusedResearchRequest,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-) -> FocusedResearchRun:
+) -> dict:
     """
-    Run one story-aware follow-up research pass.
+    Start a story-aware follow-up research pass in the background.
 
-    The user provides only a research goal. The backend agent decides which
-    sources to query based on the story, evaluation, benchmark, script audit,
-    and existing research context.
+    Returns 202 immediately. Poll GET /{story_id}/focused-research/status
+    to check progress and retrieve the completed run.
     """
     validate_user_input(payload.objective, field="objective")
 
@@ -1015,15 +1076,9 @@ async def start_focused_research(
     if not story:
         raise HTTPException(status_code=404, detail=f"Story {story_id} not found")
 
-    context = _build_focused_research_context(story)
-    agent = FocusedResearchAgent()
-    run = await agent.run(
-        topic=story.topic,
-        user_input=payload.objective,
-        story_context=context,
-    )
-
-    research_data = _merge_focused_research_into_story(story, run)
+    research_data = dict(story.research_data or {"topic": story.topic})
+    research_data["focused_research_pending"] = True
+    research_data.pop("focused_research_error", None)
     await db.execute(
         update(StoryORM)
         .where(StoryORM.id == story_id)
@@ -1031,13 +1086,28 @@ async def start_focused_research(
     )
     await db.commit()
 
-    log.info(
-        "stories.focused_research.complete",
-        story_id=str(story_id),
-        sources=len(run.sources),
-        strategy=run.plan.source_strategy,
-    )
-    return run
+    background_tasks.add_task(_run_focused_research, story_id=str(story_id), objective=payload.objective)
+    log.info("stories.focused_research.queued", story_id=str(story_id))
+    return {"status": "started"}
+
+
+@router.get("/{story_id}/focused-research/status", response_model=FocusedResearchStatusResponse)
+async def get_focused_research_status(
+    story_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> FocusedResearchStatusResponse:
+    """Poll this endpoint to check if a focused research run is in progress or complete."""
+    result = await db.execute(select(StoryORM).where(StoryORM.id == story_id))
+    story = result.scalar_one_or_none()
+    if not story:
+        raise HTTPException(status_code=404, detail=f"Story {story_id} not found")
+
+    rd = story.research_data or {}
+    pending = bool(rd.get("focused_research_pending", False))
+    error = rd.get("focused_research_error") or None
+    run_data = rd.get("latest_focused_run")
+    run = FocusedResearchRun.model_validate(run_data) if run_data and not pending else None
+    return FocusedResearchStatusResponse(pending=pending, error=error, run=run)
 
 
 @router.post("/{story_id}/chat", response_model=ChatResponse)

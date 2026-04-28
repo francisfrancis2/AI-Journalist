@@ -300,6 +300,12 @@ export interface FocusedResearchRun {
   sources: RawSource[];
 }
 
+export interface FocusedResearchStatus {
+  pending: boolean;
+  error: string | null;
+  run: FocusedResearchRun | null;
+}
+
 export interface YouTubeVideo {
   title: string;
   url: string;
@@ -454,11 +460,16 @@ class AIJournalistAPIClient {
   async startFocusedResearch(
     storyId: string,
     objective: string
-  ): Promise<FocusedResearchRun> {
-    const { data } = await this.http.post<FocusedResearchRun>(
+  ): Promise<void> {
+    await this.http.post(
       `/api/v1/stories/${storyId}/focused-research`,
-      { objective },
-      { timeout: 180_000 }
+      { objective }
+    );
+  }
+
+  async getFocusedResearchStatus(storyId: string): Promise<FocusedResearchStatus> {
+    const { data } = await this.http.get<FocusedResearchStatus>(
+      `/api/v1/stories/${storyId}/focused-research/status`
     );
     return data;
   }
