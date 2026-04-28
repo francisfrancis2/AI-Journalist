@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Trash2, UserPlus, ShieldCheck, RefreshCw, Database, AlertTriangle } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
-import { apiClient, type BenchmarkAdminStatus } from "@/lib/api";
+import { Loader2, Trash2, UserPlus, ShieldCheck, RefreshCw } from "lucide-react";
+import { apiClient } from "@/lib/api";
+import { AdminBenchmarkView } from "@/components/benchmarking/AdminBenchmarkView";
 import { getUserInfo } from "@/lib/auth";
 
 type AdminUser = {
@@ -16,13 +16,7 @@ type AdminUser = {
   created_at: string;
 };
 
-type Tab = "users" | "corpus";
-
-function formatTs(value: string | null) {
-  if (!value) return "—";
-  const d = new Date(value);
-  return `${format(d, "MMM d, yyyy · HH:mm")} (${formatDistanceToNow(d, { addSuffix: true })})`;
-}
+type Tab = "users" | "benchmarking";
 
 export default function AdminConsolePage() {
   const currentUser = getUserInfo();
@@ -65,23 +59,6 @@ export default function AdminConsolePage() {
     createMutation.mutate({ email: newEmail, password: newPassword });
   };
 
-  // ── Corpus tab ──────────────────────────────────────────────────────────────
-  const corpusQuery = useQuery<BenchmarkAdminStatus>({
-    queryKey: ["benchmark-status"],
-    queryFn: () => apiClient.getBenchmarkStatus(),
-    refetchInterval: 10_000,
-  });
-
-  const rebuildMutation = useMutation({
-    mutationFn: () => apiClient.rebuildBenchmarkLibrary("combined"),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["benchmark-status"] }),
-  });
-
-  const corpus = corpusQuery.data;
-  const buildBusy = corpus?.build_in_progress || rebuildMutation.isPending;
-  const combinedCorpus = corpus?.libraries.find((library) => library.key === "combined");
-  const corpusReady = Boolean(combinedCorpus?.ready_for_scoring);
-
   if (!currentUser?.is_admin) return null;
 
   const TAB_STYLE = (active: boolean): React.CSSProperties => ({
@@ -98,7 +75,7 @@ export default function AdminConsolePage() {
   });
 
   return (
-    <div style={{ padding: "32px 40px", maxWidth: 860, margin: "0 auto" }}>
+    <div style={{ padding: "32px 40px", maxWidth: tab === "benchmarking" ? 1280 : 860, margin: "0 auto" }}>
 
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
@@ -108,8 +85,8 @@ export default function AdminConsolePage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, padding: 3, background: "var(--color-background-secondary)", borderRadius: 10, marginBottom: 24, width: "fit-content" }}>
-        <button style={TAB_STYLE(tab === "users")} onClick={() => setTab("users")}>Users</button>
-        <button style={TAB_STYLE(tab === "corpus")} onClick={() => setTab("corpus")}>Corpus</button>
+        <button style={TAB_STYLE(tab === "users")} onClick={() => setTab("users")}>User Management</button>
+        <button style={TAB_STYLE(tab === "benchmarking")} onClick={() => setTab("benchmarking")}>Benchmarking Console</button>
       </div>
 
       {/* ── USERS TAB ─────────────────────────────────────────────────────────── */}
@@ -198,109 +175,18 @@ export default function AdminConsolePage() {
         </>
       )}
 
-      {/* ── CORPUS TAB ────────────────────────────────────────────────────────── */}
-      {tab === "corpus" && (
+      {/* ── BENCHMARKING TAB ─────────────────────────────────────────────────── */}
+      {tab === "benchmarking" && (
         <>
-          {/* Rebuild card */}
           <div className="card" style={{ padding: 20, marginBottom: 24 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-              <Database size={14} /> Corpus Rebuild
+            <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+              Benchmarking Console
             </h2>
             <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: 16 }}>
-              Refreshes up to 25% of each healthy benchmark corpus with the newest usable videos from Business Insider, CNBC Make It, Vox, and Johnny Harris. Missing or underbuilt corpora still run a full build. Runs in the background — status updates every 10 seconds.
+              Manage benchmark corpus health, reference libraries, and rebuilds here. The Benchmarking workspace remains available to admins for the same script-level scoring and improvement tools shown to regular users.
             </p>
-
-            {corpusQuery.isLoading ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--color-text-secondary)", fontSize: 13 }}>
-                <Loader2 size={14} className="animate-spin" /> Loading corpus status…
-              </div>
-            ) : (
-              <>
-                {/* Status row */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-                  <span className={`badge ${corpus?.build_in_progress || !corpusReady ? "badge-warning" : "badge-success"}`}>
-                    {corpus?.build_in_progress
-                      ? <><Loader2 size={11} className="animate-spin" /> Rebuild running</>
-                      : corpusReady
-                      ? "Ready"
-                      : "Needs rebuild"}
-                  </span>
-                  {corpus?.last_build_finished_at && (
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                      Last built: {formatTs(corpus.last_build_finished_at)}
-                    </span>
-                  )}
-                  {!corpus?.last_build_finished_at && !corpus?.build_in_progress && (
-                    <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>No build completed yet</span>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => rebuildMutation.mutate()}
-                  className="btn-primary"
-                  disabled={buildBusy}
-                >
-                  {buildBusy ? <><Loader2 size={13} className="animate-spin" /> {corpus?.build_in_progress ? "Running…" : "Starting…"}</> : <><RefreshCw size={13} /> Refresh benchmark corpus</>}
-                </button>
-
-                {rebuildMutation.isSuccess && !corpus?.build_in_progress && (
-                  <p style={{ fontSize: 12, color: "#16a34a", marginTop: 10 }}>Benchmark refresh started in the background.</p>
-                )}
-                {rebuildMutation.isError && (
-                  <p style={{ fontSize: 12, color: "var(--color-danger)", marginTop: 10 }}>{(rebuildMutation.error as Error).message}</p>
-                )}
-
-                {corpus?.last_build_error && (
-                  <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 10, background: "var(--color-danger-bg)" }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                      <AlertTriangle size={13} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 1 }} />
-                      <div>
-                        <p style={{ fontSize: 12, fontWeight: 500, color: "var(--color-danger)", marginBottom: 4 }}>Last rebuild failed</p>
-                        <p style={{ fontSize: 12, color: "var(--color-danger)", lineHeight: 1.6 }}>{corpus.last_build_error}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
           </div>
-
-          {/* Per-library status */}
-          {corpus?.libraries && corpus.libraries.length > 0 && (
-            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-              <div style={{ padding: "16px 20px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Library Status</h2>
-              </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                    {["Library", "Docs", "Version", "Built", "Health"].map(h => (
-                      <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: 11, fontWeight: 500, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {corpus.libraries.map((lib, i) => (
-                    <tr key={lib.key} style={{ borderBottom: i < corpus.libraries.length - 1 ? "0.5px solid var(--color-border-tertiary)" : "none" }}>
-                      <td style={{ padding: "12px 20px" }}>
-                        <div style={{ fontWeight: 500 }}>{lib.label}</div>
-                        <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>{lib.key}</div>
-                      </td>
-                      <td style={{ padding: "12px 20px", color: "var(--color-text-secondary)" }}>{lib.doc_count} / {lib.minimum_doc_count} min</td>
-                      <td style={{ padding: "12px 20px", color: "var(--color-text-secondary)" }}>{lib.version != null ? `v${lib.version}` : "—"}</td>
-                      <td style={{ padding: "12px 20px", color: "var(--color-text-secondary)", fontSize: 12 }}>{formatTs(lib.built_at)}</td>
-                      <td style={{ padding: "12px 20px" }}>
-                        {!lib.implemented ? <span className="badge badge-neutral">Planned</span>
-                          : !lib.available ? <span className="badge badge-danger">Unavailable</span>
-                          : lib.stale ? <span className="badge badge-warning">Stale</span>
-                          : <span className="badge badge-success">Healthy</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <AdminBenchmarkView embedded />
         </>
       )}
     </div>
