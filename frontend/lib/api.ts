@@ -457,7 +457,8 @@ class AIJournalistAPIClient {
   ): Promise<FocusedResearchRun> {
     const { data } = await this.http.post<FocusedResearchRun>(
       `/api/v1/stories/${storyId}/focused-research`,
-      { objective }
+      { objective },
+      { timeout: 180_000 }
     );
     return data;
   }

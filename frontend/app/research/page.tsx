@@ -428,6 +428,36 @@ function ResearchPageInner() {
             </div>
           )}
 
+          {focusedResearchMutation.isPending && (
+            <div
+              className="card"
+              style={{
+                padding: "24px 20px",
+                marginBottom: 14,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 12,
+                background: "rgba(28, 38, 168, 0.03)",
+                borderColor: "rgba(28, 38, 168, 0.16)",
+                textAlign: "center",
+              }}
+            >
+              <Loader2 size={22} className="animate-spin" style={{ color: "var(--color-action)" }} />
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Research in progress…</p>
+                <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
+                  Querying news, web, and data sources. This typically takes 60–120 seconds. Please wait.
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                {["Planning queries", "Searching sources", "Deduplicating"].map((step, i) => (
+                  <span key={i} className="badge badge-neutral" style={{ fontSize: 11 }}>{step}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {researchRun ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <ResearchRunPanel run={researchRun} />
