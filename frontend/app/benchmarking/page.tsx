@@ -26,6 +26,10 @@ import {
 } from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
 
+const BENCHMARK_GRADE_HELP =
+  "Benchmark grade measures how closely the story matches the benchmark corpus in hook, structure, data density, human narrative, and closing pattern.";
+const GRADE_SCALE_HELP = "Letter scale: A 85%+, B 70-84%, C 55-69%, D below 55%.";
+
 function formatTimestamp(value: string | null) {
   if (!value) return "Not available";
   const date = new Date(value);
@@ -64,6 +68,7 @@ function CriterionCard({
   const [expanded, setExpanded] = useState(false);
   const score = Math.round(criterion.score * 100);
   const isWeak = score < 70;
+  const rec = criterion.improvement || criterion.assessment;
 
   return (
     <div
@@ -75,14 +80,12 @@ function CriterionCard({
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
-        {criterion.improvement && (
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={() => onCheck(criterion.improvement!)}
-            style={{ marginTop: 3, cursor: "pointer", accentColor: "var(--color-action)", flexShrink: 0 }}
-          />
-        )}
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={() => onCheck(rec)}
+          style={{ marginTop: 3, cursor: "pointer", accentColor: "var(--color-action)", flexShrink: 0 }}
+        />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 500 }}>{criterion.label}</span>
@@ -92,7 +95,7 @@ function CriterionCard({
         </div>
       </div>
 
-      <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 8 }}>
+      <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: criterion.improvement ? 8 : 0 }}>
         {criterion.assessment}
       </p>
 
@@ -199,6 +202,37 @@ function ScriptVersionHistory({ versions }: { versions: ScriptVersion[] }) {
   );
 }
 
+const EVAL_CRITERIA = [
+  { key: "factual_accuracy",       label: "Factual Accuracy" },
+  { key: "narrative_coherence",    label: "Narrative Coherence" },
+  { key: "audience_engagement",    label: "Audience Engagement" },
+  { key: "source_diversity",       label: "Source Diversity" },
+  { key: "originality",            label: "Originality" },
+  { key: "production_feasibility", label: "Production Feasibility" },
+] as const;
+
+const AUDIT_CRITERIA = [
+  { key: "hook_strength",            label: "Hook Strength" },
+  { key: "narrative_flow",           label: "Narrative Flow" },
+  { key: "evidence_and_specificity", label: "Evidence & Specificity" },
+  { key: "pacing",                   label: "Pacing" },
+  { key: "writing_quality",          label: "Writing Quality" },
+  { key: "production_readiness",     label: "Production Readiness" },
+] as const;
+
+function HeuristicRow({ label, score }: { label: string; score: number }) {
+  const pct = Math.round(score * 100);
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+        <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
+        <span style={{ fontSize: 12, fontWeight: 500 }}>{pct}%</span>
+      </div>
+      <ScoreBar score={score} />
+    </div>
+  );
+}
+
 function UserBenchmarkView() {
   const qc = useQueryClient();
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
@@ -215,10 +249,19 @@ function UserBenchmarkView() {
     [storiesQuery.data]
   );
 
-  const selectedStory = useMemo(
+  const selectedStoryListItem = useMemo(
     () => completedStories.find(s => s.id === selectedStoryId) ?? completedStories[0] ?? null,
     [completedStories, selectedStoryId]
   );
+
+  // Fetch full story to get evaluation_data and script_audit_data
+  const fullStoryQuery = useQuery<Story>({
+    queryKey: ["story", selectedStoryListItem?.id],
+    queryFn: () => apiClient.getStory(selectedStoryListItem!.id),
+    enabled: !!selectedStoryListItem?.id,
+  });
+
+  const selectedStory = fullStoryQuery.data ?? selectedStoryListItem;
 
   const implementMutation = useMutation({
     mutationFn: ({ storyId, recs }: { storyId: string; recs: string[] }) =>
@@ -227,6 +270,7 @@ function UserBenchmarkView() {
       qc.setQueryData(["stories", "list"], (old: Story[] | undefined) =>
         old ? old.map(s => s.id === updated.id ? updated : s) : [updated]
       );
+      qc.setQueryData(["story", updated.id], updated);
       setSelectedRecs(new Set());
     },
   });
@@ -246,6 +290,8 @@ function UserBenchmarkView() {
 
   const bm = selectedStory?.benchmark_data ?? null;
   const criteria = bm?.criterion_details ?? [];
+  const evalData = selectedStory?.evaluation_data ?? null;
+  const auditData = selectedStory?.script_audit_data ?? null;
   const isRewriting = selectedStory && !["completed", "failed"].includes(selectedStory.status);
   const scriptVersions = selectedStory?.script_versions ?? [];
 
@@ -336,6 +382,14 @@ function UserBenchmarkView() {
               </div>
             ))}
           </div>
+          <div className="card" style={{ padding: "12px 16px" }}>
+            <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+              {BENCHMARK_GRADE_HELP}
+            </p>
+            <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
+              {GRADE_SCALE_HELP}
+            </p>
+          </div>
 
           {/* Rewriting notice */}
           {isRewriting && (
@@ -389,44 +443,65 @@ function UserBenchmarkView() {
             </div>
           )}
 
-          {/* Criteria */}
-          {criteria.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div className="section-rule" style={{ flex: 1 }}><span>Heuristic scores</span></div>
-                {criteria.some(c => c.improvement) && (
-                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 12, flexShrink: 0 }}>
-                    Check items to implement
-                  </p>
-                )}
+          {/* All heuristics — same 3 groups as Script Evaluation tab */}
+
+          {/* Content quality (from evaluation_data) */}
+          {evalData && (
+            <div className="card" style={{ padding: "16px 18px" }}>
+              <div className="section-rule"><span>Content quality</span></div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+                {EVAL_CRITERIA.map(({ key, label }) => (
+                  <HeuristicRow key={key} label={label} score={evalData.criteria[key] ?? 0} />
+                ))}
               </div>
-              {criteria.map(c => (
-                <CriterionCard
-                  key={c.criterion}
-                  criterion={c}
-                  checked={c.improvement ? selectedRecs.has(c.improvement) : false}
-                  onCheck={handleCheck}
-                />
-              ))}
             </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-              {[
-                { label: "Hook potency",                score: bm.hook_potency },
-                { label: "Title formula fit",           score: bm.title_formula_fit },
-                { label: "Act architecture",            score: bm.act_architecture },
-                { label: "Data density",                score: bm.data_density },
-                { label: "Human narrative placement",   score: bm.human_narrative_placement },
-                { label: "Tension & release rhythm",    score: bm.tension_release_rhythm },
-                { label: "Closing device",              score: bm.closing_device },
-              ].map(({ label, score }) => (
-                <div key={label} className="card" style={{ padding: "14px 16px" }}>
+          )}
+
+          {/* Script craft (from script_audit_data) */}
+          {auditData && (
+            <div className="card" style={{ padding: "16px 18px" }}>
+              <div className="section-rule"><span>Script craft</span></div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+                {AUDIT_CRITERIA.map(({ key, label }) => (
+                  <HeuristicRow key={key} label={label} score={auditData.criteria[key] ?? 0} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Benchmark metrics — with checkboxes */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div className="section-rule" style={{ flex: 1 }}><span>Benchmark metrics</span></div>
+              <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 12, flexShrink: 0 }}>
+                Check to implement
+              </p>
+            </div>
+            {criteria.length > 0 ? criteria.map(c => (
+              <CriterionCard
+                key={c.criterion}
+                criterion={c}
+                checked={selectedRecs.has(c.improvement || c.assessment)}
+                onCheck={handleCheck}
+              />
+            )) : (
+              /* Fallback when criterion_details not populated */
+              [
+                { key: "hook_potency",              label: "Hook Potency",           score: bm.hook_potency },
+                { key: "title_formula_fit",          label: "Title Formula Fit",      score: bm.title_formula_fit },
+                { key: "act_architecture",           label: "Act Architecture",       score: bm.act_architecture },
+                { key: "data_density",               label: "Data Density",           score: bm.data_density },
+                { key: "human_narrative_placement",  label: "Human Narrative",        score: bm.human_narrative_placement },
+                { key: "tension_release_rhythm",     label: "Tension / Release",      score: bm.tension_release_rhythm },
+                { key: "closing_device",             label: "Closing Device",         score: bm.closing_device },
+              ].map(({ key, label, score }) => (
+                <div key={key} className="card" style={{ padding: "14px 16px" }}>
                   <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>{label}</p>
                   <ScoreBar score={score} />
                 </div>
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
 
           {implementMutation.isError && (
             <div className="card" style={{ padding: "12px 14px", background: "var(--color-danger-bg)", borderColor: "#fecaca" }}>

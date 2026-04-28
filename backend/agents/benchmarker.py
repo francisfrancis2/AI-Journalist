@@ -92,7 +92,7 @@ class BenchmarkAgent:
         _llm = ChatAnthropic(
             model=settings.claude_haiku_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=1500,
+            max_tokens=2500,
             temperature=0.1,
         )
         self._structured_llm = _llm.with_structured_output(BenchmarkScores)
