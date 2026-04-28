@@ -92,6 +92,12 @@ class StoryORM(Base):
     # Previous script versions (list of {version, script, created_at})
     script_versions: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
 
+    # Revision lineage — set when this story was created as a revision of another
+    parent_story_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True, default=None
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
     # Error tracking
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     iteration_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -146,6 +152,8 @@ class StoryRead(BaseModel):
     benchmark_data: Optional[dict] = None
     script_audit_data: Optional[dict] = None
     script_versions: Optional[list] = None
+    parent_story_id: Optional[uuid.UUID] = None
+    revision: int = 1
     created_at: datetime
     updated_at: datetime
 
@@ -164,6 +172,8 @@ class StoryListItem(BaseModel):
     quality_score: Optional[float]
     estimated_duration_minutes: Optional[float]
     benchmark_data: Optional[dict] = None
+    parent_story_id: Optional[uuid.UUID] = None
+    revision: int = 1
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -55,8 +55,8 @@ export default function ResultsPage() {
   const rewriteMutation = useMutation({
     mutationFn: () => apiClient.rewriteStory(id),
     onSuccess: (nextStory) => {
-      queryClient.setQueryData(["story", id], nextStory);
-      setTab("script");
+      queryClient.invalidateQueries({ queryKey: ["stories"] });
+      router.push(`/results/${nextStory.id}`);
     },
   });
 
@@ -87,12 +87,10 @@ export default function ResultsPage() {
   const isFailed   = story.status === "failed";
   const isRunning  = !isComplete && !isFailed;
 
-  const scriptVersionNumber = story.script_versions?.length
-    ? story.script_versions.length + 1
-    : null;
+  const revisionNumber = story.revision > 1 ? story.revision : null;
 
   const TABS: { id: Tab; label: string; available: boolean }[] = [
-    { id: "script",     label: scriptVersionNumber ? `Script v${scriptVersionNumber}` : "Script", available: isComplete },
+    { id: "script",     label: revisionNumber ? `Script v${revisionNumber}` : "Script", available: isComplete },
     { id: "evaluation", label: "Script Evaluation", available: isComplete },
   ];
 
@@ -217,7 +215,7 @@ export default function ResultsPage() {
       <div style={{ padding: "28px", maxWidth: 800 }}>
         {isRunning  && <PipelineStatus story={story} />}
         {isFailed   && <FailedState story={story} />}
-        {isComplete && tab === "script"     && script && <ScriptPanel script={script} versionNumber={scriptVersionNumber} />}
+        {isComplete && tab === "script"     && script && <ScriptPanel script={script} versionNumber={revisionNumber} />}
         {isComplete && tab === "evaluation" && <ScriptEvaluationPanel story={story} storyId={id} />}
       </div>
     </div>
@@ -285,7 +283,7 @@ function ScriptPanel({ script, versionNumber }: { script: FinalScript; versionNu
             v{versionNumber}
           </span>
           <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
-            Revision {versionNumber} — previous versions saved in history
+            Revised script — original version preserved in History
           </span>
         </div>
       )}

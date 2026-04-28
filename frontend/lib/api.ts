@@ -219,6 +219,8 @@ export interface Story {
   benchmark_data: BenchmarkData | null;
   script_audit_data: ScriptAuditData | null;
   script_versions: ScriptVersion[] | null;
+  parent_story_id: string | null;
+  revision: number;
   created_at: string;
   updated_at: string;
 }

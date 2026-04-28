@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import {
   CheckCircle2,
@@ -28,6 +28,12 @@ function credibilityStyle(level: string) {
   return { background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", borderColor: "var(--color-border-tertiary)" };
 }
 
+const CREDIBILITY_TOOLTIP: Record<string, string> = {
+  high:   "Authoritative source — academic, government, official report or major publication",
+  medium: "Generally reliable — news article, industry report or trade publication",
+  low:    "Uncertain reliability — verify before citing in the script",
+};
+
 function scorePercent(value?: number | null) {
   if (value == null) return "N/A";
   return `${(value * 100).toFixed(0)}%`;
@@ -47,11 +53,13 @@ function SourceCard({
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 5 }}>
             <span
               className="badge"
+              title={CREDIBILITY_TOOLTIP[source.credibility] ?? source.credibility}
               style={{
                 ...credibilityStyle(source.credibility),
                 border: "0.5px solid",
                 fontSize: 10,
                 textTransform: "uppercase",
+                cursor: "help",
               }}
             >
               {source.credibility}
@@ -84,7 +92,6 @@ function SourceCard({
 }
 
 function ResearchRunPanel({ run }: { run: FocusedResearchRun }) {
-  const plan = run.plan;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div
@@ -97,66 +104,9 @@ function ResearchRunPanel({ run }: { run: FocusedResearchRun }) {
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <Sparkles size={14} style={{ color: "var(--color-action)" }} />
-          <p style={{ fontSize: 13, fontWeight: 500 }}>Research plan generated</p>
+          <p style={{ fontSize: 13, fontWeight: 500 }}>Research complete</p>
         </div>
         <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.7 }}>{run.summary}</p>
-      </div>
-
-      <div className="card" style={{ padding: "16px 18px" }}>
-        <div className="section-rule"><span>Agent plan</span></div>
-        <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{plan.objective}</p>
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: 12 }}>
-          {plan.source_strategy_reasoning}
-        </p>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-          {plan.source_strategy.map((source) => (
-            <span key={source} className="badge badge-neutral" style={{ textTransform: "uppercase" }}>
-              {source}
-            </span>
-          ))}
-        </div>
-        {plan.evaluation_focus.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <p className="section-label" style={{ marginBottom: 6 }}>Evaluation focus</p>
-            <ul style={{ margin: 0, paddingLeft: 16 }}>
-              {plan.evaluation_focus.map((item, index) => (
-                <li key={index} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {plan.expected_improvements.length > 0 && (
-          <div>
-            <p className="section-label" style={{ marginBottom: 6 }}>Expected improvements</p>
-            <ul style={{ margin: 0, paddingLeft: 16 }}>
-              {plan.expected_improvements.map((item, index) => (
-                <li key={index} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      <div className="card" style={{ padding: "16px 18px" }}>
-        <div className="section-rule"><span>Queries issued</span></div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <p className="section-label" style={{ marginBottom: 6 }}>Primary</p>
-            <ul style={{ margin: 0, paddingLeft: 16 }}>
-              {plan.primary_queries.map((query, index) => (
-                <li key={index} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{query}</li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <p className="section-label" style={{ marginBottom: 6 }}>Deep dive</p>
-            <ul style={{ margin: 0, paddingLeft: 16 }}>
-              {plan.deep_dive_queries.map((query, index) => (
-                <li key={index} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{query}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
       </div>
 
       <div>
@@ -202,6 +152,7 @@ export default function ResearchPage() {
 
 function ResearchPageInner() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedStoryId, setSelectedStoryId] = useState<string>("");
   const [researchObjective, setResearchObjective] = useState("");
@@ -289,9 +240,9 @@ function ResearchPageInner() {
       if (!selectedStoryId) throw new Error("Choose a story first.");
       return apiClient.regenerateScript(selectedStoryId);
     },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["stories"] });
-      await queryClient.invalidateQueries({ queryKey: ["story", selectedStoryId] });
+    onSuccess: (newStory) => {
+      queryClient.invalidateQueries({ queryKey: ["stories"] });
+      router.push(`/results/${newStory.id}`);
     },
   });
 

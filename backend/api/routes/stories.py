@@ -582,38 +582,61 @@ def _hydrate_existing_story_state(story: StoryORM) -> dict[str, Any]:
     }
 
 
-async def _archive_script_version(story: StoryORM, reason: str) -> list:
-    """Return an updated script_versions list with the current script appended."""
-    import datetime as _dt
-    current_versions = list(story.script_versions or [])
-    if story.script_data:
-        current_versions.append({
-            "version": len(current_versions) + 1,
-            "script": story.script_data,
-            "created_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-            "reason": reason,
-        })
-    return current_versions
+async def _clone_story_for_revision(source: StoryORM, db: AsyncSession, status: StoryStatus) -> StoryORM:
+    """Create a new story row pre-populated from source, with a versioned title."""
+    root_id = source.parent_story_id or source.id
+    result = await db.execute(
+        select(StoryORM).where(
+            (StoryORM.parent_story_id == root_id) | (StoryORM.id == root_id)
+        )
+    )
+    sibling_count = len(result.scalars().all())
+    new_revision = sibling_count + 1
+
+    base_title = source.title
+    import re as _re
+    base_title = _re.sub(r"\s+v\d+$", "", base_title).strip()
+    new_title = f"{base_title} v{new_revision}"
+
+    clone = StoryORM(
+        title=new_title,
+        topic=source.topic,
+        status=status,
+        tone=source.tone,
+        target_duration_minutes=source.target_duration_minutes,
+        target_audience=source.target_audience,
+        research_data=source.research_data,
+        analysis_data=source.analysis_data,
+        storyline_data=source.storyline_data,
+        evaluation_data=source.evaluation_data,
+        script_data=source.script_data,
+        script_audit_data=source.script_audit_data,
+        benchmark_data=source.benchmark_data,
+        quality_score=source.quality_score,
+        word_count=source.word_count,
+        estimated_duration_minutes=source.estimated_duration_minutes,
+        script_s3_key=source.script_s3_key,
+        iteration_count=source.iteration_count,
+        parent_story_id=root_id,
+        revision=new_revision,
+    )
+    db.add(clone)
+    await db.commit()
+    await db.refresh(clone)
+    return clone
 
 
-async def _run_manual_script_rewrite(story_id: str) -> None:
-    """Run a single audit-driven rewrite for an already completed story."""
+async def _run_manual_script_rewrite(story_id: str, source_story_id: str) -> None:
+    """Run a single audit-driven rewrite, writing results into a new story row."""
     from backend.db.database import AsyncSessionLocal
 
-    log.info("manual_rewrite.started", story_id=story_id)
+    log.info("manual_rewrite.started", story_id=story_id, source=source_story_id)
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
         story = result.scalar_one_or_none()
         if not story:
             log.warning("manual_rewrite.story_missing", story_id=story_id)
             return
-        new_versions = await _archive_script_version(story, "pre_manual_rewrite")
-        await db.execute(
-            update(StoryORM)
-            .where(StoryORM.id == uuid.UUID(story_id))
-            .values(status=StoryStatus.SCRIPTING, error_message=None, script_versions=new_versions)
-        )
-        await db.commit()
         try:
             state = _hydrate_existing_story_state(story)
             if state.get("script_audit_report") is None:
@@ -628,6 +651,7 @@ async def _run_manual_script_rewrite(story_id: str) -> None:
                 .where(StoryORM.id == uuid.UUID(story_id))
                 .values(
                     status=StoryStatus.COMPLETED,
+                    title=script.title,
                     script_data=script.model_dump(mode="json"),
                     script_s3_key=state.get("script_s3_key"),
                     word_count=script.total_word_count,
@@ -651,11 +675,10 @@ async def _run_manual_script_rewrite(story_id: str) -> None:
     log.info("manual_rewrite.complete", story_id=story_id)
 
 
-async def _run_implement_recommendations(story_id: str, recommendations: list[str]) -> None:
-    """Rewrite the script implementing specific user-selected recommendations, saving the current version."""
+async def _run_implement_recommendations(story_id: str, source_story_id: str, recommendations: list[str]) -> None:
+    """Rewrite the script implementing specific recommendations, writing into a new story row."""
     from backend.db.database import AsyncSessionLocal
     from backend.models.story import ScriptAuditCriteria, ScriptSectionAudit
-    import datetime as _dt
 
     log.info("implement_recs.started", story_id=story_id, count=len(recommendations))
     async with AsyncSessionLocal() as db:
@@ -665,19 +688,10 @@ async def _run_implement_recommendations(story_id: str, recommendations: list[st
             log.warning("implement_recs.story_missing_or_no_script", story_id=story_id)
             return
 
-        # Archive current script as a version before rewriting
-        current_versions: list = list(story.script_versions or [])
-        current_versions.append({
-            "version": len(current_versions) + 1,
-            "script": story.script_data,
-            "created_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-            "reason": "pre_implement_recommendations",
-        })
-
         await db.execute(
             update(StoryORM)
             .where(StoryORM.id == uuid.UUID(story_id))
-            .values(status=StoryStatus.SCRIPTING, error_message=None, script_versions=current_versions)
+            .values(status=StoryStatus.SCRIPTING, error_message=None)
         )
         await db.commit()
 
@@ -751,11 +765,10 @@ async def _run_script_regeneration(story_id: str) -> None:
             log.warning("regenerate.story_missing", story_id=story_id)
             return
 
-        new_versions = await _archive_script_version(story, "pre_regeneration")
         await db.execute(
             update(StoryORM)
             .where(StoryORM.id == uuid.UUID(story_id))
-            .values(status=StoryStatus.ANALYSING, error_message=None, script_versions=new_versions)
+            .values(status=StoryStatus.ANALYSING, error_message=None)
         )
         await db.commit()
 
@@ -956,7 +969,7 @@ async def rewrite_story_script(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> StoryORM:
-    """Start one audit-driven rewrite pass for a completed story."""
+    """Clone the story into a new revision and run an audit-driven rewrite on it."""
     result = await db.execute(select(StoryORM).where(StoryORM.id == story_id))
     story = result.scalar_one_or_none()
     if not story:
@@ -972,12 +985,9 @@ async def rewrite_story_script(
             detail=f"Story is currently {story.status}; wait for the current run to finish.",
         )
 
-    story.status = StoryStatus.SCRIPTING
-    story.error_message = None
-    await db.commit()
-    await db.refresh(story)
-    background_tasks.add_task(_run_manual_script_rewrite, story_id=str(story_id))
-    return story
+    clone = await _clone_story_for_revision(story, db, StoryStatus.SCRIPTING)
+    background_tasks.add_task(_run_manual_script_rewrite, story_id=str(clone.id), source_story_id=str(story_id))
+    return clone
 
 
 @router.post("/{story_id}/regenerate", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
@@ -986,7 +996,7 @@ async def regenerate_story_script(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> StoryORM:
-    """Re-run the full pipeline from analysis onward, incorporating updated research data."""
+    """Clone the story into a new revision and re-run the full pipeline from analysis onward."""
     result = await db.execute(select(StoryORM).where(StoryORM.id == story_id))
     story = result.scalar_one_or_none()
     if not story:
@@ -1002,12 +1012,9 @@ async def regenerate_story_script(
             detail=f"Story is currently {story.status}; wait for the current run to finish.",
         )
 
-    story.status = StoryStatus.ANALYSING
-    story.error_message = None
-    await db.commit()
-    await db.refresh(story)
-    background_tasks.add_task(_run_script_regeneration, story_id=str(story_id))
-    return story
+    clone = await _clone_story_for_revision(story, db, StoryStatus.ANALYSING)
+    background_tasks.add_task(_run_script_regeneration, story_id=str(clone.id))
+    return clone
 
 
 @router.post("/{story_id}/implement-recommendations", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
@@ -1017,7 +1024,7 @@ async def implement_recommendations(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> StoryORM:
-    """Rewrite the script to implement selected heuristic recommendations, archiving the current version."""
+    """Clone the story into a new revision and rewrite with selected heuristic recommendations."""
     result = await db.execute(select(StoryORM).where(StoryORM.id == story_id))
     story = result.scalar_one_or_none()
     if not story:
@@ -1029,12 +1036,9 @@ async def implement_recommendations(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Story is currently {story.status}; wait for the current run to finish.",
         )
-    story.status = StoryStatus.SCRIPTING
-    story.error_message = None
-    await db.commit()
-    await db.refresh(story)
-    background_tasks.add_task(_run_implement_recommendations, story_id=str(story_id), recommendations=payload.recommendations)
-    return story
+    clone = await _clone_story_for_revision(story, db, StoryStatus.SCRIPTING)
+    background_tasks.add_task(_run_implement_recommendations, story_id=str(clone.id), source_story_id=str(story_id), recommendations=payload.recommendations)
+    return clone
 
 
 @router.get("/{story_id}/sources")
