@@ -238,6 +238,16 @@ function ResearchPageInner() {
   useEffect(() => {
     setResearchRun(null);
     setResearchPending(false);
+    if (!selectedStoryId) return;
+    // On story selection (including returning to page), check if research is
+    // in progress or already completed so we can resume polling or show results.
+    apiClient.getFocusedResearchStatus(selectedStoryId).then(status => {
+      if (status.pending) {
+        setResearchPending(true);
+      } else if (status.run) {
+        setResearchRun(status.run);
+      }
+    }).catch(() => {});
   }, [selectedStoryId]);
 
   const [researchPending, setResearchPending] = useState(false);
