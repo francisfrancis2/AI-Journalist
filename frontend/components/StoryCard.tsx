@@ -4,6 +4,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import Link from "next/link";
 import type { Story } from "@/lib/api";
+import { getUserInfo } from "@/lib/auth";
 
 interface StoryCardProps {
   story: Story;
@@ -11,6 +12,8 @@ interface StoryCardProps {
 }
 
 export function StoryCard({ story, showLink = false }: StoryCardProps) {
+  const currentUser = getUserInfo();
+  const showOwner = Boolean(currentUser?.is_admin && story.owner_email);
   const isComplete = story.status === "completed";
   const isFailed   = story.status === "failed";
   const isRunning  = !isComplete && !isFailed;
@@ -65,6 +68,12 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
       >
         {story.topic}
       </p>
+
+      {showOwner && (
+        <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: -2 }}>
+          Created by {story.owner_email}
+        </p>
+      )}
 
       {/* Metrics */}
       {(story.estimated_duration_minutes || story.quality_score != null) && (

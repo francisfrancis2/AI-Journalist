@@ -56,6 +56,9 @@ services:
     env_file:
       - .env
     environment:
+      # Local Docker should always use the bundled Postgres container.
+      # This overrides DATABASE_URL from .env so Neon is not required locally.
+      DATABASE_URL: postgresql://aijournalist:secret@db:5432/aijournalist
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
       AWS_REGION: us-east-1

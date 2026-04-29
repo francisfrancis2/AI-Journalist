@@ -209,6 +209,8 @@ export interface Story {
   tone: StoryTone;
   target_duration_minutes: number;
   target_audience: string | null;
+  owner_user_id: string | null;
+  owner_email: string | null;
   quality_score: number | null;
   word_count: number | null;
   estimated_duration_minutes: number | null;

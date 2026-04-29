@@ -76,11 +76,14 @@ async def api_client(db_session):
     app = create_app()
 
     test_user = UserORM(
+        id=uuid.uuid4(),
         email="test@example.com",
         hashed_password="not-a-real-hash",
         is_active=True,
         is_admin=True,
     )
+    db_session.add(test_user)
+    await db_session.commit()
 
     async def _override_get_db():
         yield db_session
@@ -92,7 +95,9 @@ async def api_client(db_session):
     app.dependency_overrides[get_current_user] = _override_get_current_user
 
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://localhost",
+        follow_redirects=True,
     ) as client:
         yield client
 

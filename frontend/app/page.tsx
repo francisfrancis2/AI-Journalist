@@ -6,6 +6,7 @@ import { Loader2, ChevronRight, CheckCircle2, XCircle } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { apiClient, type Story, type StoryTone } from "@/lib/api";
+import { getUserInfo } from "@/lib/auth";
 
 const TONES: { value: StoryTone; label: string; desc: string; example: string }[] = [
   {
@@ -79,6 +80,8 @@ function statusBadgeClass(status: string) {
 
 export default function NewStoryPage() {
   const queryClient = useQueryClient();
+  const currentUser = getUserInfo();
+  const isAdmin = currentUser?.is_admin ?? false;
   const [topic, setTopic] = useState("");
   const [tone, setTone] = useState<StoryTone>("explanatory");
   const [targetDuration, setTargetDuration] = useState(10);
@@ -304,6 +307,11 @@ export default function NewStoryPage() {
                 <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 2 }}>
                   {activeStory.topic}
                 </p>
+                {isAdmin && activeStory.owner_email && (
+                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+                    Created by {activeStory.owner_email}
+                  </p>
+                )}
               </div>
               {activeStory.status === "completed" && (
                 <Link
@@ -463,6 +471,11 @@ export default function NewStoryPage() {
                         >
                           {story.tone}
                         </span>
+                        {isAdmin && story.owner_email && (
+                          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                            {story.owner_email}
+                          </span>
+                        )}
                         <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
                           {formatDistanceToNow(new Date(story.created_at), { addSuffix: true })}
                         </span>

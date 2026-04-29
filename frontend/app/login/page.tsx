@@ -155,7 +155,6 @@ export default function LoginPage() {
                 />
                 Keep me signed in
               </label>
-              <span className="access-note">Admin access required</span>
             </div>
 
             {error && <div className="form-error">{error}</div>}

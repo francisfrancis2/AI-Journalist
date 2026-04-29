@@ -256,6 +256,7 @@ class StorylineCreatorAgent:
         target_duration_minutes: int = state.get("target_duration_minutes") or settings.target_script_duration_min
         target_audience: str | None = state.get("target_audience")
         refinement_cycle: int = state.get("refinement_cycle", 0)
+        rewrite_recommendations: list[str] = state.get("user_rewrite_recommendations") or []
 
         evaluation_feedback = ""
         if refinement_cycle > 0 and state.get("evaluation_report"):
@@ -266,6 +267,15 @@ class StorylineCreatorAgent:
                 f"Weaknesses: {chr(10).join(ev.weaknesses)}\n"
                 f"Suggestions: {chr(10).join(ev.improvement_suggestions)}\n"
                 f"Address these issues in the new proposals."
+            )
+
+        recommendation_feedback = ""
+        if rewrite_recommendations:
+            recommendation_feedback = (
+                "\n\nTARGETED REVISION GOALS:\n"
+                + "\n".join(f"- {item}" for item in rewrite_recommendations)
+                + "\nAddress these goals directly in the title, opening hook, act structure, evidence choices, "
+                  "human element placement, and closing statement wherever relevant."
             )
 
         log.info("storyline_creator.start", topic=topic, refinement_cycle=refinement_cycle)
@@ -287,6 +297,7 @@ class StorylineCreatorAgent:
                 for q in analysis.notable_quotes[:5]
             )
             + evaluation_feedback
+            + recommendation_feedback
         )
 
         messages = [SystemMessage(content=_SYSTEM_PROMPT), HumanMessage(content=prompt)]

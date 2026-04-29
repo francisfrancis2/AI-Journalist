@@ -6,6 +6,7 @@ import { Loader2, Search, Download, ChevronRight, CheckCircle2, XCircle } from "
 import Link from "next/link";
 import { format } from "date-fns";
 import { apiClient, type Story, type StoryStatus } from "@/lib/api";
+import { getUserInfo } from "@/lib/auth";
 import { downloadScriptPdf } from "@/lib/script-export";
 
 const STATUS_FILTERS: { value: StoryStatus | "all"; label: string }[] = [
@@ -34,6 +35,8 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function HistoryPage() {
   const queryClient = useQueryClient();
+  const currentUser = getUserInfo();
+  const isAdmin = currentUser?.is_admin ?? false;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StoryStatus | "all">("all");
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -72,6 +75,9 @@ export default function HistoryPage() {
   });
 
   const completed = stories?.filter(s => s.status === "completed") ?? [];
+  const tableColumns = isAdmin
+    ? "1fr 170px 110px 120px 70px 70px 80px"
+    : "1fr 110px 120px 70px 70px 80px";
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
@@ -195,7 +201,7 @@ export default function HistoryPage() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 110px 120px 70px 70px 80px",
+                gridTemplateColumns: tableColumns,
                 gap: 8,
                 padding: "10px 16px",
                 background: "var(--color-background-secondary)",
@@ -208,6 +214,7 @@ export default function HistoryPage() {
               }}
             >
               <span>Title</span>
+              {isAdmin && <span>User</span>}
               <span>Tone</span>
               <span>Status</span>
               <span style={{ textAlign: "right" }}>Quality</span>
@@ -225,7 +232,7 @@ export default function HistoryPage() {
                   className="table-row"
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 110px 120px 70px 70px 80px",
+                    gridTemplateColumns: tableColumns,
                     gap: 8,
                     padding: "12px 16px",
                     alignItems: "center",
@@ -261,6 +268,23 @@ export default function HistoryPage() {
                       {format(new Date(story.created_at), "MMM d, yyyy")}
                     </p>
                   </div>
+
+                  {isAdmin && (
+                    <div style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: "var(--color-text-secondary)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          display: "block",
+                        }}
+                      >
+                        {story.owner_email ?? "Unassigned"}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Tone */}
                   <div><ToneBadge tone={story.tone} /></div>

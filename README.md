@@ -184,3 +184,9 @@ All settings live in `backend/config.py` and are loaded from `.env`:
 | `MAX_RESEARCH_ITERATIONS` | How many times the researcher can re-run (default: 3) |
 | `MAX_REFINEMENT_CYCLES` | Evaluator→refinement loops before forcing output (default: 2) |
 | `QUALITY_SCORE_THRESHOLD` | Minimum score (0–1) to approve a storyline (default: 0.70) |
+
+### Database setup by environment
+
+- Local Docker: `docker-compose.yml` forces the backend to use the bundled Postgres container at `db:5432`, so Neon is not needed for normal local Docker development.
+- Local non-Docker backend: `.env` can still point to a local Postgres instance such as `postgresql://aijournalist:secret@localhost:5432/aijournalist`.
+- Fly deployment: use a separate `.env.fly` file or exported shell variables for deploy secrets. `scripts/fly-deploy.sh` prefers `.env.fly` when present and rejects obviously local `DATABASE_URL` values. Set Fly `DATABASE_URL` to your hosted Postgres provider, for example Neon.

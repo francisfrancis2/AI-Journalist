@@ -26,6 +26,7 @@ class TestCreateInitialState:
         assert state["research_package"] is None
         assert state["analysis_result"] is None
         assert state["selected_storyline"] is None
+        assert state["user_rewrite_recommendations"] == []
         assert state["final_script"] is None
         assert state["script_audit_report"] is None
         assert state["error"] is None

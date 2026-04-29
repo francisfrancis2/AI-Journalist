@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { apiClient, type Story, type FinalScript } from "@/lib/api";
+import { getUserInfo } from "@/lib/auth";
 import { downloadScriptPdf } from "@/lib/script-export";
 
 type Tab = "script" | "evaluation";
@@ -20,6 +21,8 @@ export default function ResultsPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const currentUser = getUserInfo();
+  const isAdmin = currentUser?.is_admin ?? false;
   const [tab, setTab] = useState<Tab>("script");
   const [downloading, setDownloading] = useState(false);
 
@@ -124,6 +127,11 @@ export default function ResultsPage() {
 
               <h1 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>{story.title}</h1>
               <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{story.topic}</p>
+              {isAdmin && story.owner_email && (
+                <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+                  Created by {story.owner_email}
+                </p>
+              )}
 
               {/* Metrics */}
               {isComplete && (

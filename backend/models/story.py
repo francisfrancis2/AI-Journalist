@@ -9,7 +9,7 @@ import re
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import JSON, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -69,6 +69,12 @@ class StoryORM(Base):
     tone: Mapped[str] = mapped_column(String(64), default=StoryTone.EXPLANATORY)
     target_duration_minutes: Mapped[int] = mapped_column(Integer, default=12, nullable=False)
     target_audience: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    owner_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Research artefacts (JSON blobs)
     research_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -142,6 +148,8 @@ class StoryRead(BaseModel):
     tone: StoryTone
     target_duration_minutes: int
     target_audience: Optional[str]
+    owner_user_id: Optional[uuid.UUID] = None
+    owner_email: Optional[str] = None
     quality_score: Optional[float]
     word_count: Optional[int]
     estimated_duration_minutes: Optional[float]
@@ -169,6 +177,8 @@ class StoryListItem(BaseModel):
     tone: StoryTone
     target_duration_minutes: int
     target_audience: Optional[str]
+    owner_user_id: Optional[uuid.UUID] = None
+    owner_email: Optional[str] = None
     quality_score: Optional[float]
     estimated_duration_minutes: Optional[float]
     benchmark_data: Optional[dict] = None

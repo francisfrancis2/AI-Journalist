@@ -19,6 +19,7 @@ import {
   type Story,
   type ScriptVersion,
 } from "@/lib/api";
+import { getUserInfo } from "@/lib/auth";
 
 const BENCHMARK_GRADE_HELP =
   "Benchmark grade measures how closely the story matches the benchmark corpus in hook, structure, data density, human narrative, and closing pattern.";
@@ -217,6 +218,8 @@ function HeuristicRow({ label, score }: { label: string; score: number }) {
 function UserBenchmarkView() {
   const qc = useQueryClient();
   const router = useRouter();
+  const currentUser = getUserInfo();
+  const isAdmin = currentUser?.is_admin ?? false;
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
   const [selectedRecs, setSelectedRecs] = useState<Set<string>>(new Set());
 
@@ -317,7 +320,9 @@ function UserBenchmarkView() {
                     {story.title}
                   </p>
                   <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                    {formatDistanceToNow(new Date(story.created_at), { addSuffix: true })}
+                    {isAdmin && story.owner_email
+                      ? `${story.owner_email} • ${formatDistanceToNow(new Date(story.created_at), { addSuffix: true })}`
+                      : formatDistanceToNow(new Date(story.created_at), { addSuffix: true })}
                   </p>
                 </div>
                 {story.benchmark_data?.grade && (
@@ -416,8 +421,8 @@ function UserBenchmarkView() {
                   style={{ fontSize: 12 }}
                 >
                   {implementMutation.isPending
-                    ? <><Loader2 size={12} className="animate-spin" />Implementing…</>
-                    : <><Sparkles size={12} />Implement selected ({selectedRecs.size})</>}
+                    ? <><Loader2 size={12} className="animate-spin" />Regenerating…</>
+                    : <><Sparkles size={12} />Regenerate from selected ({selectedRecs.size})</>}
                 </button>
               </div>
             </div>
@@ -454,9 +459,12 @@ function UserBenchmarkView() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div className="section-rule" style={{ flex: 1 }}><span>Benchmark metrics</span></div>
               <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 12, flexShrink: 0 }}>
-                Check to implement
+                Check to regenerate
               </p>
             </div>
+            <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: -2 }}>
+              Selected benchmark improvements rebuild the storyline and script so the benchmark and quality scores can update.
+            </p>
             {criteria.length > 0 ? criteria.map(c => (
               <CriterionCard
                 key={c.criterion}

@@ -8,11 +8,20 @@ set -euo pipefail
 BACKEND_APP="aijournalist-backend"
 FRONTEND_APP="aijournalist-frontend"
 REGION="sin"
+ENV_FILE="${FLY_ENV_FILE:-}"
 
-if [[ -f ".env" ]]; then
+if [[ -z "$ENV_FILE" ]]; then
+  if [[ -f ".env.fly" ]]; then
+    ENV_FILE=".env.fly"
+  elif [[ -f ".env" ]]; then
+    ENV_FILE=".env"
+  fi
+fi
+
+if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck disable=SC1091
-  source ".env"
+  source "$ENV_FILE"
   set +a
 fi
 
@@ -36,7 +45,13 @@ done
 
 if (( ${#missing_secrets[@]} > 0 )); then
   echo "Missing required environment variables: ${missing_secrets[*]}" >&2
-  echo "Set them in your shell or in a local .env file, then rerun this script." >&2
+  echo "Set them in your shell or in ${ENV_FILE:-.env.fly}, then rerun this script." >&2
+  exit 1
+fi
+
+if [[ "$DATABASE_URL" == *"localhost"* || "$DATABASE_URL" == *"127.0.0.1"* || "$DATABASE_URL" == *"@db:"* ]]; then
+  echo "DATABASE_URL points to a local database." >&2
+  echo "Fly deployment needs a hosted Postgres URL, such as Neon, in .env.fly or your shell environment." >&2
   exit 1
 fi
 

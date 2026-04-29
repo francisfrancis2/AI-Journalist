@@ -54,6 +54,7 @@ class JournalistState(TypedDict):
     # ── Storyline phase ───────────────────────────────────────────────────────
     storyline_proposals: list[StorylineProposal]  # Multiple candidates
     selected_storyline: Optional[StorylineProposal]
+    user_rewrite_recommendations: list[str]   # User-selected improvement goals for a guided revision
 
     # ── Evaluation phase ──────────────────────────────────────────────────────
     evaluation_report: Optional[EvaluationReport]
@@ -106,6 +107,7 @@ def create_initial_state(
         analysis_result=None,
         storyline_proposals=[],
         selected_storyline=None,
+        user_rewrite_recommendations=[],
         evaluation_report=None,
         benchmark_report=None,
         refinement_cycle=0,

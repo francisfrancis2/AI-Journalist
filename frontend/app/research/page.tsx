@@ -21,6 +21,7 @@ import {
   type ResearchSource,
   type Story,
 } from "@/lib/api";
+import { getUserInfo } from "@/lib/auth";
 
 function credibilityStyle(level: string) {
   if (level === "high") return { background: "var(--color-success-bg)", color: "var(--color-success)", borderColor: "#bbf7d0" };
@@ -153,6 +154,8 @@ export default function ResearchPage() {
 function ResearchPageInner() {
   const queryClient = useQueryClient();
   const router = useRouter();
+  const currentUser = getUserInfo();
+  const isAdmin = currentUser?.is_admin ?? false;
   const searchParams = useSearchParams();
   const [selectedStoryId, setSelectedStoryId] = useState<string>("");
   const [researchObjective, setResearchObjective] = useState("");
@@ -306,7 +309,9 @@ function ResearchPageInner() {
                   <option value="">Select a story</option>
                   {(stories ?? []).map((story) => (
                     <option key={story.id} value={story.id}>
-                      {story.title}
+                      {isAdmin && story.owner_email
+                        ? `${story.title} — ${story.owner_email}`
+                        : story.title}
                     </option>
                   ))}
                 </select>
@@ -314,6 +319,11 @@ function ResearchPageInner() {
                 {selectedStory ? (
                   <div>
                     <p style={{ fontSize: 13, fontWeight: 500 }}>{selectedStory.title}</p>
+                    {isAdmin && selectedStory.owner_email && (
+                      <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+                        Created by {selectedStory.owner_email}
+                      </p>
+                    )}
                     <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4, lineHeight: 1.6 }}>
                       {selectedStory.topic}
                     </p>
