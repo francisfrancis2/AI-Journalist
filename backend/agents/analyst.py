@@ -44,11 +44,11 @@ class QuoteOutput(BaseModel):
 class AnalysisOutput(BaseModel):
     executive_summary: str
     key_findings: list[KeyFindingOutput]
-    narrative_angles: list[str]
-    data_gaps: list[str]
-    recommended_tone: str
-    controversies: list[str]
-    notable_quotes: list[QuoteOutput]
+    narrative_angles: list[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
+    recommended_tone: str = "explanatory"
+    controversies: list[str] = Field(default_factory=list)
+    notable_quotes: list[QuoteOutput] = Field(default_factory=list)
     financial_metrics: Optional[dict[str, str]] = None
 
 
@@ -110,7 +110,7 @@ class AnalystAgent:
         _llm = ChatAnthropic(
             model=settings.claude_haiku_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=2048,
+            max_tokens=4096,
             temperature=0.2,
         )
         self._structured_llm = _llm.with_structured_output(AnalysisOutput)

@@ -83,6 +83,7 @@ class ScriptwriterAgent:
         source_lookup: dict[str, dict],
         topic: str,
         target_audience: str | None = None,
+        rewrite_recommendations: list[str] | None = None,
     ) -> ScriptSection:
         """Write narration for a single act."""
         relevant_quotes = "\n".join(
@@ -105,12 +106,20 @@ class ScriptwriterAgent:
             )
             for source_id, source in list(source_lookup.items())[:12]
         )
+        revision_goals = ""
+        if rewrite_recommendations:
+            revision_goals = (
+                "Targeted revision goals:\n"
+                + "\n".join(f"  - {item}" for item in rewrite_recommendations)
+                + "\n\n"
+            )
 
         prompt = (
             f"Documentary: {storyline.title}\n"
             f"Logline: {storyline.logline}\n"
             f"Overall tone: {storyline.tone}\n\n"
             f"Target audience: {target_audience or storyline.target_audience}\n\n"
+            f"{revision_goals}"
             f"=== ACT TO WRITE ===\n"
             f"Act {act_data['act_number']}: {act_data['act_title']}\n"
             f"Purpose: {act_data['purpose']}\n"
@@ -146,6 +155,7 @@ class ScriptwriterAgent:
         story_id: str = state["story_id"]
         target_duration_minutes = state.get("target_duration_minutes") or settings.target_script_duration_min
         target_audience = state.get("target_audience")
+        rewrite_recommendations: list[str] = state.get("user_rewrite_recommendations") or []
         duration_scale = target_duration_minutes / max(
             storyline.total_estimated_duration_seconds / 60,
             1,
@@ -178,6 +188,7 @@ class ScriptwriterAgent:
                 source_lookup=source_lookup,
                 topic=topic,
                 target_audience=target_audience,
+                rewrite_recommendations=rewrite_recommendations,
             )
             for act in storyline.acts
         ]
@@ -194,7 +205,7 @@ class ScriptwriterAgent:
                 "credibility": src.credibility.value,
                 "type": src.source_type.value,
             }
-            for src in state["research_package"].top_sources(15)
+            for src in state["research_package"].top_sources(20)
         ]
 
         final_script = FinalScript(
