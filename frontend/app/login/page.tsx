@@ -104,7 +104,6 @@ export default function LoginPage() {
             </svg>
           </span>
           <span className="brand-name">AI Journalist</span>
-          <span className="brand-meta">v2.4 · APR 2026</span>
         </header>
 
         <section className="login-body">
@@ -171,20 +170,11 @@ export default function LoginPage() {
 
         <footer className="login-foot">
           <div className="brand-meta" style={{ margin: 0 }}>© 2026 AI Journalist</div>
-          <div className="foot-links">
-            <span>Secure workspace</span>
-            <span>Editorial tools</span>
-          </div>
         </footer>
       </aside>
 
       <section className="stage">
         <div className="stage-inner">
-          <div className="stage-head">
-            <div><span className="dot" /> THE WRITERS&apos; ROOM · live</div>
-            <LiveClock />
-          </div>
-
           <div className="quote-area">
             <div className="quote-stack">
               {QUOTES.map((q, i) => {
@@ -396,12 +386,9 @@ export default function LoginPage() {
           margin-top: auto;
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 16px;
+          justify-content: flex-start;
           padding-top: 18px;
         }
-        .foot-links { display: flex; gap: 14px; }
-        .foot-links span { font-size: 11.5px; color: var(--color-text-tertiary); }
 
         .stage {
           position: relative;
@@ -431,35 +418,10 @@ export default function LoginPage() {
         .stage-inner {
           position: absolute;
           inset: 0;
-          display: grid;
-          grid-template-rows: auto 1fr auto;
+          display: flex;
+          flex-direction: column;
           padding: 28px 48px 28px 56px;
           z-index: 2;
-        }
-
-        .stage-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          color: var(--stage-dim);
-          font-family: var(--font-mono);
-          font-size: 10.5px;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-        }
-        .dot {
-          display: inline-block;
-          width: 6px; height: 6px;
-          border-radius: 50%;
-          background: var(--stage-accent);
-          margin-right: 8px;
-          vertical-align: middle;
-          box-shadow: 0 0 10px rgba(198, 183, 122, 0.65);
-          animation: pulse 2.8s ease-in-out infinite;
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 0.5; transform: scale(1); }
-          50%       { opacity: 1;   transform: scale(1.15); }
         }
 
         .quote-area { position: relative; display: flex; align-items: center; min-height: 0; }
@@ -559,22 +521,4 @@ export default function LoginPage() {
       `}</style>
     </div>
   );
-}
-
-function LiveClock() {
-  const [t, setT] = useState<string>("");
-  useEffect(() => {
-    const tick = () => {
-      const d = new Date();
-      const hh = String(d.getHours()).padStart(2, "0");
-      const mm = String(d.getMinutes()).padStart(2, "0");
-      const ss = String(d.getSeconds()).padStart(2, "0");
-      const tz = -d.getTimezoneOffset() / 60;
-      setT(`${hh}:${mm}:${ss} GMT${tz >= 0 ? "+" : ""}${tz}`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
-  return <div suppressHydrationWarning>{t || "—"}</div>;
 }

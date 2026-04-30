@@ -89,6 +89,12 @@ class TestStoriesCreate:
         assert response.status_code == 422  # Pydantic validation error
 
     @pytest.mark.asyncio
+    async def test_create_story_topic_too_long_in_words(self, api_client):
+        payload = {"topic": " ".join(["word"] * 201), "tone": "explanatory"}
+        response = await api_client.post("/api/v1/stories/", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
     async def test_create_story_with_custom_title(self, api_client, mocker):
         mocker.patch("backend.api.routes.stories._run_pipeline")
         payload = {
@@ -494,6 +500,48 @@ class TestImplementRecommendations:
         assert body["quality_score"] is None
         assert body["benchmark_data"] is None
         assert body["script_audit_data"] is None
+
+
+class TestStorySources:
+    @pytest.mark.asyncio
+    async def test_story_sources_are_sorted_by_relevance(self, api_client, db_session):
+        story = StoryORM(
+            id=uuid.uuid4(),
+            title="Sources story",
+            topic="A valid topic for research source ordering checks",
+            status=StoryStatus.COMPLETED,
+            tone=StoryTone.EXPLANATORY,
+            research_data={
+                "sources": [
+                    {
+                        "source_id": "low-source",
+                        "title": "Lower relevance source",
+                        "url": "https://example.com/low",
+                        "source_type": "web_search",
+                        "credibility": "medium",
+                        "relevance_score": 0.3,
+                        "content": "Low relevance content",
+                    },
+                    {
+                        "source_id": "high-source",
+                        "title": "Higher relevance source",
+                        "url": "https://example.com/high",
+                        "source_type": "news_api",
+                        "credibility": "high",
+                        "relevance_score": 0.9,
+                        "content": "High relevance content",
+                    },
+                ]
+            },
+        )
+        db_session.add(story)
+        await db_session.commit()
+
+        response = await api_client.get(f"/api/v1/stories/{story.id}/sources")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert [item["source_id"] for item in data] == ["high-source", "low-source"]
 
 
 # ── Research endpoints ────────────────────────────────────────────────────────

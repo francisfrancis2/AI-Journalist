@@ -1,5 +1,14 @@
 import type { FinalScript } from "@/lib/api";
 
+type ExportSource = {
+  title: string;
+  url: string | null;
+  credibility?: string | null;
+  type?: string | null;
+  author?: string | null;
+  published_at?: string | null;
+};
+
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -16,6 +25,33 @@ function formatDuration(seconds: number): string {
 
 function paragraphHtml(value: string): string {
   return escapeHtml(value).replace(/\n/g, "<br>");
+}
+
+function formatPublishedAt(value: string | null | undefined): string {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function openPrintPreview(title: string, html: string): boolean {
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank");
+  if (!win) {
+    URL.revokeObjectURL(url);
+    return false;
+  }
+  win.focus();
+  setTimeout(() => {
+    win.print();
+    URL.revokeObjectURL(url);
+  }, 400);
+  return true;
 }
 
 export function downloadScriptPdf(script: FinalScript): boolean {
@@ -90,11 +126,69 @@ ${actsHtml}
 <ul class="src">${sourcesHtml}</ul>
 </body></html>`;
 
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, "_blank");
-  if (!win) { URL.revokeObjectURL(url); return false; }
-  win.focus();
-  setTimeout(() => { win.print(); URL.revokeObjectURL(url); }, 400);
-  return true;
+  return openPrintPreview(script.title, html);
+}
+
+export function downloadSourceListPdf(title: string, sources: ExportSource[]): boolean {
+  const rowsHtml = sources
+    .map((source, index) => {
+      const sourceTitle = escapeHtml(source.title);
+      const sourceUrl = source.url ? escapeHtml(source.url) : "";
+      const sourceType = source.type ? escapeHtml(source.type.replace(/_/g, " ")) : "";
+      const credibility = source.credibility ? escapeHtml(source.credibility.toUpperCase()) : "";
+      const author = source.author ? escapeHtml(source.author) : "";
+      const publishedAt = source.published_at ? escapeHtml(formatPublishedAt(source.published_at)) : "";
+      return `<tr>
+        <td>${index + 1}</td>
+        <td>${sourceTitle}</td>
+        <td>${sourceUrl ? `<a href="${sourceUrl}">${sourceUrl}</a>` : "&mdash;"}</td>
+        <td>${sourceType || "&mdash;"}</td>
+        <td>${credibility || "&mdash;"}</td>
+        <td>${author || "&mdash;"}</td>
+        <td>${publishedAt || "&mdash;"}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>${escapeHtml(title)} — Source List</title>
+<style>
+  @page{margin:18mm 14mm}
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111;margin:32px auto;max-width:920px;font-size:12px;line-height:1.5}
+  h1{font-size:22px;line-height:1.2;margin:0 0 6px}
+  .meta{font-size:11px;color:#666;margin-bottom:18px}
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  th,td{border:1px solid #d9dce5;padding:8px 10px;vertical-align:top;text-align:left}
+  th{background:#f4f6fb;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#4b5563}
+  td{font-size:11px;word-break:break-word}
+  th:nth-child(1),td:nth-child(1){width:42px;text-align:center}
+  th:nth-child(2),td:nth-child(2){width:21%}
+  th:nth-child(4),td:nth-child(4){width:13%}
+  th:nth-child(5),td:nth-child(5){width:11%}
+  th:nth-child(6),td:nth-child(6){width:14%}
+  th:nth-child(7),td:nth-child(7){width:13%}
+  a{color:#1c26a8;text-decoration:none}
+  a:hover{text-decoration:underline}
+  @media print{body{margin:0;max-width:none}}
+</style></head><body>
+<h1>${escapeHtml(title)}</h1>
+<div class="meta">Source list export · ${sources.length} linked sources</div>
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Source</th>
+      <th>Link</th>
+      <th>Type</th>
+      <th>Credibility</th>
+      <th>Author</th>
+      <th>Published</th>
+    </tr>
+  </thead>
+  <tbody>${rowsHtml}</tbody>
+</table>
+</body></html>`;
+
+  return openPrintPreview(`${title} - Source List`, html);
 }

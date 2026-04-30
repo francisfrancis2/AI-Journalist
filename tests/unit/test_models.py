@@ -308,6 +308,10 @@ class TestStoryCreate:
         with pytest.raises(Exception):
             StoryCreate(topic="   ")
 
+    def test_topic_cannot_exceed_200_words(self):
+        with pytest.raises(Exception):
+            StoryCreate(topic=" ".join(["word"] * 201))
+
     def test_tone_options(self):
         for tone in StoryTone:
             story = StoryCreate(topic="This is a valid topic long enough.", tone=tone)

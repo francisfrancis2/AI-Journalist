@@ -60,6 +60,12 @@ const STAGE_MESSAGES: Record<string, string[]> = {
 
 const DEFAULT_TARGET_AUDIENCE =
   "Entrepreneurs, Founders, Documentary Lovers, Investors, YouTube Content Lovers, Senior Executive and Business Professionals";
+const TOPIC_MAX_WORDS = 200;
+
+function countWords(value: string): number {
+  const trimmed = value.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
 
 function stageIndex(status: string): number {
   const idx = PIPELINE_STAGES.findIndex(s => s.statuses.includes(status));
@@ -135,6 +141,7 @@ export default function NewStoryPage() {
 
   const isRunning = activeStory && !["completed", "failed"].includes(activeStory.status);
   const showProgress = activeStory && activeStory.status !== "failed";
+  const topicWordCount = countWords(topic);
 
   // Cycle through status messages while pipeline is running
   useEffect(() => {
@@ -192,13 +199,32 @@ export default function NewStoryPage() {
             </label>
             <textarea
               value={topic}
-              onChange={e => setTopic(e.target.value)}
-              placeholder="Describe what you want to investigate or explain…"
+              onChange={e => {
+                const nextTopic = e.target.value;
+                if (countWords(nextTopic) <= TOPIC_MAX_WORDS) {
+                  setTopic(nextTopic);
+                }
+              }}
+              placeholder="Describe what you want to investigate or explain… Maximum 200 words."
               rows={4}
               disabled={!!isRunning}
               className="input"
               style={{ resize: "vertical", fontFamily: "var(--font-sans)" }}
             />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                marginTop: 8,
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              <span>Maximum 200 words.</span>
+              <span>{topicWordCount}/{TOPIC_MAX_WORDS} words</span>
+            </div>
           </div>
 
           <div style={{ marginBottom: 16 }}>

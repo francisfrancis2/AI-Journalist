@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     # ── Script revision ───────────────────────────────────────────────────────
     max_script_revision_cycles: int = 1     # post-script audit revision passes
     script_audit_score_threshold: float = 0.70  # below this → trigger revision
+    max_pipeline_cycles: int = 3            # full research→script cycles before giving up
 
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")

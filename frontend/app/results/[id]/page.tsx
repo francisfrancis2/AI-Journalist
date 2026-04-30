@@ -24,7 +24,13 @@ type DisplaySource = {
   url: string | null;
   credibility: string;
   type: string;
+  author?: string | null;
+  published_at?: string | null;
   relevance_score?: number;
+};
+type ExportNotice = {
+  tone: "success" | "error";
+  text: string;
 };
 
 function sourceKey(source: Pick<DisplaySource, "source_id" | "url" | "title">): string {
@@ -44,6 +50,8 @@ function buildSourceLookup(
       url: source.url,
       credibility: source.credibility,
       type: source.source_type,
+      author: source.author,
+      published_at: source.published_at,
       relevance_score: source.relevance_score,
     });
   }
@@ -57,6 +65,8 @@ function buildSourceLookup(
       url: source.url ?? existing?.url ?? null,
       credibility: source.credibility ?? existing?.credibility ?? "medium",
       type: source.type ?? existing?.type ?? "source",
+      author: existing?.author ?? null,
+      published_at: existing?.published_at ?? null,
       relevance_score: existing?.relevance_score,
     });
   }
@@ -75,6 +85,8 @@ function topSidebarSources(
       url: source.url,
       credibility: source.credibility,
       type: source.source_type,
+      author: source.author,
+      published_at: source.published_at,
       relevance_score: source.relevance_score,
     }));
   }
@@ -85,6 +97,8 @@ function topSidebarSources(
     url: source.url,
     credibility: source.credibility,
     type: source.type,
+    author: null,
+    published_at: null,
   }));
 }
 
@@ -117,6 +131,36 @@ function sourcesUsedInScript(
     url: source.url,
     credibility: source.credibility,
     type: source.type,
+    author: null,
+    published_at: null,
+  }));
+}
+
+function allResearchSourcesForExport(
+  script: FinalScript,
+  researchSources: ResearchSource[]
+): DisplaySource[] {
+  if (researchSources.length > 0) {
+    return researchSources.map((source) => ({
+      source_id: source.source_id ?? null,
+      title: source.title,
+      url: source.url,
+      credibility: source.credibility,
+      type: source.source_type,
+      author: source.author,
+      published_at: source.published_at,
+      relevance_score: source.relevance_score,
+    }));
+  }
+
+  return script.sources.map((source) => ({
+    source_id: source.source_id ?? null,
+    title: source.title,
+    url: source.url,
+    credibility: source.credibility,
+    type: source.type,
+    author: null,
+    published_at: null,
   }));
 }
 
@@ -409,19 +453,36 @@ function ScriptPanel({
   versionNumber: number | null;
 }) {
   const [open, setOpen] = useState<number[]>([0]);
-  const [downloadingSourceList, setDownloadingSourceList] = useState(false);
+  const [downloadingSourceList, setDownloadingSourceList] = useState<"used" | "all" | null>(null);
+  const [exportNotice, setExportNotice] = useState<ExportNotice | null>(null);
   const toggle = (i: number) => setOpen(p => p.includes(i) ? p.filter(x => x !== i) : [...p, i]);
   const sourceLookup = buildSourceLookup(script.sources, researchSources);
   const sidebarSources = topSidebarSources(script.sources, researchSources);
   const exportSources = sourcesUsedInScript(script, researchSources);
+  const allResearchExportSources = allResearchSourcesForExport(script, researchSources);
 
-  const handleSourceListDownload = () => {
-    if (exportSources.length === 0) return;
-    setDownloadingSourceList(true);
+  useEffect(() => {
+    if (!exportNotice) return;
+    const timer = window.setTimeout(() => setExportNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [exportNotice]);
+
+  const handleSourceListDownload = (mode: "used" | "all") => {
+    const sources = mode === "used" ? exportSources : allResearchExportSources;
+    if (sources.length === 0) return;
+    setDownloadingSourceList(mode);
     try {
-      downloadSourceListPdf(script.title, exportSources);
+      const opened = downloadSourceListPdf(
+        mode === "used" ? `${script.title} — Sources Used in Script` : `${script.title} — All Research Sources`,
+        sources
+      );
+      setExportNotice(
+        opened
+          ? { tone: "success", text: "Opened a print-ready PDF in a new tab." }
+          : { tone: "error", text: "Browser blocked the export window. Please allow pop-ups and try again." }
+      );
     } finally {
-      setDownloadingSourceList(false);
+      setDownloadingSourceList(null);
     }
   };
 
@@ -497,14 +558,38 @@ function ScriptPanel({
                 {exportSources.length > 0 && (
                   <button
                     type="button"
-                    onClick={handleSourceListDownload}
-                    disabled={downloadingSourceList}
+                    onClick={() => handleSourceListDownload("used")}
+                    disabled={downloadingSourceList !== null}
                     className="btn-secondary"
                     style={{ width: "100%", marginTop: 10, justifyContent: "center" }}
                   >
-                    {downloadingSourceList ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                    Download the list
+                    {downloadingSourceList === "used" ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                    Download used sources
                   </button>
+                )}
+                {allResearchExportSources.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleSourceListDownload("all")}
+                    disabled={downloadingSourceList !== null}
+                    className="btn-secondary"
+                    style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+                  >
+                    {downloadingSourceList === "all" ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                    Download all research sources
+                  </button>
+                )}
+                {exportNotice && (
+                  <p
+                    style={{
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                      color: exportNotice.tone === "success" ? "var(--color-success)" : "var(--color-danger)",
+                    }}
+                  >
+                    {exportNotice.text}
+                  </p>
                 )}
               </div>
             )}
