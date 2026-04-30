@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import {
   Activity,
+  Bell,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import {
   apiClient,
+  type AdminNotification,
   type BenchmarkData,
   type HealthReport,
   type ServiceHealth,
@@ -655,16 +657,146 @@ function APIHealthPanel() {
   );
 }
 
+// ── Notifications Panel ───────────────────────────────────────────────────────
+
+const LEVEL_COLOR: Record<string, string> = {
+  error:   "var(--color-danger, #dc2626)",
+  warning: "var(--color-action, #d97706)",
+  info:    "var(--color-success, #16a34a)",
+};
+
+function NotificationsPanel() {
+  const queryClient = useQueryClient();
+  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+
+  const { data: notifications, isLoading, refetch } = useQuery({
+    queryKey: ["admin-notifications", showUnreadOnly],
+    queryFn: () => apiClient.getNotifications(showUnreadOnly),
+    refetchInterval: 60_000,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: (id: string) => apiClient.markNotificationRead(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-notifications"] }),
+  });
+
+  const unreadCount = notifications?.filter((n) => !n.is_read).length ?? 0;
+
+  return (
+    <div style={{ padding: "28px 28px 48px", maxWidth: 720 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ fontSize: 15, fontWeight: 500, marginBottom: 2 }}>
+            Pipeline Notifications
+            {unreadCount > 0 && (
+              <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: "var(--color-danger)", background: "var(--color-danger-bg)", padding: "1px 6px", borderRadius: 10 }}>
+                {unreadCount} unread
+              </span>
+            )}
+          </h2>
+          <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+            Technical failures and quality gate alerts — requires admin attention
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer", color: "var(--color-text-secondary)" }}>
+            <input
+              type="checkbox"
+              checked={showUnreadOnly}
+              onChange={(e) => setShowUnreadOnly(e.target.checked)}
+              style={{ accentColor: "var(--color-action)" }}
+            />
+            Unread only
+          </label>
+          <button onClick={() => refetch()} className="btn-secondary" style={{ padding: "5px 10px", fontSize: 12 }}>
+            <RefreshCw size={11} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {isLoading && (
+        <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
+          <Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
+        </div>
+      )}
+
+      {!isLoading && (!notifications || notifications.length === 0) && (
+        <div style={{ textAlign: "center", padding: "48px 0", color: "var(--color-text-tertiary)", fontSize: 13 }}>
+          <Bell size={28} style={{ margin: "0 auto 10px", opacity: 0.4 }} />
+          <p>No notifications</p>
+        </div>
+      )}
+
+      {!isLoading && notifications && notifications.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {notifications.map((n: AdminNotification) => (
+            <div
+              key={n.id}
+              style={{
+                background: n.is_read ? "var(--color-background-primary)" : "var(--color-background-secondary)",
+                border: `0.5px solid ${n.is_read ? "var(--color-border-tertiary)" : LEVEL_COLOR[n.level] ?? "var(--color-border-tertiary)"}`,
+                borderRadius: 10,
+                padding: "14px 16px",
+                opacity: n.is_read ? 0.75 : 1,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: LEVEL_COLOR[n.level], textTransform: "uppercase" }}>
+                      {n.level}
+                    </span>
+                    {!n.is_read && (
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: LEVEL_COLOR[n.level] }} />
+                    )}
+                    <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: "auto" }}>
+                      {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{n.title}</p>
+                  <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{n.message}</p>
+                  {n.technical_detail && (
+                    <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6, fontFamily: "monospace", background: "var(--color-background-tertiary)", padding: "6px 8px", borderRadius: 6, whiteSpace: "pre-wrap" }}>
+                      {n.technical_detail}
+                    </p>
+                  )}
+                  {n.suggested_fix && (
+                    <div style={{ marginTop: 8, padding: "8px 10px", background: "var(--color-success-bg, #f0fdf4)", border: "0.5px solid #86efac", borderRadius: 6 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "var(--color-success)", marginBottom: 2 }}>Suggested fix</p>
+                      <p style={{ fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{n.suggested_fix}</p>
+                    </div>
+                  )}
+                </div>
+                {!n.is_read && (
+                  <button
+                    onClick={() => markReadMutation.mutate(n.id)}
+                    disabled={markReadMutation.isPending}
+                    className="btn-secondary"
+                    style={{ fontSize: 11, padding: "4px 8px", flexShrink: 0 }}
+                  >
+                    Mark read
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page shell with tabs ──────────────────────────────────────────────────────
 
-type AdminTab = "benchmarking" | "health";
+type AdminTab = "benchmarking" | "health" | "notifications";
 
 export default function BenchmarkingPage() {
   const [tab, setTab] = useState<AdminTab>("benchmarking");
 
   const TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
-    { id: "benchmarking", label: "Benchmarking", icon: <Gauge size={13} /> },
-    { id: "health",       label: "API Health",   icon: <Activity size={13} /> },
+    { id: "benchmarking",  label: "Benchmarking",  icon: <Gauge size={13} /> },
+    { id: "health",        label: "API Health",     icon: <Activity size={13} /> },
+    { id: "notifications", label: "Notifications",  icon: <Bell size={13} /> },
   ];
 
   return (
@@ -708,8 +840,9 @@ export default function BenchmarkingPage() {
         </div>
       </div>
 
-      {tab === "benchmarking" && <UserBenchmarkView />}
-      {tab === "health"       && <APIHealthPanel />}
+      {tab === "benchmarking"  && <UserBenchmarkView />}
+      {tab === "health"        && <APIHealthPanel />}
+      {tab === "notifications" && <NotificationsPanel />}
     </div>
   );
 }

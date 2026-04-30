@@ -39,6 +39,7 @@ from backend.models.research import (
     ResearchPackage,
     StorylineProposal,
 )
+from backend.models.notification import AdminNotificationORM
 from backend.models.story import (
     FinalScript,
     ScriptAuditReport,
@@ -534,6 +535,8 @@ async def _run_pipeline(
                 final_state["script_audit_report"].model_dump(mode="json")
                 if final_state.get("script_audit_report") else None
             ),
+            "pipeline_cycles_run": max(final_state.get("pipeline_cycle", 0), 1),
+            "pipeline_failure_summary": final_state.get("pipeline_failure_summary"),
         }
         if script:
             values["title"] = script.title
@@ -541,6 +544,24 @@ async def _run_pipeline(
         await db.execute(
             update(StoryORM).where(StoryORM.id == uuid.UUID(story_id)).values(**values)
         )
+
+        # Create admin notification for technical pipeline failures
+        if final_state.get("is_technical_failure") and final_state.get("pipeline_failure_summary"):
+            failure_summary = final_state["pipeline_failure_summary"]
+            error_detail = final_state.get("error")
+            notification = AdminNotificationORM(
+                story_id=uuid.UUID(story_id),
+                level="error",
+                title=f"Pipeline quality failure — technical error (story {story_id[:8]})",
+                message=failure_summary,
+                technical_detail=error_detail,
+                suggested_fix=(
+                    "Check API key validity and credit balances for Tavily, NewsAPI, "
+                    "Alpha Vantage, and Anthropic. Verify database connectivity and S3 access."
+                ),
+            )
+            db.add(notification)
+
         await db.commit()
 
     log.info("pipeline.complete", story_id=story_id, status=values["status"])
@@ -1219,6 +1240,11 @@ async def get_research_sources(
         return []
 
     raw_sources: list[dict] = story.research_data.get("sources", [])
+    sorted_sources = sorted(
+        raw_sources,
+        key=lambda source: float(source.get("relevance_score") or 0.0),
+        reverse=True,
+    )
     return [
         {
             "title": s.get("title", ""),
@@ -1231,7 +1257,7 @@ async def get_research_sources(
             "published_at": s.get("published_at"),
             "content_preview": (s.get("content") or "")[:300],
         }
-        for s in raw_sources
+        for s in sorted_sources
         if s.get("title")
     ]
 

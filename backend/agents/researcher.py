@@ -115,9 +115,14 @@ class ResearcherAgent:
             Partial state update dict with ``research_package`` populated.
         """
         topic: str = state["topic"]
+        improvement_plan = state.get("quality_improvement_plan")
         start = time.monotonic()
 
-        log.info("researcher.start", topic=topic)
+        log.info(
+            "researcher.start",
+            topic=topic,
+            has_improvement_plan=improvement_plan is not None,
+        )
 
         # Step 1: Plan queries and route sources
         plan = await self._plan_queries(topic)
@@ -139,9 +144,24 @@ class ResearcherAgent:
         # Steps 2-5: Fetch only routed sources in parallel
         fetch_tasks: dict[str, Any] = {}
 
+        # Merge improvement-plan research gaps as mandatory additional queries
+        gap_queries: list[str] = []
+        if improvement_plan and improvement_plan.research_gaps:
+            gap_queries = improvement_plan.research_gaps[:4]
+            log.info("researcher.gap_queries", count=len(gap_queries))
+
         if "tavily" in use_sources:
+            base_queries = (plan.primary_queries + plan.deep_dive_queries)[:5]
+            all_queries = (base_queries + gap_queries)[:8]
             fetch_tasks["web"] = self._search.multi_search(
-                (plan.primary_queries + plan.deep_dive_queries)[:5],
+                all_queries,
+                max_results_per_query=settings.tavily_max_results,
+            )
+        elif gap_queries:
+            # Even if tavily isn't in use_sources for this topic type,
+            # mandatory gap queries should still run via web search
+            fetch_tasks["web_gaps"] = self._search.multi_search(
+                gap_queries,
                 max_results_per_query=settings.tavily_max_results,
             )
 

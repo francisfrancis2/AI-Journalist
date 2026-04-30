@@ -5,9 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
-import { apiClient, type Story, type FinalScript } from "@/lib/api";
+import { apiClient, type Story, type FinalScript, type ResearchSource } from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
-import { downloadScriptPdf } from "@/lib/script-export";
+import { downloadScriptPdf, downloadSourceListPdf } from "@/lib/script-export";
 
 type Tab = "script" | "evaluation";
 
@@ -16,6 +16,109 @@ const SCRIPT_GRADE_HELP =
 const BENCHMARK_GRADE_HELP =
   "Measures how closely the story matches the benchmark corpus in hook, structure, data density, human narrative, and closing pattern.";
 const GRADE_SCALE_HELP = "Letter scale: A 85%+, B 70-84%, C 55-69%, D below 55%.";
+const TOP_RESEARCH_SOURCES_LIMIT = 10;
+
+type DisplaySource = {
+  source_id?: string | null;
+  title: string;
+  url: string | null;
+  credibility: string;
+  type: string;
+  relevance_score?: number;
+};
+
+function sourceKey(source: Pick<DisplaySource, "source_id" | "url" | "title">): string {
+  return source.source_id || source.url || source.title.trim().toLowerCase();
+}
+
+function buildSourceLookup(
+  scriptSources: FinalScript["sources"],
+  researchSources: ResearchSource[]
+): Map<string, DisplaySource> {
+  const lookup = new Map<string, DisplaySource>();
+
+  for (const source of researchSources) {
+    lookup.set(sourceKey(source), {
+      source_id: source.source_id ?? null,
+      title: source.title,
+      url: source.url,
+      credibility: source.credibility,
+      type: source.source_type,
+      relevance_score: source.relevance_score,
+    });
+  }
+
+  for (const source of scriptSources) {
+    const key = sourceKey(source);
+    const existing = lookup.get(key);
+    lookup.set(key, {
+      source_id: source.source_id ?? existing?.source_id ?? null,
+      title: source.title,
+      url: source.url ?? existing?.url ?? null,
+      credibility: source.credibility ?? existing?.credibility ?? "medium",
+      type: source.type ?? existing?.type ?? "source",
+      relevance_score: existing?.relevance_score,
+    });
+  }
+
+  return lookup;
+}
+
+function topSidebarSources(
+  scriptSources: FinalScript["sources"],
+  researchSources: ResearchSource[]
+): DisplaySource[] {
+  if (researchSources.length > 0) {
+    return researchSources.slice(0, TOP_RESEARCH_SOURCES_LIMIT).map((source) => ({
+      source_id: source.source_id ?? null,
+      title: source.title,
+      url: source.url,
+      credibility: source.credibility,
+      type: source.source_type,
+      relevance_score: source.relevance_score,
+    }));
+  }
+
+  return scriptSources.slice(0, TOP_RESEARCH_SOURCES_LIMIT).map((source) => ({
+    source_id: source.source_id ?? null,
+    title: source.title,
+    url: source.url,
+    credibility: source.credibility,
+    type: source.type,
+  }));
+}
+
+function sourcesUsedInScript(
+  script: FinalScript,
+  researchSources: ResearchSource[]
+): DisplaySource[] {
+  const sourceLookup = buildSourceLookup(script.sources, researchSources);
+  const usedSources: DisplaySource[] = [];
+  const seen = new Set<string>();
+
+  for (const section of script.sections) {
+    for (const sourceId of section.source_ids ?? []) {
+      const source = sourceLookup.get(sourceId);
+      if (!source) continue;
+      const key = sourceKey(source);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      usedSources.push(source);
+    }
+  }
+
+  if (usedSources.length > 0) {
+    return usedSources;
+  }
+
+  return script.sources.map((source) => ({
+    source_id: source.source_id ?? null,
+    title: source.title,
+    url: source.url,
+    credibility: source.credibility,
+    type: source.type,
+  }));
+}
 
 export default function ResultsPage() {
   const { id } = useParams<{ id: string }>();
@@ -38,6 +141,12 @@ export default function ResultsPage() {
   const { data: script } = useQuery<FinalScript>({
     queryKey: ["script", id],
     queryFn: () => apiClient.getScript(id),
+    enabled: story?.status === "completed",
+  });
+
+  const { data: researchSources = [] } = useQuery<ResearchSource[]>({
+    queryKey: ["story", id, "sources"],
+    queryFn: () => apiClient.getResearchSources(id),
     enabled: story?.status === "completed",
   });
 
@@ -170,6 +279,23 @@ export default function ResultsPage() {
               )}
             </div>
 
+            {story.pipeline_failure_summary && (
+              <div style={{ margin: "12px 0 0", padding: "12px 14px", background: "var(--color-danger-bg)", border: "0.5px solid #fecaca", borderRadius: 8, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <XCircle size={16} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: "var(--color-danger)", marginBottom: 4 }}>
+                    AI Journalist could not achieve a quality score above 70%
+                  </p>
+                  <p style={{ fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                    {story.pipeline_failure_summary}
+                  </p>
+                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
+                    The best-scoring version of the script is shown below.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {isComplete && script && (
               <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 16 }}>
                 {story.script_audit_data && (
@@ -223,7 +349,13 @@ export default function ResultsPage() {
       <div style={{ padding: "28px", maxWidth: 800 }}>
         {isRunning  && <PipelineStatus story={story} />}
         {isFailed   && <FailedState story={story} />}
-        {isComplete && tab === "script"     && script && <ScriptPanel script={script} versionNumber={revisionNumber} />}
+        {isComplete && tab === "script"     && script && (
+          <ScriptPanel
+            script={script}
+            researchSources={researchSources}
+            versionNumber={revisionNumber}
+          />
+        )}
         {isComplete && tab === "evaluation" && <ScriptEvaluationPanel story={story} storyId={id} />}
       </div>
     </div>
@@ -267,9 +399,31 @@ function FailedState({ story }: { story: Story }) {
 }
 
 /* ── Script panel ── */
-function ScriptPanel({ script, versionNumber }: { script: FinalScript; versionNumber: number | null }) {
+function ScriptPanel({
+  script,
+  researchSources,
+  versionNumber,
+}: {
+  script: FinalScript;
+  researchSources: ResearchSource[];
+  versionNumber: number | null;
+}) {
   const [open, setOpen] = useState<number[]>([0]);
+  const [downloadingSourceList, setDownloadingSourceList] = useState(false);
   const toggle = (i: number) => setOpen(p => p.includes(i) ? p.filter(x => x !== i) : [...p, i]);
+  const sourceLookup = buildSourceLookup(script.sources, researchSources);
+  const sidebarSources = topSidebarSources(script.sources, researchSources);
+  const exportSources = sourcesUsedInScript(script, researchSources);
+
+  const handleSourceListDownload = () => {
+    if (exportSources.length === 0) return;
+    setDownloadingSourceList(true);
+    try {
+      downloadSourceListPdf(script.title, exportSources);
+    } finally {
+      setDownloadingSourceList(false);
+    }
+  };
 
   return (
     <div>
@@ -323,11 +477,11 @@ function ScriptPanel({ script, versionNumber }: { script: FinalScript; versionNu
               </li>
             </ol>
 
-            {script.sources.length > 0 && (
+            {sidebarSources.length > 0 && (
               <div style={{ marginTop: 16, paddingTop: 14, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-                <p className="section-label">Sources ({script.sources.length})</p>
+                <p className="section-label">Top Research Sources ({sidebarSources.length})</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {script.sources.map((src, i) => (
+                  {sidebarSources.map((src, i) => (
                     src.url
                       ? <a key={i} href={src.url} target="_blank" rel="noopener noreferrer"
                           className="source-chip"
@@ -340,6 +494,18 @@ function ScriptPanel({ script, versionNumber }: { script: FinalScript; versionNu
                         </span>
                   ))}
                 </div>
+                {exportSources.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSourceListDownload}
+                    disabled={downloadingSourceList}
+                    className="btn-secondary"
+                    style={{ width: "100%", marginTop: 10, justifyContent: "center" }}
+                  >
+                    {downloadingSourceList ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                    Download the list
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -363,8 +529,8 @@ function ScriptPanel({ script, versionNumber }: { script: FinalScript; versionNu
           {/* Acts */}
           {script.sections.map((section, i) => {
             const sectionSources = (section.source_ids ?? [])
-              .map((sourceId) => script.sources.find((source) => source.source_id === sourceId))
-              .filter(Boolean) as FinalScript["sources"];
+              .map((sourceId) => sourceLookup.get(sourceId))
+              .filter(Boolean) as DisplaySource[];
             return (
             <div key={i} className="card" style={{ marginBottom: 10, overflow: "hidden" }}>
               <button

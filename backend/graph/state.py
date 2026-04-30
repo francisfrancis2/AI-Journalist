@@ -19,8 +19,7 @@ from backend.models.research import (
     ResearchPackage,
     StorylineProposal,
 )
-from backend.models.story import FinalScript, StoryTone
-from backend.models.story import ScriptAuditReport
+from backend.models.story import FinalScript, ImprovementPlan, ScriptAuditReport, StoryTone
 
 
 class JournalistState(TypedDict):
@@ -66,6 +65,15 @@ class JournalistState(TypedDict):
     script_audit_report: Optional[ScriptAuditReport]
     script_s3_key: Optional[str]            # S3 key of the uploaded script document
     script_revision_cycle: int              # How many audit-triggered rewrites have run
+
+    # ── Quality gate ──────────────────────────────────────────────────────────
+    pipeline_cycle: int                     # Full research→script cycles completed
+    best_script: Optional[FinalScript]      # Best script seen across all cycles
+    best_script_score: float                # Score of best_script
+    quality_improvement_plan: Optional[ImprovementPlan]  # Guidance for next cycle
+    pipeline_failure_summary: Optional[str] # Human-readable failure reason (shown to user)
+    is_technical_failure: bool              # True → also create admin notification
+    _quality_gate_route: Optional[str]      # Transient: "restart" | "done" (set by quality gate)
 
     # ── Control flow flags ────────────────────────────────────────────────────
     needs_more_research: bool
@@ -115,6 +123,13 @@ def create_initial_state(
         script_audit_report=None,
         script_s3_key=None,
         script_revision_cycle=0,
+        pipeline_cycle=0,
+        best_script=None,
+        best_script_score=0.0,
+        quality_improvement_plan=None,
+        pipeline_failure_summary=None,
+        is_technical_failure=False,
+        _quality_gate_route=None,
         needs_more_research=False,
         approved_for_scripting=False,
         pipeline_complete=False,

@@ -10,12 +10,13 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_admin_user
 from backend.config import settings
 from backend.db.database import AsyncSessionLocal, get_db
+from backend.models.notification import AdminNotificationORM, AdminNotificationRead
 from backend.models.user import UserORM, UserRead
 
 log = structlog.get_logger(__name__)
@@ -224,6 +225,46 @@ async def create_user(
     await db.refresh(user)
     log.info("admin.user_created", admin_id=str(admin.id), new_user=user.email)
     return user
+
+
+@router.get("/notifications", response_model=list[AdminNotificationRead])
+async def list_notifications(
+    unread_only: bool = False,
+    limit: int = 50,
+    _admin: UserORM = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[AdminNotificationORM]:
+    """Return admin notifications, newest first."""
+    query = select(AdminNotificationORM)
+    if unread_only:
+        query = query.where(AdminNotificationORM.is_read == False)  # noqa: E712
+    query = query.order_by(AdminNotificationORM.created_at.desc()).limit(limit)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+@router.post("/notifications/{notification_id}/read", response_model=AdminNotificationRead)
+async def mark_notification_read(
+    notification_id: uuid.UUID,
+    _admin: UserORM = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> AdminNotificationORM:
+    """Mark a notification as read."""
+    result = await db.execute(
+        select(AdminNotificationORM).where(AdminNotificationORM.id == notification_id)
+    )
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    if not notification.is_read:
+        await db.execute(
+            update(AdminNotificationORM)
+            .where(AdminNotificationORM.id == notification_id)
+            .values(is_read=True, read_at=datetime.now(timezone.utc))
+        )
+        await db.commit()
+        await db.refresh(notification)
+    return notification
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

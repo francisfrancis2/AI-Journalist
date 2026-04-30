@@ -156,6 +156,9 @@ class ScriptwriterAgent:
         target_duration_minutes = state.get("target_duration_minutes") or settings.target_script_duration_min
         target_audience = state.get("target_audience")
         rewrite_recommendations: list[str] = state.get("user_rewrite_recommendations") or []
+        improvement_plan = state.get("quality_improvement_plan")
+        if improvement_plan and improvement_plan.script_directives:
+            rewrite_recommendations = improvement_plan.script_directives + rewrite_recommendations
         duration_scale = target_duration_minutes / max(
             storyline.total_estimated_duration_seconds / 60,
             1,

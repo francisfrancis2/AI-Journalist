@@ -214,6 +214,19 @@ export interface ScriptAuditData {
   benchmark_comparison: ScriptAuditBenchmarkComparison | null;
 }
 
+export interface AdminNotification {
+  id: string;
+  story_id: string | null;
+  level: "info" | "warning" | "error";
+  title: string;
+  message: string;
+  technical_detail: string | null;
+  suggested_fix: string | null;
+  is_read: boolean;
+  created_at: string;
+  read_at: string | null;
+}
+
 export interface Story {
   id: string;
   title: string;
@@ -236,6 +249,8 @@ export interface Story {
   script_versions: ScriptVersion[] | null;
   parent_story_id: string | null;
   revision: number;
+  pipeline_cycles_run: number;
+  pipeline_failure_summary: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -598,6 +613,18 @@ class AIJournalistAPIClient {
 
   async getApiHealth(): Promise<HealthReport> {
     const { data } = await this.http.get<HealthReport>("/api/v1/admin/health");
+    return data;
+  }
+
+  async getNotifications(unreadOnly = false): Promise<AdminNotification[]> {
+    const { data } = await this.http.get<AdminNotification[]>("/api/v1/admin/notifications", {
+      params: { unread_only: unreadOnly },
+    });
+    return data;
+  }
+
+  async markNotificationRead(id: string): Promise<AdminNotification> {
+    const { data } = await this.http.post<AdminNotification>(`/api/v1/admin/notifications/${id}/read`);
     return data;
   }
 

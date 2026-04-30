@@ -204,6 +204,18 @@ class ScriptEvaluatorAgent:
         topic: str = state["topic"]
         library, library_status = await load_active_benchmark_library()
 
+        improvement_plan = state.get("quality_improvement_plan")
+        directives_section = ""
+        if improvement_plan and improvement_plan.script_directives:
+            directives_section = (
+                "\n=== IMPROVEMENT DIRECTIVES TO VERIFY ===\n"
+                "The following directives were given to the scriptwriter for this revision. "
+                "For each directive, explicitly note in your rewrite_priorities whether it was addressed, "
+                "partially addressed, or ignored.\n"
+                + "\n".join(f"- {d}" for d in improvement_plan.script_directives)
+                + "\n"
+            )
+
         prompt = (
             f"Topic: {topic}\n"
             f"Script title: {script.title}\n"
@@ -211,8 +223,9 @@ class ScriptEvaluatorAgent:
             f"Opening hook: {script.opening_hook}\n"
             f"Closing statement: {script.closing_statement}\n"
             f"Estimated duration: {script.estimated_duration_minutes} minutes\n"
-            f"Total word count: {script.total_word_count}\n\n"
-            f"=== FINAL SCRIPT ===\n{self._format_sections(script)}\n\n"
+            f"Total word count: {script.total_word_count}\n"
+            f"{directives_section}"
+            f"\n=== FINAL SCRIPT ===\n{self._format_sections(script)}\n\n"
             f"=== SOURCE REFS ===\n{self._format_sources(script)}\n\n"
             f"=== PRIOR FEEDBACK ===\n{self._format_storyline_feedback(state)}\n\n"
             f"=== BENCHMARK CONTEXT ===\n{self._format_benchmark_context(library)}"
