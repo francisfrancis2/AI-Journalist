@@ -18,6 +18,7 @@ from backend.config import settings
 from backend.db.database import AsyncSessionLocal, get_db
 from backend.models.notification import AdminNotificationORM, AdminNotificationRead
 from backend.models.user import UserORM, UserRead
+from backend.tools.rss_parser import GOOGLE_NEWS_RSS_URL, RSSParserTool
 
 log = structlog.get_logger(__name__)
 router = APIRouter()
@@ -108,6 +109,32 @@ async def _probe_newsapi() -> ServiceHealth:
                              detail=str(exc)[:200])
 
 
+async def _probe_google_news_rss() -> ServiceHealth:
+    t = time.monotonic()
+    try:
+        tool = RSSParserTool(feeds={})
+        sources = await asyncio.wait_for(
+            tool.fetch_feed(GOOGLE_NEWS_RSS_URL, max_entries=1),
+            timeout=10,
+        )
+        if not sources:
+            raise ValueError("Google News RSS returned no entries.")
+        return ServiceHealth(
+            name="google_news_rss",
+            label="Google News RSS",
+            status="ok",
+            latency_ms=int((time.monotonic() - t) * 1000),
+        )
+    except Exception as exc:
+        return ServiceHealth(
+            name="google_news_rss",
+            label="Google News RSS",
+            status="error",
+            latency_ms=int((time.monotonic() - t) * 1000),
+            detail=str(exc)[:200],
+        )
+
+
 async def _probe_alpha_vantage() -> ServiceHealth:
     t = time.monotonic()
     try:
@@ -130,37 +157,6 @@ async def _probe_alpha_vantage() -> ServiceHealth:
                              detail=str(exc)[:200])
 
 
-async def _probe_s3() -> ServiceHealth:
-    t = time.monotonic()
-    try:
-        import boto3
-        from botocore.exceptions import ClientError
-        loop = asyncio.get_event_loop()
-
-        def _check():
-            s3 = boto3.client(
-                "s3",
-                aws_access_key_id=settings.aws_access_key_id,
-                aws_secret_access_key=settings.aws_secret_access_key,
-                region_name=settings.aws_region,
-                **({"endpoint_url": settings.s3_endpoint_url} if settings.s3_endpoint_url else {}),
-            )
-            s3.head_bucket(Bucket=settings.s3_bucket_scripts)
-
-        await asyncio.wait_for(loop.run_in_executor(None, _check), timeout=10)
-        return ServiceHealth(name="s3", label="AWS S3",
-                             status="ok", latency_ms=int((time.monotonic() - t) * 1000))
-    except Exception as exc:
-        detail = str(exc)[:200]
-        # Missing credentials in local dev is expected — treat as unknown, not error
-        if not settings.aws_access_key_id or settings.aws_access_key_id == "test":
-            return ServiceHealth(name="s3", label="AWS S3", status="unknown",
-                                 detail="Not configured (local dev)")
-        return ServiceHealth(name="s3", label="AWS S3",
-                             status="error", latency_ms=int((time.monotonic() - t) * 1000),
-                             detail=detail)
-
-
 # ── Health endpoint ───────────────────────────────────────────────────────────
 
 @router.get("/health", response_model=HealthReport)
@@ -173,8 +169,8 @@ async def api_health(
         _probe_anthropic(),
         _probe_tavily(),
         _probe_newsapi(),
+        _probe_google_news_rss(),
         _probe_alpha_vantage(),
-        _probe_s3(),
     ]
     results: list[ServiceHealth] = list(await asyncio.gather(*probes))
     log.info("admin.health_check", statuses={r.name: r.status for r in results})
