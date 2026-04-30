@@ -37,6 +37,7 @@ class ResearchPlan(BaseModel):
     use_sources: list[str]
     primary_queries: list[str]
     deep_dive_queries: list[str]
+    human_story_queries: list[str]   # Case studies, personal stories, expert interviews
     financial_symbols: list[str]
     rss_keyword: str
 
@@ -67,6 +68,10 @@ Classify the topic into one bucket:
 Generate:
 - 3-5 primary_queries: broad, authoritative queries
 - 3-5 deep_dive_queries: specific angle queries
+- 2-3 human_story_queries: queries targeting REAL PEOPLE affected by or driving this story.
+  These must explicitly seek case studies, personal accounts, expert voices, or named individuals.
+  Format: "[person/company name] story [topic]", "case study [topic]", "interview expert [topic]",
+  "[industry] worker experience [topic]", etc. ALWAYS provide at least 2 — never leave empty.
 - financial_symbols: stock tickers if relevant, else empty list
 - rss_keyword: single most important keyword for RSS filtering
 
@@ -144,25 +149,31 @@ class ResearcherAgent:
         # Steps 2-5: Fetch only routed sources in parallel
         fetch_tasks: dict[str, Any] = {}
 
-        # Merge improvement-plan research gaps as mandatory additional queries
+        # Improvement-plan gap queries — run via NewsAPI + RSS (different corpus to Tavily)
         gap_queries: list[str] = []
         if improvement_plan and improvement_plan.research_gaps:
             gap_queries = improvement_plan.research_gaps[:4]
             log.info("researcher.gap_queries", count=len(gap_queries))
+            for i, q in enumerate(gap_queries[:2]):
+                fetch_tasks[f"news_gap_{i}"] = self._news.search_everything(
+                    q, page_size=settings.news_api_page_size
+                )
+            # Gap RSS: use first gap as keyword to pull fresh editorial angles
+            fetch_tasks["rss_gaps"] = self._rss.fetch_all_default_feeds(
+                max_entries_per_feed=5, keyword_filter=gap_queries[0].split()[0]
+            )
 
         if "tavily" in use_sources:
-            base_queries = (plan.primary_queries + plan.deep_dive_queries)[:5]
-            all_queries = (base_queries + gap_queries)[:8]
+            base_queries = (plan.primary_queries + plan.deep_dive_queries)[:6]
             fetch_tasks["web"] = self._search.multi_search(
-                all_queries,
+                base_queries,
                 max_results_per_query=settings.tavily_max_results,
             )
-        elif gap_queries:
-            # Even if tavily isn't in use_sources for this topic type,
-            # mandatory gap queries should still run via web search
-            fetch_tasks["web_gaps"] = self._search.multi_search(
-                gap_queries,
-                max_results_per_query=settings.tavily_max_results,
+
+        # Human-story queries always run via NewsAPI for person/case-study coverage
+        for i, q in enumerate(plan.human_story_queries[:2]):
+            fetch_tasks[f"news_human_{i}"] = self._news.search_everything(
+                q, page_size=settings.news_api_page_size
             )
 
         if "rss" in use_sources:
