@@ -127,6 +127,19 @@ export interface BenchmarkLibraryStatus {
   notes: string[];
 }
 
+export interface ServiceHealth {
+  name: string;
+  label: string;
+  status: "ok" | "error" | "unknown";
+  latency_ms: number | null;
+  detail: string | null;
+}
+
+export interface HealthReport {
+  services: ServiceHealth[];
+  checked_at: string;
+}
+
 export interface BenchmarkAdminStatus {
   active_library_key: string;
   build_in_progress: boolean;
@@ -582,6 +595,11 @@ class AIJournalistAPIClient {
   }
 
   // ── Benchmark Admin ─────────────────────────────────────────────────────
+
+  async getApiHealth(): Promise<HealthReport> {
+    const { data } = await this.http.get<HealthReport>("/api/v1/admin/health");
+    return data;
+  }
 
   async getBenchmarkStatus(): Promise<BenchmarkAdminStatus> {
     const { data } = await this.http.get<BenchmarkAdminStatus>("/api/v1/benchmarks/status");

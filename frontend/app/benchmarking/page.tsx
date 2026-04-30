@@ -1,21 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import {
+  Activity,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Database,
   ExternalLink,
   Gauge,
   Loader2,
+  RefreshCw,
   Sparkles,
+  XCircle,
 } from "lucide-react";
 import {
   apiClient,
   type BenchmarkData,
+  type HealthReport,
+  type ServiceHealth,
   type Story,
   type ScriptVersion,
 } from "@/lib/api";
@@ -509,28 +515,201 @@ function UserBenchmarkView() {
   );
 }
 
+// ── API Health Panel ──────────────────────────────────────────────────────────
+
+const STATUS_COLOR: Record<ServiceHealth["status"], string> = {
+  ok:      "var(--color-success, #16a34a)",
+  error:   "var(--color-danger,  #dc2626)",
+  unknown: "var(--color-text-tertiary)",
+};
+
+const STATUS_BG: Record<ServiceHealth["status"], string> = {
+  ok:      "rgba(22,163,74,0.08)",
+  error:   "rgba(220,38,38,0.08)",
+  unknown: "var(--color-background-secondary)",
+};
+
+function ServiceRow({ svc }: { svc: ServiceHealth }) {
+  const color = STATUS_COLOR[svc.status];
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 16px",
+        background: STATUS_BG[svc.status],
+        border: `0.5px solid ${color}33`,
+        borderRadius: 8,
+      }}
+    >
+      {svc.status === "ok"
+        ? <CheckCircle2 size={16} style={{ color, flexShrink: 0 }} />
+        : svc.status === "error"
+        ? <XCircle size={16} style={{ color, flexShrink: 0 }} />
+        : <Activity size={16} style={{ color, flexShrink: 0 }} />}
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>{svc.label}</span>
+        {svc.detail && (
+          <p style={{ fontSize: 11, color: "var(--color-danger)", marginTop: 2, wordBreak: "break-word" }}>
+            {svc.detail}
+          </p>
+        )}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        {svc.latency_ms !== null && (
+          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+            {svc.latency_ms} ms
+          </span>
+        )}
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            color,
+            padding: "2px 7px",
+            border: `1px solid ${color}`,
+            borderRadius: 4,
+          }}
+        >
+          {svc.status}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function APIHealthPanel() {
+  const { data, isFetching, isError, refetch, dataUpdatedAt } = useQuery<HealthReport>({
+    queryKey: ["admin-health"],
+    queryFn: () => apiClient.getApiHealth(),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+
+  const errorCount = data?.services.filter(s => s.status === "error").length ?? 0;
+  const checkedAt = data ? new Date(data.checked_at).toLocaleTimeString() : null;
+
+  return (
+    <div style={{ padding: "28px 28px 48px", maxWidth: 640 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ fontSize: 15, fontWeight: 500, marginBottom: 2 }}>External API Health</h2>
+          {checkedAt && (
+            <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+              Last checked {checkedAt} · auto-refreshes every 60 s
+            </p>
+          )}
+        </div>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="btn-secondary"
+          style={{ fontSize: 12, gap: 6 }}
+        >
+          {isFetching
+            ? <Loader2 size={13} className="animate-spin" />
+            : <RefreshCw size={13} />}
+          Refresh
+        </button>
+      </div>
+
+      {errorCount > 0 && (
+        <div
+          style={{
+            padding: "10px 14px",
+            marginBottom: 16,
+            background: "rgba(220,38,38,0.07)",
+            border: "0.5px solid rgba(220,38,38,0.3)",
+            borderRadius: 8,
+            fontSize: 13,
+            color: "var(--color-danger)",
+          }}
+        >
+          {errorCount} service{errorCount !== 1 ? "s" : ""} reporting errors — check API keys or credit balances.
+        </div>
+      )}
+
+      {isError && !data && (
+        <div className="card" style={{ padding: "16px 18px", color: "var(--color-danger)", fontSize: 13 }}>
+          Could not run health check. Make sure you are logged in as admin.
+        </div>
+      )}
+
+      {isFetching && !data && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--color-text-secondary)", fontSize: 13 }}>
+          <Loader2 size={14} className="animate-spin" /> Running probes…
+        </div>
+      )}
+
+      {data && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {data.services.map(svc => <ServiceRow key={svc.name} svc={svc} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Page shell with tabs ──────────────────────────────────────────────────────
+
+type AdminTab = "benchmarking" | "health";
+
 export default function BenchmarkingPage() {
+  const [tab, setTab] = useState<AdminTab>("benchmarking");
+
+  const TABS: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
+    { id: "benchmarking", label: "Benchmarking", icon: <Gauge size={13} /> },
+    { id: "health",       label: "API Health",   icon: <Activity size={13} /> },
+  ];
+
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
       <div
         style={{
-          height: 52,
-          display: "flex",
-          alignItems: "center",
-          padding: "0 28px",
           background: "var(--color-background-primary)",
           borderBottom: "0.5px solid var(--color-border-tertiary)",
-          gap: 10,
         }}
       >
-        <Gauge size={16} style={{ color: "var(--color-action)" }} />
-        <span style={{ fontSize: 18, fontWeight: 500 }}>Benchmarking</span>
-        <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-          Script quality scores, benchmark alignment, and heuristic improvements.
-        </span>
+        <div style={{ padding: "14px 28px 0", display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Gauge size={16} style={{ color: "var(--color-action)" }} />
+            <span style={{ fontSize: 18, fontWeight: 500 }}>Admin Console</span>
+          </div>
+          <div style={{ display: "flex", gap: 0, marginTop: 8 }}>
+            {TABS.map(({ id, label, icon }) => (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "9px 14px",
+                  fontSize: 13,
+                  fontWeight: tab === id ? 500 : 400,
+                  color: tab === id ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                  background: "none",
+                  border: "none",
+                  borderBottom: tab === id ? "1.5px solid var(--color-action)" : "1.5px solid transparent",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-sans)",
+                }}
+              >
+                {icon}
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <UserBenchmarkView />
+      {tab === "benchmarking" && <UserBenchmarkView />}
+      {tab === "health"       && <APIHealthPanel />}
     </div>
   );
 }
