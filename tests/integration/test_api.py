@@ -12,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 
 from backend.api.deps import get_current_user
 from backend.api.main import create_app
+from backend.api.routes.admin import ServiceHealth
 from backend.db.database import get_db
 from backend.models.benchmark import BIReferenceDocORM
 from backend.models.story import StoryORM, StoryStatus, StoryTone
@@ -582,6 +583,54 @@ class TestResearchEndpoints:
             json={"symbol": "INVALID"},
         )
         assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_rss_fetch_rejects_localhost_url(self, api_client):
+        response = await api_client.get(
+            "/api/v1/research/rss/fetch",
+            params={"url": "http://localhost:8000/feed.xml"},
+        )
+        assert response.status_code == 422
+
+
+class TestAdminEndpoints:
+    @pytest.mark.asyncio
+    async def test_admin_health_includes_google_news_rss(self, api_client, mocker):
+        probe = mocker.AsyncMock
+        mocker.patch(
+            "backend.api.routes.admin._probe_postgres",
+            new=probe(return_value=ServiceHealth(name="postgres", label="Postgres", status="ok")),
+        )
+        mocker.patch(
+            "backend.api.routes.admin._probe_anthropic",
+            new=probe(return_value=ServiceHealth(name="anthropic", label="Anthropic", status="ok")),
+        )
+        mocker.patch(
+            "backend.api.routes.admin._probe_tavily",
+            new=probe(return_value=ServiceHealth(name="tavily", label="Tavily", status="ok")),
+        )
+        mocker.patch(
+            "backend.api.routes.admin._probe_newsapi",
+            new=probe(return_value=ServiceHealth(name="newsapi", label="NewsAPI", status="ok")),
+        )
+        mocker.patch(
+            "backend.api.routes.admin._probe_google_news_rss",
+            new=probe(return_value=ServiceHealth(name="google_news_rss", label="Google News RSS", status="ok")),
+        )
+        mocker.patch(
+            "backend.api.routes.admin._probe_alpha_vantage",
+            new=probe(return_value=ServiceHealth(name="alpha_vantage", label="Alpha Vantage", status="ok")),
+        )
+        mocker.patch(
+            "backend.api.routes.admin._probe_s3",
+            new=probe(return_value=ServiceHealth(name="s3", label="AWS S3", status="unknown")),
+        )
+
+        response = await api_client.get("/api/v1/admin/health")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert any(service["name"] == "google_news_rss" for service in data["services"])
 
 
 class TestBenchmarkEndpoints:

@@ -99,6 +99,8 @@ class FocusedResearchAgent:
         selected = selected.intersection(_ALLOWED_SOURCES)
         if not selected:
             selected = {"tavily", "newsapi", "rss"}
+        if "newsapi" in selected:
+            selected.add("rss")
         if plan.financial_symbols:
             selected.add("financial")
         return selected

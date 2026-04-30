@@ -28,6 +28,8 @@ from backend.tools.web_search import WebSearchTool
 
 log = structlog.get_logger(__name__)
 
+_ALLOWED_SOURCES = {"tavily", "newsapi", "rss", "financial"}
+
 
 # ── Structured output schema ──────────────────────────────────────────────────
 
@@ -61,8 +63,8 @@ Source guide:
 
 Classify the topic into one bucket:
 - "background"  → tavily + rss (historical/contextual, science, culture, biography)
-- "news"        → tavily + newsapi (current events, politics, recent controversies)
-- "financial"   → tavily + newsapi + financial (markets, companies, economic policy)
+- "news"        → tavily + newsapi + rss (current events, politics, recent controversies)
+- "financial"   → tavily + newsapi + rss + financial (markets, companies, economic policy)
 - "mixed"       → tavily + newsapi + rss (broad topics spanning news and background)
 
 Generate:
@@ -109,6 +111,23 @@ class ResearcherAgent:
         ]
         return await self._structured_llm.ainvoke(messages)
 
+    @staticmethod
+    def _normalise_sources(plan: ResearchPlan) -> set[str]:
+        topic_defaults = {
+            "background": {"tavily", "rss"},
+            "news": {"tavily", "newsapi", "rss"},
+            "financial": {"tavily", "newsapi", "rss", "financial"},
+            "mixed": {"tavily", "newsapi", "rss"},
+        }
+        selected = {source.lower().strip() for source in plan.use_sources}
+        selected = selected.intersection(_ALLOWED_SOURCES)
+        selected.update(topic_defaults.get(plan.topic_type, {"tavily", "newsapi", "rss"}))
+        if "newsapi" in selected:
+            selected.add("rss")
+        if plan.financial_symbols:
+            selected.add("financial")
+        return selected
+
     async def run(self, state: dict) -> dict:
         """
         Execute the research phase.
@@ -131,7 +150,8 @@ class ResearcherAgent:
 
         # Step 1: Plan queries and route sources
         plan = await self._plan_queries(topic)
-        use_sources: set[str] = set(plan.use_sources)
+        use_sources = self._normalise_sources(plan)
+        plan.use_sources = sorted(use_sources)
 
         log.info(
             "researcher.routing",

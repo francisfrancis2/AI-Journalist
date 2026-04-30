@@ -140,6 +140,17 @@ class TestRSSParserTool:
         )
         assert _build_google_news_search_feed(" ") is None
 
+    def test_validate_feed_url_rejects_local_and_non_http_hosts(self):
+        from backend.tools.rss_parser import validate_feed_url
+
+        assert validate_feed_url("https://news.google.com/rss") == "https://news.google.com/rss"
+
+        with pytest.raises(ValueError, match="http or https"):
+            validate_feed_url("file:///tmp/feed.xml")
+
+        with pytest.raises(ValueError, match="public host"):
+            validate_feed_url("http://localhost:8000/feed.xml")
+
     def test_get_entry_content_prefers_atom_content(self):
         from backend.tools.rss_parser import _get_entry_content
         import feedparser
@@ -235,6 +246,35 @@ class TestRSSParserTool:
         mocker.patch.object(tool, "_download_feed", side_effect=_slow_download)
 
         assert await tool.fetch_feed("https://example.com/feed.xml") == []
+
+    @pytest.mark.asyncio
+    async def test_fetch_feed_maps_author_to_raw_source(self, mocker):
+        import feedparser
+
+        from backend.tools.rss_parser import RSSParserTool
+
+        entry = feedparser.FeedParserDict(
+            title="Google News article",
+            link="https://example.com/article",
+            author="Jane Doe",
+            summary="A concise summary.",
+            tags=[],
+        )
+        parsed = feedparser.FeedParserDict(
+            bozo=False,
+            entries=[entry],
+            feed=feedparser.FeedParserDict(title="Google News"),
+        )
+
+        tool = RSSParserTool(feeds={})
+        mocker.patch.object(tool, "_download_feed", new=AsyncMock(return_value=b"<rss />"))
+        mocker.patch("backend.tools.rss_parser.feedparser.parse", return_value=parsed)
+
+        sources = await tool.fetch_feed("https://news.google.com/rss")
+
+        assert len(sources) == 1
+        assert sources[0].author == "Jane Doe"
+        assert sources[0].metadata["author"] == "Jane Doe"
 
 
 # ── FinancialDataTool ─────────────────────────────────────────────────────────

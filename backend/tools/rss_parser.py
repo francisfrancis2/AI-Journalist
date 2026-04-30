@@ -5,10 +5,11 @@ Uses feedparser (sync) wrapped in an executor for async compatibility.
 """
 
 import asyncio
+import ipaddress
 from datetime import datetime, timezone
 from typing import Optional
 from email.utils import parsedate_to_datetime
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import feedparser
 import httpx
@@ -84,6 +85,48 @@ def _build_google_news_search_feed(keyword_filter: Optional[str]) -> Optional[st
     return f"{GOOGLE_NEWS_SEARCH_RSS_BASE}?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
 
 
+def _is_local_hostname(hostname: str) -> bool:
+    normalized = hostname.strip().lower().rstrip(".")
+    return normalized in {"localhost", "127.0.0.1", "::1"} or normalized.endswith(".local")
+
+
+def _is_private_ip_hostname(hostname: str) -> bool:
+    candidate = hostname.strip().strip("[]")
+    try:
+        address = ipaddress.ip_address(candidate)
+    except ValueError:
+        return False
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_reserved
+        or address.is_unspecified
+    )
+
+
+def validate_feed_url(url: str) -> str:
+    """
+    Accept only public http/https feed URLs.
+
+    This keeps the authenticated RSS test endpoint from being used to fetch
+    localhost or private-network resources.
+    """
+    candidate = url.strip()
+    parsed = urlparse(candidate)
+    hostname = parsed.hostname
+
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Feed URL must use http or https.")
+    if not hostname:
+        raise ValueError("Feed URL must include a valid hostname.")
+    if _is_local_hostname(hostname) or _is_private_ip_hostname(hostname):
+        raise ValueError("Feed URL must point to a public host.")
+
+    return candidate
+
+
 class RSSParserTool:
     """
     Polls RSS/Atom feeds and returns structured RawSource objects.
@@ -134,6 +177,7 @@ class RSSParserTool:
         Returns:
             List of RawSource objects.
         """
+        url = validate_feed_url(url)
         log.info("rss.fetch", url=url)
 
         try:
@@ -173,6 +217,7 @@ class RSSParserTool:
                     url=link,
                     title=title,
                     content=content[:4000],
+                    author=getattr(entry, "author", None),
                     published_at=_parse_date(entry),
                     credibility=credibility,
                     relevance_score=0.6,

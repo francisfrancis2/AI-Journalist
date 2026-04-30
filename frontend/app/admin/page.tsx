@@ -57,9 +57,9 @@ function APIHealthPanel() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <div>
           <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
-            <Activity size={14} /> External API Health
+            <Activity size={14} /> Research Source Health
           </h2>
-          {checkedAt && <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 3 }}>Last checked {checkedAt} · auto-refreshes every 60 s</p>}
+          {checkedAt && <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 3 }}>Last checked {checkedAt} · includes NewsAPI, Google News RSS, and other external services</p>}
         </div>
         <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary" style={{ padding: "5px 10px", fontSize: 12 }}>
           <RefreshCw size={11} className={isFetching ? "animate-spin" : ""} /> {isFetching ? "Checking…" : "Refresh"}

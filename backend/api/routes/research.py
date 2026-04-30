@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from backend.models.research import RawSource
 from backend.tools.financial_data import FinancialDataTool
 from backend.tools.news_api import NewsAPITool
-from backend.tools.rss_parser import RSSParserTool
+from backend.tools.rss_parser import RSSParserTool, validate_feed_url
 from backend.tools.web_search import WebSearchTool
 
 log = structlog.get_logger(__name__)
@@ -139,8 +139,19 @@ async def fetch_rss_feed(
     Fetch and parse a single RSS/Atom feed.
     """
     tool = RSSParserTool()
-    log.info("research.rss_fetch", url=url)
-    return await tool.fetch_feed(url, max_entries=max_entries, keyword_filter=keyword)
+    try:
+        safe_url = validate_feed_url(url)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    log.info("research.rss_fetch", url=safe_url)
+    return await tool.fetch_feed(
+        safe_url,
+        max_entries=max_entries,
+        keyword_filter=keyword,
+    )
 
 
 @router.get("/rss/defaults", response_model=list[RawSource])

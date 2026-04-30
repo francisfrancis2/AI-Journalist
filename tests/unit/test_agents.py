@@ -118,6 +118,50 @@ def _make_final_script() -> FinalScript:
     )
 
 
+# ── Research routing helpers ──────────────────────────────────────────────────
+
+class TestResearchRouting:
+    def test_researcher_normalise_sources_keeps_rss_with_newsapi(self):
+        from backend.agents.researcher import ResearchPlan, ResearcherAgent
+
+        plan = ResearchPlan(
+            topic_type="news",
+            use_sources=["newsapi"],
+            primary_queries=[],
+            deep_dive_queries=[],
+            human_story_queries=[],
+            financial_symbols=[],
+            rss_keyword="ai",
+        )
+
+        selected = ResearcherAgent._normalise_sources(plan)
+
+        assert "tavily" in selected
+        assert "newsapi" in selected
+        assert "rss" in selected
+
+    def test_focused_research_normalise_sources_keeps_rss_with_newsapi(self):
+        from backend.agents.focused_researcher import FocusedResearchAgent
+        from backend.models.research import FocusedResearchPlan
+
+        plan = FocusedResearchPlan(
+            objective="Find recent reporting",
+            evaluation_focus=[],
+            source_strategy=["newsapi"],
+            source_strategy_reasoning="Recent coverage matters here.",
+            primary_queries=[],
+            deep_dive_queries=[],
+            financial_symbols=[],
+            rss_keyword="ai",
+            expected_improvements=[],
+        )
+
+        selected = FocusedResearchAgent._normalise_sources(plan)
+
+        assert "newsapi" in selected
+        assert "rss" in selected
+
+
 # ── AnalystAgent ──────────────────────────────────────────────────────────────
 
 class TestAnalystAgent:
