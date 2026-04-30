@@ -90,7 +90,7 @@ class BenchmarkAgent:
 
     def __init__(self) -> None:
         _llm = ChatAnthropic(
-            model=settings.claude_haiku_model,
+            model=settings.claude_model,
             api_key=settings.anthropic_api_key,
             max_tokens=2500,
             temperature=0.1,
