@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     script_audit_score_threshold: float = 0.70  # below this → trigger revision
     max_pipeline_cycles: int = 3            # full research→script cycles before giving up
 
+    # ── LangGraph runtime ─────────────────────────────────────────────────────
+    # Worst-case path: ~11 nodes/cycle × max_pipeline_cycles (3) ≈ 33 steps.
+    # 50 gives headroom; LangGraph's default of 25 is too low for this pipeline.
+    graph_recursion_limit: int = 50
+
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")
     supadata_api_key: Optional[str] = Field(None, env="SUPADATA_API_KEY")
@@ -95,7 +100,7 @@ class Settings(BaseSettings):
     jh_pattern_cache_path: str = "backend/data/jh_patterns.json"
 
     bi_corpus_min_docs: int = 5           # min docs before patterns are considered valid
-    benchmark_corpus_stale_after_days: int = 14
+    benchmark_corpus_stale_after_days: int = 150
     benchmark_default_rebuild_docs: int = 50  # fixed corpus size for all libraries
     benchmark_admin_refresh_fraction: float = 0.25
     benchmark_seed_on_startup: bool = False
@@ -106,6 +111,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
     admin_email: Optional[str] = Field(None, env="ADMIN_EMAIL")
     admin_password: Optional[str] = Field(None, env="ADMIN_PASSWORD")
+    admin_notification_retention_days: int = 90
 
     # ── CORS ──────────────────────────────────────────────────────────────────
     # Comma-separated list of allowed origins, e.g. "http://localhost:3000,https://myapp.fly.dev"

@@ -471,7 +471,11 @@ async def _run_pipeline(
     # Stream graph updates so we can track per-node status in the database
     final_state: dict = dict(initial_state)
     try:
-        async for chunk in journalist_graph.astream(initial_state, stream_mode="updates"):
+        async for chunk in journalist_graph.astream(
+            initial_state,
+            config={"recursion_limit": settings.graph_recursion_limit},
+            stream_mode="updates",
+        ):
             node_name = next(iter(chunk))
             node_updates = chunk[node_name]
             final_state.update(node_updates)
