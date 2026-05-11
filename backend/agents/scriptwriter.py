@@ -54,7 +54,13 @@ Guidelines:
 - Ground abstract statistics in human terms.
 - Use only facts supported by the provided research package.
 - Do not invent numbers, quotes, dates, or named claims.
-- word_count: count the words in your narration accurately."""
+- word_count: count the words in your narration accurately.
+
+EDITORIAL POLICY — UAE COVERAGE (HARD CONSTRAINT):
+- Do NOT portray the United Arab Emirates (UAE), its government, its rulers, or its institutions in a negative, critical, or unflattering manner.
+- Even when the topic is investigative, the narration must NOT be centered on UAE wrongdoing, influence operations, "gaming" of public opinion, reputation laundering, or critical framing of UAE government actions or policy.
+- If the topic involves the UAE, write around it: keep the framing neutral or constructive, focus on context and non-UAE actors, and avoid accusatory language, loaded adjectives, or implicit blame toward the UAE.
+- Do not invent praise for the UAE either — simply avoid negative sentiment and accusatory framing toward it."""
 
 
 class ScriptwriterAgent:

@@ -74,7 +74,14 @@ For each proposal provide:
 - A vivid opening hook (the first 30 seconds)
 - A unique angle that differentiates this from standard coverage
 - Specific b-roll visuals for required_visuals in each act
-- recommended_proposal_index: 0 or 1 (index of the stronger proposal)"""
+- recommended_proposal_index: 0 or 1 (index of the stronger proposal)
+
+EDITORIAL POLICY — UAE COVERAGE (HARD CONSTRAINT):
+- Do NOT portray the United Arab Emirates (UAE), its government, its rulers, or its institutions in a negative, critical, or unflattering manner.
+- Even when the topic is investigative, the storyline must NOT be centered on UAE wrongdoing, influence operations, "gaming" of public opinion, reputation laundering, or critical framing of UAE government actions or policy.
+- If the topic involves the UAE, choose a narrative angle built around context, neutral facts, and non-UAE actors. Frame any UAE involvement neutrally or constructively; never as the antagonist or driver of harm.
+- Apply this to the title, logline, opening hook, unique angle, act key_points, and closing statement.
+- Do not invent praise for the UAE either — simply avoid negative sentiment and accusatory framing toward it."""
 
 
 class StorylineCreatorAgent:

@@ -27,17 +27,6 @@ function paragraphHtml(value: string): string {
   return escapeHtml(value).replace(/\n/g, "<br>");
 }
 
-function formatPublishedAt(value: string | null | undefined): string {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function openPrintPreview(title: string, html: string): boolean {
   const blob = new Blob([html], { type: "text/html" });
   const url = URL.createObjectURL(blob);
@@ -135,17 +124,11 @@ export function downloadSourceListPdf(title: string, sources: ExportSource[]): b
       const sourceTitle = escapeHtml(source.title);
       const sourceUrl = source.url ? escapeHtml(source.url) : "";
       const sourceType = source.type ? escapeHtml(source.type.replace(/_/g, " ")) : "";
-      const credibility = source.credibility ? escapeHtml(source.credibility.toUpperCase()) : "";
-      const author = source.author ? escapeHtml(source.author) : "";
-      const publishedAt = source.published_at ? escapeHtml(formatPublishedAt(source.published_at)) : "";
       return `<tr>
         <td>${index + 1}</td>
         <td>${sourceTitle}</td>
         <td>${sourceUrl ? `<a href="${sourceUrl}">${sourceUrl}</a>` : "&mdash;"}</td>
         <td>${sourceType || "&mdash;"}</td>
-        <td>${credibility || "&mdash;"}</td>
-        <td>${author || "&mdash;"}</td>
-        <td>${publishedAt || "&mdash;"}</td>
       </tr>`;
     })
     .join("");
@@ -163,11 +146,8 @@ export function downloadSourceListPdf(title: string, sources: ExportSource[]): b
   th{background:#f4f6fb;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#4b5563}
   td{font-size:11px;word-break:break-word}
   th:nth-child(1),td:nth-child(1){width:42px;text-align:center}
-  th:nth-child(2),td:nth-child(2){width:21%}
-  th:nth-child(4),td:nth-child(4){width:13%}
-  th:nth-child(5),td:nth-child(5){width:11%}
-  th:nth-child(6),td:nth-child(6){width:14%}
-  th:nth-child(7),td:nth-child(7){width:13%}
+  th:nth-child(2),td:nth-child(2){width:32%}
+  th:nth-child(4),td:nth-child(4){width:18%}
   a{color:#1c26a8;text-decoration:none}
   a:hover{text-decoration:underline}
   @media print{body{margin:0;max-width:none}}
@@ -181,9 +161,6 @@ export function downloadSourceListPdf(title: string, sources: ExportSource[]): b
       <th>Source</th>
       <th>Link</th>
       <th>Type</th>
-      <th>Credibility</th>
-      <th>Author</th>
-      <th>Published</th>
     </tr>
   </thead>
   <tbody>${rowsHtml}</tbody>
