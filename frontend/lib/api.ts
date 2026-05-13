@@ -5,7 +5,7 @@
 
 import axios, { AxiosInstance } from "axios";
 import type { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from "axios";
-import { getToken } from "@/lib/auth";
+import { getToken, removeToken } from "@/lib/auth";
 
 const API_TIMEOUT_MS = 60_000;
 
@@ -390,6 +390,20 @@ class AIJournalistAPIClient {
           ));
         }
 
+        // Expired / invalid token or deactivated account → bounce to login.
+        // Skip the login endpoint itself so bad-credentials errors surface normally.
+        if (
+          err.response?.status === 401 &&
+          typeof window !== "undefined" &&
+          !err.config?.url?.includes("/auth/login")
+        ) {
+          removeToken();
+          const here = window.location.pathname + window.location.search;
+          if (window.location.pathname !== "/login") {
+            window.location.replace(`/login?next=${encodeURIComponent(here)}`);
+          }
+        }
+
         const message =
           err.response?.data?.detail ??
           err.response?.data?.message ??
@@ -440,7 +454,7 @@ class AIJournalistAPIClient {
   // ── Stories ──────────────────────────────────────────────────────────────
 
   async createStory(payload: StoryCreate): Promise<Story> {
-    const { data } = await this.http.post<Story>("/api/v1/stories/", payload);
+    const { data } = await this.http.post<Story>("/api/v1/stories", payload);
     return data;
   }
 

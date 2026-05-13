@@ -42,7 +42,7 @@ export default function HistoryPage() {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  const { data: stories, isLoading } = useQuery<Story[]>({
+  const { data: stories, isLoading, error: storiesError, refetch } = useQuery<Story[]>({
     queryKey: ["stories", "history"],
     queryFn: () => apiClient.listStories(100),
     refetchInterval: 15_000,
@@ -157,6 +157,34 @@ export default function HistoryPage() {
         {isLoading ? (
           <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
             <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
+          </div>
+        ) : storiesError ? (
+          <div
+            className="card"
+            role="alert"
+            style={{
+              padding: "32px 24px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 10,
+              textAlign: "center",
+            }}
+          >
+            <XCircle size={20} style={{ color: "var(--color-danger, #b42318)" }} />
+            <p style={{ fontSize: 14, fontWeight: 500 }}>Could not load history</p>
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", maxWidth: 420 }}>
+              {storiesError instanceof Error ? storiesError.message : "Unknown error"}.
+              {" "}If this keeps happening, try signing out and back in.
+            </p>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              className="btn-secondary"
+              style={{ marginTop: 4 }}
+            >
+              Try again
+            </button>
           </div>
         ) : filtered.length === 0 ? (
           <div

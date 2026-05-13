@@ -61,10 +61,29 @@ const STAGE_MESSAGES: Record<string, string[]> = {
 const DEFAULT_TARGET_AUDIENCE =
   "Entrepreneurs, Founders, Documentary Lovers, Investors, YouTube Content Lovers, Senior Executive and Business Professionals";
 const TOPIC_MAX_WORDS = 200;
+const TONE_ESTIMATE_OFFSETS: Record<StoryTone, number> = {
+  investigative: 2,
+  explanatory: 0,
+  narrative: 1,
+  profile: 1,
+  trend: 0,
+};
 
 function countWords(value: string): number {
   const trimmed = value.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+function estimateGenerationMinutes(
+  targetDurationMinutes: number,
+  topicWordCount: number,
+  tone: StoryTone
+): number {
+  const durationFactor = Math.ceil(targetDurationMinutes * 0.35);
+  const topicFactor = topicWordCount > 120 ? 2 : topicWordCount > 60 ? 1 : 0;
+  const estimate = 4 + durationFactor + topicFactor + TONE_ESTIMATE_OFFSETS[tone];
+
+  return Math.max(5, Math.min(14, estimate));
 }
 
 function stageIndex(status: string): number {
@@ -94,6 +113,7 @@ export default function NewStoryPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [msgIndex, setMsgIndex] = useState(0);
   const [dots, setDots] = useState(".");
+  const [generationEstimateMinutes, setGenerationEstimateMinutes] = useState<number | null>(null);
 
   const { data: stories } = useQuery<Story[]>({
     queryKey: ["stories", "list"],
@@ -121,9 +141,15 @@ export default function NewStoryPage() {
     onSuccess: (story) => {
       // Seed the cache immediately so progress renders without waiting for the first poll
       queryClient.setQueryData(["story", story.id], story);
+      setGenerationEstimateMinutes(
+        estimateGenerationMinutes(story.target_duration_minutes, countWords(story.topic), story.tone)
+      );
       setActiveId(story.id);
       setTopic("");
       queryClient.invalidateQueries({ queryKey: ["stories"] });
+    },
+    onError: () => {
+      setGenerationEstimateMinutes(null);
     },
   });
 
@@ -142,6 +168,21 @@ export default function NewStoryPage() {
   const isRunning = activeStory && !["completed", "failed"].includes(activeStory.status);
   const showProgress = activeStory && activeStory.status !== "failed";
   const topicWordCount = countWords(topic);
+  const activeGenerationEstimate = activeStory && isRunning
+    ? generationEstimateMinutes ?? estimateGenerationMinutes(
+        activeStory.target_duration_minutes,
+        countWords(activeStory.topic),
+        activeStory.tone
+      )
+    : null;
+  const pendingGenerationEstimate = createMutation.isPending && !isRunning
+    ? generationEstimateMinutes
+    : null;
+
+  const handleGenerateStory = () => {
+    setGenerationEstimateMinutes(estimateGenerationMinutes(targetDuration, topicWordCount, tone));
+    createMutation.mutate();
+  };
 
   // Cycle through status messages while pipeline is running
   useEffect(() => {
@@ -294,15 +335,43 @@ export default function NewStoryPage() {
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button
-              onClick={() => createMutation.mutate()}
+              onClick={handleGenerateStory}
               disabled={!topic.trim() || !!isRunning || createMutation.isPending}
               className="btn-primary"
             >
               {createMutation.isPending && <Loader2 size={13} className="animate-spin" />}
               Generate script
             </button>
-            <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Live progress appears below</span>
+            <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+              {pendingGenerationEstimate
+                ? `Estimated generation time: ~${pendingGenerationEstimate} min`
+                : "Live progress appears below"}
+            </span>
           </div>
+          {createMutation.isError && (
+            <div
+              role="alert"
+              style={{
+                marginTop: 12,
+                padding: "10px 12px",
+                borderRadius: "var(--border-radius-md)",
+                background: "var(--color-danger-soft, #fdecec)",
+                color: "var(--color-danger, #b42318)",
+                fontSize: 13,
+                lineHeight: 1.5,
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+              }}
+            >
+              <XCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>
+                Could not start the pipeline:{" "}
+                {createMutation.error instanceof Error ? createMutation.error.message : "Unknown error"}.
+                {" "}Please try again, or sign out and back in if this keeps happening.
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Active pipeline */}
@@ -317,6 +386,19 @@ export default function NewStoryPage() {
                     {isRunning                          && <Loader2 size={10} className="animate-spin" />}
                     {activeStory.status.replace(/_/g, " ")}
                   </span>
+                  {activeGenerationEstimate && (
+                    <span
+                      className="badge"
+                      style={{
+                        fontSize: 11,
+                        color: "var(--color-text-secondary)",
+                        background: "var(--color-background-secondary)",
+                        border: "0.5px solid var(--color-border-tertiary)",
+                      }}
+                    >
+                      Est. ~{activeGenerationEstimate} min
+                    </span>
+                  )}
                 </div>
                 <p
                   style={{
@@ -408,11 +490,18 @@ export default function NewStoryPage() {
                 </div>
 
                 {isRunning && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 10 }}>
-                    <Loader2 size={12} className="animate-spin" style={{ color: "var(--color-action)", flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontStyle: "italic" }}>
-                      {(STAGE_MESSAGES[activeStory.status] ?? ["Working"])[msgIndex]}{dots}
-                    </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                      <Loader2 size={12} className="animate-spin" style={{ color: "var(--color-action)", flexShrink: 0 }} />
+                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontStyle: "italic" }}>
+                        {(STAGE_MESSAGES[activeStory.status] ?? ["Working"])[msgIndex]}{dots}
+                      </span>
+                    </div>
+                    {activeGenerationEstimate && (
+                      <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+                        Estimated generation time: ~{activeGenerationEstimate} min
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
