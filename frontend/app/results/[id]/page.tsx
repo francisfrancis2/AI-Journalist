@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle, X } from "lucide-react";
 import { apiClient, type Story, type FinalScript, type ResearchSource } from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
 import { downloadScriptPdf, downloadSourceListPdf } from "@/lib/script-export";
@@ -172,6 +172,7 @@ export default function ResultsPage() {
   const isAdmin = currentUser?.is_admin ?? false;
   const [tab, setTab] = useState<Tab>("script");
   const [downloading, setDownloading] = useState(false);
+  const [dismissedFailureBannerKey, setDismissedFailureBannerKey] = useState<string | null>(null);
 
   const { data: story, isLoading } = useQuery<Story>({
     queryKey: ["story", id],
@@ -242,6 +243,14 @@ export default function ResultsPage() {
   const isComplete = story.status === "completed";
   const isFailed   = story.status === "failed";
   const isRunning  = !isComplete && !isFailed;
+  const failureBannerKey = story.pipeline_failure_summary
+    ? `${story.id}:${story.pipeline_failure_summary}`
+    : null;
+  const showFailureBanner = Boolean(
+    story.pipeline_failure_summary
+      && failureBannerKey
+      && dismissedFailureBannerKey !== failureBannerKey
+  );
 
   const revisionNumber = story.revision > 1 ? story.revision : null;
 
@@ -268,7 +277,7 @@ export default function ResultsPage() {
             <ArrowLeft size={13} /> Back
           </button>
 
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: showFailureBanner ? 12 : 14 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               {/* Status + tone row */}
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
@@ -323,23 +332,6 @@ export default function ResultsPage() {
               )}
             </div>
 
-            {story.pipeline_failure_summary && (
-              <div style={{ margin: "12px 0 0", padding: "12px 14px", background: "var(--color-danger-bg)", border: "0.5px solid #fecaca", borderRadius: 8, display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <XCircle size={16} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 2 }} />
-                <div>
-                  <p style={{ fontSize: 12, fontWeight: 600, color: "var(--color-danger)", marginBottom: 4 }}>
-                    AI Journalist could not achieve a quality score above 70%
-                  </p>
-                  <p style={{ fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
-                    {story.pipeline_failure_summary}
-                  </p>
-                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
-                    The best-scoring version of the script is shown below.
-                  </p>
-                </div>
-              </div>
-            )}
-
             {isComplete && script && (
               <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 16 }}>
                 {story.script_audit_data && (
@@ -359,6 +351,61 @@ export default function ResultsPage() {
               </div>
             )}
           </div>
+
+          {showFailureBanner && story.pipeline_failure_summary && failureBannerKey && (
+            <div
+              role="alert"
+              style={{
+                position: "relative",
+                maxWidth: 760,
+                margin: "0 0 14px",
+                padding: "12px 44px 12px 14px",
+                background: "var(--color-danger-bg)",
+                border: "0.5px solid #fecaca",
+                borderRadius: 8,
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+              }}
+            >
+              <AlertTriangle size={16} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 2 }} />
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "var(--color-danger)", marginBottom: 4 }}>
+                  AI Journalist could not achieve a quality score above 70%
+                </p>
+                <p style={{ fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                  {story.pipeline_failure_summary}
+                </p>
+                <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
+                  The best-scoring version of the script is shown below.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Dismiss quality warning"
+                title="Dismiss"
+                onClick={() => setDismissedFailureBannerKey(failureBannerKey)}
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  width: 30,
+                  height: 30,
+                  padding: 0,
+                  border: "none",
+                  borderRadius: "var(--border-radius-sm)",
+                  background: "transparent",
+                  color: "var(--color-danger)",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
 
           {/* Tabs */}
           {isComplete && (

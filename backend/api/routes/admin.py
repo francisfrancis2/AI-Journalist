@@ -8,6 +8,7 @@ from typing import Literal, Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import PlainTextResponse
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy import select, text, update
@@ -18,6 +19,7 @@ from backend.config import settings
 from backend.db.database import AsyncSessionLocal, get_db
 from backend.models.notification import AdminNotificationORM, AdminNotificationRead
 from backend.models.user import UserORM, UserRead
+from backend.services.agent_manual import build_agent_manual_markdown
 from backend.tools.rss_parser import GOOGLE_NEWS_RSS_URL, RSSParserTool
 
 log = structlog.get_logger(__name__)
@@ -177,6 +179,20 @@ async def api_health(
     return HealthReport(
         services=results,
         checked_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+@router.get("/agent-manual.md", response_class=PlainTextResponse)
+async def download_agent_manual_markdown(
+    _admin: UserORM = Depends(get_admin_user),
+) -> PlainTextResponse:
+    """Download the current agent operating manual as Markdown."""
+    return PlainTextResponse(
+        build_agent_manual_markdown(),
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="ai-journalist-agent-operating-manual.md"',
+        },
     )
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")

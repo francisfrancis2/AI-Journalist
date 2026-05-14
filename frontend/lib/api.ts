@@ -642,6 +642,14 @@ class AIJournalistAPIClient {
     return data;
   }
 
+  async getAgentManualMarkdown(): Promise<string> {
+    const { data } = await this.http.get<string>("/api/v1/admin/agent-manual.md", {
+      responseType: "text",
+      transformResponse: [(value) => value],
+    });
+    return data;
+  }
+
   async getBenchmarkStatus(): Promise<BenchmarkAdminStatus> {
     const { data } = await this.http.get<BenchmarkAdminStatus>("/api/v1/benchmarks/status");
     return data;
