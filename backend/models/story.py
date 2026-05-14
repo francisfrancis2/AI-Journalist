@@ -51,8 +51,6 @@ class StoryTone(str, Enum):
     INVESTIGATIVE = "investigative"
     EXPLANATORY = "explanatory"
     NARRATIVE = "narrative"
-    PROFILE = "profile"
-    TREND = "trend"
 
 
 # ── Improvement Plan ─────────────────────────────────────────────────────────

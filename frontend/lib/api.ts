@@ -38,9 +38,7 @@ const BASE_URL = resolveBaseUrl(process.env.NEXT_PUBLIC_API_URL);
 export type StoryTone =
   | "investigative"
   | "explanatory"
-  | "narrative"
-  | "profile"
-  | "trend";
+  | "narrative";
 
 export type StoryStatus =
   | "pending"

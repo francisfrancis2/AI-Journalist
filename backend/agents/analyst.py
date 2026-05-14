@@ -72,7 +72,9 @@ Guidelines:
   - category: financial | human_interest | trend | regulatory | technology | cultural | general
 - narrative_angles: compelling story angles for a documentary
 - data_gaps: missing information that would strengthen the story
-- recommended_tone: investigative | explanatory | narrative | profile | trend
+- recommended_tone: investigative | explanatory | narrative
+  (If the topic is primarily about an emerging trend or a single person/company profile,
+  pick "investigative" for trend pieces and "narrative" for personal/profile pieces.)
 - controversies: controversial aspects worth exploring
 - notable_quotes: direct quotes with speaker attribution
 - financial_metrics: key numeric data if financially relevant, else omit
@@ -80,6 +82,18 @@ Guidelines:
 Only include claims supported by the provided sources. Be rigorous."""
 
 _MAX_SOURCE_CHARS = 30_000
+
+# Tone simplification: investigative absorbs "trend", narrative absorbs "profile".
+# Defensive — the prompt already restricts the model, but older fixtures or stale
+# context can still echo the old values.
+_TONE_REMAP = {"trend": "investigative", "profile": "narrative"}
+_ALLOWED_TONES = {"investigative", "explanatory", "narrative"}
+
+
+def _normalize_tone(value: str) -> str:
+    v = (value or "").strip().lower()
+    v = _TONE_REMAP.get(v, v)
+    return v if v in _ALLOWED_TONES else "explanatory"
 
 
 def _build_source_digest(package: ResearchPackage) -> str:
@@ -225,7 +239,7 @@ class AnalystAgent:
             ],
             narrative_angles=output.narrative_angles,
             data_gaps=output.data_gaps,
-            recommended_tone=output.recommended_tone,
+            recommended_tone=_normalize_tone(output.recommended_tone),
             controversies=output.controversies,
             notable_quotes=[
                 {"quote": q.quote, "speaker": q.speaker, "source": q.source}

@@ -12,8 +12,8 @@ const TONES: { value: StoryTone; label: string; desc: string; example: string }[
   {
     value:   "investigative",
     label:   "Investigative",
-    desc:    "Deep-dive exposé uncovering hidden facts, holding power to account.",
-    example: "e.g. How did a state-backed fund lose $4B without public disclosure?",
+    desc:    "Deep-dive exposé uncovering hidden facts or mapping an emerging shift — economic, cultural, or technological — and what it signals.",
+    example: "e.g. Gulf sovereign funds are buying European football clubs. Here's why.",
   },
   {
     value:   "explanatory",
@@ -26,18 +26,6 @@ const TONES: { value: StoryTone; label: string; desc: string; example: string }[
     label:   "Narrative",
     desc:    "Story-driven documentary following real people through a turning point.",
     example: "e.g. Three founders who bet everything on Abu Dhabi's startup scene.",
-  },
-  {
-    value:   "profile",
-    label:   "Profile",
-    desc:    "In-depth portrait of a person, company, or institution — their rise, decisions, and impact.",
-    example: "e.g. Inside Emirates Development Bank: the quiet engine behind UAE's industrial push.",
-  },
-  {
-    value:   "trend",
-    label:   "Trend",
-    desc:    "Maps an emerging shift — economic, cultural, or technological — and what it signals.",
-    example: "e.g. Gulf sovereign funds are buying European football clubs. Here's why.",
   },
 ];
 
@@ -65,8 +53,6 @@ const TONE_ESTIMATE_OFFSETS: Record<StoryTone, number> = {
   investigative: 2,
   explanatory: 0,
   narrative: 1,
-  profile: 1,
-  trend: 0,
 };
 
 function countWords(value: string): number {

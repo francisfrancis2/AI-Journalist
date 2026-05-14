@@ -62,7 +62,7 @@ export const designFixtureStories: Story[] = [
     title: "TikTok's New Calculation",
     topic: "What the next chapter of TikTok regulation means for creators, brands, and Washington",
     status: "failed",
-    tone: "trend",
+    tone: "investigative",
     target_duration_minutes: 12,
     target_audience: "General YouTube audience",
     owner_user_id: "5a3d2931-8ca4-47af-92b1-9c9298695e01",
