@@ -20,9 +20,9 @@ class Settings(BaseSettings):
 
     # ── Anthropic ─────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(..., env="ANTHROPIC_API_KEY")
-    claude_opus_model: str = "claude-opus-4-7"              # high-stakes generation: scriptwriter, script_rewriter
-    claude_model: str = "claude-sonnet-4-6"                # creative agents: storyline_creator
-    claude_haiku_model: str = "claude-haiku-4-5-20251001"  # fast agents: researcher, analyst, evaluator
+    claude_opus_model: str = "claude-opus-4-7"              # high-stakes generation: scriptwriter, script_evaluator
+    claude_model: str = "claude-sonnet-4-6"                # default pipeline: storyline_creator, evaluator, benchmarker, script_rewriter, focused_researcher, corpus_builder
+    claude_haiku_model: str = "claude-haiku-4-5-20251001"  # fast agents: researcher, analyst (plus admin health + script chat)
     claude_max_tokens: int = 8192
     claude_temperature: float = 0.3
 
