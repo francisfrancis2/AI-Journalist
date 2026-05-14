@@ -67,6 +67,10 @@ class ScriptwriterAgent:
         topic: str,
         target_audience: str | None = None,
         rewrite_recommendations: list[str] | None = None,
+        act_arc: str = "",
+        previous_act: dict | None = None,
+        next_act: dict | None = None,
+        selected_angle: str | None = None,
     ) -> ScriptSection:
         """Write narration for a single act."""
         relevant_quotes = "\n".join(
@@ -96,13 +100,35 @@ class ScriptwriterAgent:
                 + "\n".join(f"  - {item}" for item in rewrite_recommendations)
                 + "\n\n"
             )
+        previous_context = (
+            f"Previous act: Act {previous_act['act_number']} - {previous_act['act_title']}\n"
+            f"Previous act purpose: {previous_act['purpose']}\n"
+            if previous_act else "Previous act: None. This is the opening act.\n"
+        )
+        next_context = (
+            f"Next act: Act {next_act['act_number']} - {next_act['act_title']}\n"
+            f"Next act purpose: {next_act['purpose']}\n"
+            if next_act else "Next act: None. This is the closing act.\n"
+        )
+
+        angle_directive = ""
+        if selected_angle:
+            angle_directive = (
+                "=== PRIMARY CREATIVE DIRECTIVE (user-selected angle) ===\n"
+                f"{selected_angle}\n"
+                "This is the frame the script must execute on. Every sentence of narration "
+                "in this act should advance or reinforce this angle.\n\n"
+            )
 
         prompt = (
             f"Documentary: {storyline.title}\n"
             f"Logline: {storyline.logline}\n"
             f"Overall tone: {storyline.tone}\n\n"
             f"Target audience: {target_audience or storyline.target_audience}\n\n"
+            f"{angle_directive}"
             f"{revision_goals}"
+            f"=== FULL STORY ARC ===\n{act_arc}\n\n"
+            f"=== CONTINUITY CONTEXT ===\n{previous_context}{next_context}\n"
             f"=== ACT TO WRITE ===\n"
             f"Act {act_data['act_number']}: {act_data['act_title']}\n"
             f"Purpose: {act_data['purpose']}\n"
@@ -158,25 +184,44 @@ class ScriptwriterAgent:
             }
             for src in state["research_package"].top_sources(20)
         }
+        act_plans = [
+            {
+                "act_number": act.act_number,
+                "act_title": act.act_title,
+                "purpose": act.purpose,
+                "key_points": act.key_points,
+                "estimated_duration_seconds": max(60, round(act.estimated_duration_seconds * duration_scale)),
+            }
+            for act in storyline.acts
+        ]
+        act_arc = "\n".join(
+            (
+                f"Act {act['act_number']}: {act['act_title']} "
+                f"({act['estimated_duration_seconds']}s)\n"
+                f"Purpose: {act['purpose']}\n"
+                f"Key points: {', '.join(act.get('key_points', [])) or 'None'}"
+            )
+            for act in act_plans
+        )
 
-        # Write all acts in parallel — each act is independent
+        selected_angle: str | None = state.get("selected_angle")
+
+        # Write acts in parallel while giving each one the full arc for continuity.
         act_tasks = [
             self._write_act(
-                act_data={
-                    "act_number": act.act_number,
-                    "act_title": act.act_title,
-                    "purpose": act.purpose,
-                    "key_points": act.key_points,
-                    "estimated_duration_seconds": max(60, round(act.estimated_duration_seconds * duration_scale)),
-                },
+                act_data=act_data,
                 storyline=storyline,
                 analysis=analysis,
                 source_lookup=source_lookup,
                 topic=topic,
                 target_audience=target_audience,
                 rewrite_recommendations=rewrite_recommendations,
+                act_arc=act_arc,
+                previous_act=act_plans[index - 1] if index > 0 else None,
+                next_act=act_plans[index + 1] if index + 1 < len(act_plans) else None,
+                selected_angle=selected_angle,
             )
-            for act in storyline.acts
+            for index, act_data in enumerate(act_plans)
         ]
         sections: list[ScriptSection] = list(await asyncio.gather(*act_tasks))
 

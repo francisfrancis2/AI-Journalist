@@ -44,11 +44,18 @@ export type StoryStatus =
   | "pending"
   | "researching"
   | "analysing"
+  | "awaiting_angle_selection"
   | "writing_storyline"
   | "evaluating"
   | "scripting"
   | "completed"
   | "failed";
+
+export interface StoryAngle {
+  angle: string;
+  framing_axis: string;
+  rationale?: string;
+}
 
 export interface StoryCreate {
   topic: string;
@@ -249,6 +256,8 @@ export interface Story {
   revision: number;
   pipeline_cycles_run: number;
   pipeline_failure_summary: string | null;
+  angles_data: StoryAngle[] | null;
+  selected_angle: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -487,6 +496,19 @@ class AIJournalistAPIClient {
 
   async implementRecommendations(storyId: string, recommendations: string[]): Promise<Story> {
     const { data } = await this.http.post<Story>(`/api/v1/stories/${storyId}/implement-recommendations`, { recommendations });
+    return data;
+  }
+
+  async selectAngle(storyId: string, selectedAngle: string): Promise<Story> {
+    const { data } = await this.http.post<Story>(
+      `/api/v1/stories/${storyId}/select-angle`,
+      { selected_angle: selectedAngle }
+    );
+    return data;
+  }
+
+  async regenerateAngles(storyId: string): Promise<Story> {
+    const { data } = await this.http.post<Story>(`/api/v1/stories/${storyId}/regenerate-angles`);
     return data;
   }
 

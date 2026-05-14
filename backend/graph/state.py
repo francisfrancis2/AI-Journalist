@@ -50,6 +50,10 @@ class JournalistState(TypedDict):
     # ── Analysis phase ────────────────────────────────────────────────────────
     analysis_result: Optional[AnalysisResult]
 
+    # ── Angle selection phase (pause between research and scripting) ──────────
+    generated_angles: list[dict]              # [{angle: str, framing_axis: str}, ...]
+    selected_angle: Optional[str]              # Picked by the user; carries through restarts
+
     # ── Storyline phase ───────────────────────────────────────────────────────
     storyline_proposals: list[StorylineProposal]  # Multiple candidates
     selected_storyline: Optional[StorylineProposal]
@@ -113,6 +117,8 @@ def create_initial_state(
         research_package=None,
         research_iteration=0,
         analysis_result=None,
+        generated_angles=[],
+        selected_angle=None,
         storyline_proposals=[],
         selected_storyline=None,
         user_rewrite_recommendations=[],

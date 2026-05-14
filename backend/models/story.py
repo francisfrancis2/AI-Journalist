@@ -40,6 +40,7 @@ class StoryStatus(str, Enum):
     PENDING = "pending"
     RESEARCHING = "researching"
     ANALYSING = "analysing"
+    AWAITING_ANGLE_SELECTION = "awaiting_angle_selection"
     WRITING_STORYLINE = "writing_storyline"
     EVALUATING = "evaluating"
     SCRIPTING = "scripting"
@@ -121,6 +122,10 @@ class StoryORM(Base):
     )
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
+    # Angle selection (pause point between research and scripting)
+    angles_data: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    selected_angle: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     # Pipeline quality-gate tracking
     pipeline_cycles_run: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     pipeline_failure_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -191,6 +196,8 @@ class StoryRead(BaseModel):
     revision: int = 1
     pipeline_cycles_run: int = 1
     pipeline_failure_summary: Optional[str] = None
+    angles_data: Optional[list] = None
+    selected_angle: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

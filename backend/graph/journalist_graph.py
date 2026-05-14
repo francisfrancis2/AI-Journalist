@@ -2,14 +2,18 @@
 LangGraph StateGraph definition for the AI Journalist multi-agent pipeline.
 
 Pipeline stages:
-  researcher → analyst → storyline_creator → evaluator → [scriptwriter | researcher]
-  scriptwriter → script_evaluator → quality_gate → [researcher (restart) | END]
+  researcher → analyst → angle_generator → storyline_creator → evaluator
+  → scriptwriter → script_evaluator → [script_rewriter | quality_gate]
+  → [researcher (evidence restart) | END]
 
 Routing logic:
   - After evaluator: if approved → scriptwriter, else if cycles < max → storyline_creator,
     else if needs_more_research → researcher
-  - After quality_gate: if score ≥ 70% and improving → END, else restart from researcher
-    with ImprovementPlan; after max_pipeline_cycles → END with failure summary
+  - After script_evaluator: if final score is below threshold and rewrite cycles remain
+    → script_rewriter, otherwise → quality_gate
+  - After quality_gate: if best score ≥ 70% → END; if the audit shows
+    genuine evidence gaps and full-cycle budget remains → researcher; otherwise
+    surface the best revised script with a failure summary
 """
 
 import asyncio
@@ -18,11 +22,13 @@ import structlog
 from langgraph.graph import END, StateGraph
 
 from backend.agents.analyst import AnalystAgent
+from backend.agents.angle_generator import AngleGeneratorAgent
 from backend.agents.benchmarker import BenchmarkAgent
 from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.quality_gate import QualityGateAgent
 from backend.agents.researcher import ResearcherAgent
 from backend.agents.script_evaluator import ScriptEvaluatorAgent
+from backend.agents.script_rewriter import ScriptRewriterAgent
 from backend.agents.scriptwriter import ScriptwriterAgent
 from backend.agents.storyline_creator import StorylineCreatorAgent
 from backend.config import settings
@@ -33,11 +39,13 @@ log = structlog.get_logger(__name__)
 # ── Instantiate agents (shared across graph invocations) ──────────────────────
 _researcher = ResearcherAgent()
 _analyst = AnalystAgent()
+_angle_generator = AngleGeneratorAgent()
 _storyline_creator = StorylineCreatorAgent()
 _evaluator = EvaluatorAgent()
 _benchmarker = BenchmarkAgent()
 _scriptwriter = ScriptwriterAgent()
 _script_evaluator = ScriptEvaluatorAgent()
+_script_rewriter = ScriptRewriterAgent()
 _quality_gate = QualityGateAgent()
 
 
@@ -46,6 +54,12 @@ _quality_gate = QualityGateAgent()
 async def researcher_node(state: JournalistState) -> dict:
     """Run the Researcher agent and update research artefacts."""
     log.info("graph.node.researcher", story_id=state["story_id"])
+    # Resume-after-angle-selection: research is already done and there's no
+    # improvement plan demanding fresh sourcing → no-op. (Quality-gate restarts
+    # set quality_improvement_plan, so they still re-run the researcher.)
+    if state.get("research_package") and not state.get("quality_improvement_plan"):
+        log.info("graph.node.researcher.skipped_on_resume", story_id=state["story_id"])
+        return {}
     try:
         updates = await _researcher.run(state)
         return {**updates, "research_iteration": state["research_iteration"] + 1}
@@ -57,11 +71,29 @@ async def researcher_node(state: JournalistState) -> dict:
 async def analyst_node(state: JournalistState) -> dict:
     """Run the Analyst agent to synthesise research into structured findings."""
     log.info("graph.node.analyst", story_id=state["story_id"])
+    # Same idempotency as researcher_node: skip on resume after angle selection.
+    if state.get("analysis_result") and not state.get("quality_improvement_plan"):
+        log.info("graph.node.analyst.skipped_on_resume", story_id=state["story_id"])
+        return {}
     try:
         return await _analyst.run(state)
     except Exception as exc:
         log.error("graph.node.analyst.error", error=str(exc))
         return {"error": str(exc), "failed_node": "analyst"}
+
+
+async def angle_generator_node(state: JournalistState) -> dict:
+    """Run the AngleGenerator to surface 3-5 distinct angles for the user to choose from."""
+    log.info("graph.node.angle_generator", story_id=state["story_id"])
+    # On quality-gate restarts, selected_angle persists and we don't regenerate.
+    if state.get("selected_angle") and state.get("generated_angles"):
+        log.info("graph.node.angle_generator.skipped_on_restart", story_id=state["story_id"])
+        return {}
+    try:
+        return await _angle_generator.run(state)
+    except Exception as exc:
+        log.error("graph.node.angle_generator.error", error=str(exc))
+        return {"error": str(exc), "failed_node": "angle_generator"}
 
 
 async def storyline_creator_node(state: JournalistState) -> dict:
@@ -121,6 +153,16 @@ async def script_evaluator_node(state: JournalistState) -> dict:
         return {"script_audit_report": None}
 
 
+async def script_rewriter_node(state: JournalistState) -> dict:
+    """Run a targeted rewrite pass against the post-script audit feedback."""
+    log.info("graph.node.script_rewriter", story_id=state["story_id"])
+    try:
+        return await _script_rewriter.run(state)
+    except Exception as exc:
+        log.error("graph.node.script_rewriter.error", error=str(exc))
+        return {"error": str(exc), "failed_node": "script_rewriter"}
+
+
 async def quality_gate_node(state: JournalistState) -> dict:
     """Run the quality gate to decide whether to restart the pipeline or finish."""
     log.info("graph.node.quality_gate", story_id=state["story_id"])
@@ -162,11 +204,30 @@ def route_after_evaluator(state: JournalistState) -> str:
 
 
 def route_after_analyst(state: JournalistState) -> str:
-    """Proceed to storyline_creator, or END early if analyst failed without a result."""
+    """Proceed to angle_generator, or END early if analyst failed without a result."""
     if state.get("error") or not state.get("analysis_result"):
         log.error("graph.route.analyst_failed", story_id=state.get("story_id"), error=state.get("error"))
         return END
-    return "storyline_creator"
+    return "angle_generator"
+
+
+def route_after_angle_generator(state: JournalistState) -> str:
+    """
+    Pause the pipeline for user angle selection unless an angle is already set
+    (carries over silently on quality-gate restarts).
+    """
+    if state.get("error"):
+        return END
+    if state.get("selected_angle"):
+        return "storyline_creator"
+    # No selection yet → pause. The API layer will relaunch the graph after the
+    # user picks an angle via POST /stories/{id}/select-angle.
+    log.info(
+        "graph.route.awaiting_angle_selection",
+        story_id=state.get("story_id"),
+        generated=len(state.get("generated_angles") or []),
+    )
+    return END
 
 
 def route_after_storyline_creator(state: JournalistState) -> str:
@@ -179,6 +240,37 @@ def route_after_storyline_creator(state: JournalistState) -> str:
         )
         return END
     return "evaluator"
+
+
+def route_after_script_evaluator(state: JournalistState) -> str:
+    """
+    Prefer a targeted script rewrite before any full research restart.
+
+    The rewriter keeps the current structure and fixes weak sections using the
+    audit report. Full restarts are left to the quality gate and only used for
+    genuine evidence/research gaps.
+    """
+    if state.get("error"):
+        return "quality_gate"
+
+    audit = state.get("script_audit_report")
+    if audit is None or state.get("final_script") is None:
+        return "quality_gate"
+
+    if audit.overall_score >= settings.script_audit_score_threshold:
+        return "quality_gate"
+
+    revision_cycle = state.get("script_revision_cycle", 0)
+    if revision_cycle < settings.max_script_revision_cycles:
+        log.info(
+            "graph.route.script_rewrite",
+            story_id=state.get("story_id"),
+            score=f"{audit.overall_score:.2f}",
+            revision_cycle=revision_cycle,
+        )
+        return "script_rewriter"
+
+    return "quality_gate"
 
 
 def route_after_quality_gate(state: JournalistState) -> str:
@@ -210,10 +302,12 @@ def build_journalist_graph() -> StateGraph:
     # Register nodes
     graph.add_node("researcher", researcher_node)
     graph.add_node("analyst", analyst_node)
+    graph.add_node("angle_generator", angle_generator_node)
     graph.add_node("storyline_creator", storyline_creator_node)
     graph.add_node("evaluator", evaluator_node)
     graph.add_node("scriptwriter", scriptwriter_node)
     graph.add_node("script_evaluator", script_evaluator_node)
+    graph.add_node("script_rewriter", script_rewriter_node)
     graph.add_node("quality_gate", quality_gate_node)
 
     # Entry point
@@ -225,6 +319,10 @@ def build_journalist_graph() -> StateGraph:
         END: END,
     })
     graph.add_conditional_edges("analyst", route_after_analyst, {
+        "angle_generator": "angle_generator",
+        END: END,
+    })
+    graph.add_conditional_edges("angle_generator", route_after_angle_generator, {
         "storyline_creator": "storyline_creator",
         END: END,
     })
@@ -246,7 +344,11 @@ def build_journalist_graph() -> StateGraph:
     )
 
     graph.add_edge("scriptwriter", "script_evaluator")
-    graph.add_edge("script_evaluator", "quality_gate")
+    graph.add_conditional_edges("script_evaluator", route_after_script_evaluator, {
+        "script_rewriter": "script_rewriter",
+        "quality_gate": "quality_gate",
+    })
+    graph.add_edge("script_rewriter", "script_evaluator")
     graph.add_conditional_edges("quality_gate", route_after_quality_gate, {
         "researcher": "researcher",
         END: END,

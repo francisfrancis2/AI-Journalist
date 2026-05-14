@@ -31,7 +31,7 @@ const TONES: { value: StoryTone; label: string; desc: string; example: string }[
 
 const PIPELINE_STAGES = [
   { label: "Research",          statuses: ["pending", "researching"] },
-  { label: "Analysis",          statuses: ["analysing", "writing_storyline"] },
+  { label: "Analysis",          statuses: ["analysing", "awaiting_angle_selection", "writing_storyline"] },
   { label: "Script Writing",    statuses: ["evaluating", "scripting"] },
   { label: "Script Evaluation", statuses: ["completed"] },
 ];
@@ -136,6 +136,26 @@ export default function NewStoryPage() {
     },
     onError: () => {
       setGenerationEstimateMinutes(null);
+    },
+  });
+
+  const [selectedAngleIdx, setSelectedAngleIdx] = useState<number | null>(null);
+
+  const selectAngleMutation = useMutation({
+    mutationFn: (selectedAngle: string) =>
+      apiClient.selectAngle(activeId!, selectedAngle),
+    onSuccess: (story) => {
+      queryClient.setQueryData(["story", story.id], story);
+      setSelectedAngleIdx(null);
+      queryClient.invalidateQueries({ queryKey: ["stories"] });
+    },
+  });
+
+  const regenerateAnglesMutation = useMutation({
+    mutationFn: () => apiClient.regenerateAngles(activeId!),
+    onSuccess: (story) => {
+      queryClient.setQueryData(["story", story.id], story);
+      setSelectedAngleIdx(null);
     },
   });
 
@@ -475,7 +495,7 @@ export default function NewStoryPage() {
                   </span>
                 </div>
 
-                {isRunning && (
+                {isRunning && activeStory.status !== "awaiting_angle_selection" && (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
                       <Loader2 size={12} className="animate-spin" style={{ color: "var(--color-action)", flexShrink: 0 }} />
@@ -489,6 +509,125 @@ export default function NewStoryPage() {
                       </span>
                     )}
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* Angle selection pause */}
+            {activeStory.status === "awaiting_angle_selection" && (
+              <div style={{ marginTop: 18, paddingTop: 16, borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                    Pick your angle
+                  </p>
+                  <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                    Research is done. Choose the framing the scriptwriter should execute on. Angles are different in framing, not just wording.
+                  </p>
+                </div>
+
+                {regenerateAnglesMutation.isPending || !activeStory.angles_data ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px 0" }}>
+                    <Loader2 size={14} className="animate-spin" style={{ color: "var(--color-action)" }} />
+                    <span style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
+                      {regenerateAnglesMutation.isPending ? "Regenerating angles…" : "Loading angles…"}
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {activeStory.angles_data.map((a, i) => {
+                        const isSelected = selectedAngleIdx === i;
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setSelectedAngleIdx(i)}
+                            disabled={selectAngleMutation.isPending}
+                            style={{
+                              textAlign: "left",
+                              padding: "12px 14px",
+                              border: `1px solid ${isSelected ? "var(--color-action)" : "var(--color-border-tertiary)"}`,
+                              borderRadius: "var(--border-radius-md)",
+                              background: isSelected ? "rgba(28, 38, 168, 0.04)" : "var(--color-background-primary)",
+                              cursor: selectAngleMutation.isPending ? "default" : "pointer",
+                              display: "flex",
+                              alignItems: "flex-start",
+                              gap: 10,
+                              fontFamily: "var(--font-sans)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 16,
+                                height: 16,
+                                borderRadius: "50%",
+                                border: `1.5px solid ${isSelected ? "var(--color-action)" : "var(--color-border-primary)"}`,
+                                marginTop: 2,
+                                flexShrink: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              {isSelected && (
+                                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-action)" }} />
+                              )}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.5, marginBottom: 4 }}>
+                                {a.angle}
+                              </p>
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  fontSize: 10,
+                                  fontWeight: 500,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.06em",
+                                  color: "var(--color-text-tertiary)",
+                                  padding: "2px 6px",
+                                  borderRadius: 4,
+                                  background: "var(--color-background-secondary)",
+                                }}
+                              >
+                                {a.framing_axis.replace(/_/g, " ")}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const picked = activeStory.angles_data?.[selectedAngleIdx ?? -1]?.angle;
+                          if (picked) selectAngleMutation.mutate(picked);
+                        }}
+                        disabled={selectedAngleIdx === null || selectAngleMutation.isPending || regenerateAnglesMutation.isPending}
+                        className="btn-primary"
+                      >
+                        {selectAngleMutation.isPending && <Loader2 size={13} className="animate-spin" />}
+                        Continue
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => regenerateAnglesMutation.mutate()}
+                        disabled={selectAngleMutation.isPending || regenerateAnglesMutation.isPending}
+                        className="btn-secondary"
+                      >
+                        Regenerate angles
+                      </button>
+                    </div>
+
+                    {selectAngleMutation.isError && (
+                      <p style={{ marginTop: 10, fontSize: 12, color: "var(--color-danger, #b42318)" }}>
+                        Couldn't submit your angle:{" "}
+                        {selectAngleMutation.error instanceof Error ? selectAngleMutation.error.message : "Unknown error"}.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}

@@ -61,6 +61,10 @@ class ImplementRecommendationsRequest(BaseModel):
     recommendations: list[str] = Field(..., min_length=1, description="Selected recommendation strings to implement")
 
 
+class SelectAngleRequest(BaseModel):
+    selected_angle: str = Field(..., min_length=4, max_length=400, description="The angle text the user picked")
+
+
 class ChatMessage(BaseModel):
     role: str  # "user" | "assistant"
     content: str
@@ -447,32 +451,63 @@ _NODE_STATUS_MAP: dict[str, StoryStatus] = {
     "script_rewriter": StoryStatus.SCRIPTING,
 }
 
+# Ordering used to guard against status regression when the graph is re-driven
+# (e.g. resume after angle selection) — only advance forward, never backward.
+_STATUS_PHASE_ORDER: dict[StoryStatus, int] = {
+    StoryStatus.PENDING: 0,
+    StoryStatus.RESEARCHING: 1,
+    StoryStatus.ANALYSING: 2,
+    StoryStatus.AWAITING_ANGLE_SELECTION: 3,
+    StoryStatus.WRITING_STORYLINE: 4,
+    StoryStatus.EVALUATING: 5,
+    StoryStatus.SCRIPTING: 6,
+    StoryStatus.COMPLETED: 7,
+    StoryStatus.FAILED: 7,
+}
 
-async def _run_pipeline(
-    story_id: str,
-    topic: str,
-    tone: str,
-    target_duration_minutes: int,
-    target_audience: Optional[str],
-) -> None:
-    """Run the full LangGraph journalist pipeline as a background task."""
+
+def _status_for_completed_node(node_name: str, state: dict) -> Optional[StoryStatus]:
+    """Decide what status the story should advance to after a node completes."""
+    if node_name == "angle_generator":
+        # If selected_angle is set (quality-gate restart path), don't pause —
+        # the next node (storyline_creator) will move status forward instead.
+        if state.get("selected_angle"):
+            return None
+        return StoryStatus.AWAITING_ANGLE_SELECTION
+    return _NODE_STATUS_MAP.get(node_name)
+
+
+async def _advance_story_status(story_id: str, new_status: StoryStatus) -> None:
+    """Advance status only if the new phase is strictly later than the current one."""
+    from backend.db.database import AsyncSessionLocal
+    earlier_phases = [
+        s.value for s, order in _STATUS_PHASE_ORDER.items()
+        if order < _STATUS_PHASE_ORDER[new_status]
+    ]
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            update(StoryORM)
+            .where(StoryORM.id == uuid.UUID(story_id))
+            .where(StoryORM.status.in_(earlier_phases))
+            .values(status=new_status)
+        )
+        await db.commit()
+
+
+async def _drive_pipeline(story_id: str, state: dict) -> None:
+    """
+    Stream the journalist graph with the given initial state. Used by both the
+    fresh-start path and the resume-after-angle-selection path.
+
+    Handles per-node status advancement (with regression guard), the angle-
+    selection pause, the normal completion persistence, and exception fallout.
+    """
     from backend.db.database import AsyncSessionLocal
 
-    log.info("pipeline.started", story_id=story_id)
-
-    initial_state = create_initial_state(
-        topic=topic,
-        story_id=story_id,
-        tone=tone,
-        target_duration_minutes=target_duration_minutes,
-        target_audience=target_audience,
-    )
-
-    # Stream graph updates so we can track per-node status in the database
-    final_state: dict = dict(initial_state)
+    final_state: dict = dict(state)
     try:
         async for chunk in journalist_graph.astream(
-            initial_state,
+            state,
             config={"recursion_limit": settings.graph_recursion_limit},
             stream_mode="updates",
         ):
@@ -480,15 +515,9 @@ async def _run_pipeline(
             node_updates = chunk[node_name]
             final_state.update(node_updates)
 
-            new_status = _NODE_STATUS_MAP.get(node_name)
+            new_status = _status_for_completed_node(node_name, final_state)
             if new_status:
-                async with AsyncSessionLocal() as db:
-                    await db.execute(
-                        update(StoryORM)
-                        .where(StoryORM.id == uuid.UUID(story_id))
-                        .values(status=new_status)
-                    )
-                    await db.commit()
+                await _advance_story_status(story_id, new_status)
                 log.info("pipeline.node_complete", story_id=story_id, node=node_name, status=new_status)
 
     except Exception as exc:
@@ -502,7 +531,38 @@ async def _run_pipeline(
             await db.commit()
         return
 
-    # Persist final results
+    # ── Paused at angle selection ─────────────────────────────────────────────
+    # If we have angles but no selection, the graph ended at the angle_generator
+    # node. Persist research/analysis + angles and exit cleanly; the user will
+    # resume via POST /stories/{id}/select-angle.
+    if final_state.get("generated_angles") and not final_state.get("selected_angle"):
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(StoryORM)
+                .where(StoryORM.id == uuid.UUID(story_id))
+                .values(
+                    status=StoryStatus.AWAITING_ANGLE_SELECTION,
+                    angles_data=final_state["generated_angles"],
+                    iteration_count=final_state.get("research_iteration", 0),
+                    research_data=(
+                        final_state["research_package"].model_dump(mode="json")
+                        if final_state.get("research_package") else None
+                    ),
+                    analysis_data=(
+                        final_state["analysis_result"].model_dump(mode="json")
+                        if final_state.get("analysis_result") else None
+                    ),
+                )
+            )
+            await db.commit()
+        log.info(
+            "pipeline.awaiting_angle_selection",
+            story_id=story_id,
+            angle_count=len(final_state["generated_angles"]),
+        )
+        return
+
+    # ── Normal completion (script produced or genuinely failed downstream) ────
     script: Optional[FinalScript] = final_state.get("final_script")
     evaluation = final_state.get("evaluation_report")
 
@@ -569,6 +629,121 @@ async def _run_pipeline(
         await db.commit()
 
     log.info("pipeline.complete", story_id=story_id, status=values["status"])
+
+
+async def _run_pipeline(
+    story_id: str,
+    topic: str,
+    tone: str,
+    target_duration_minutes: int,
+    target_audience: Optional[str],
+) -> None:
+    """Fresh-start path. Build initial state and drive the pipeline; may pause at angle selection."""
+    log.info("pipeline.started", story_id=story_id)
+    initial_state = create_initial_state(
+        topic=topic,
+        story_id=story_id,
+        tone=tone,
+        target_duration_minutes=target_duration_minutes,
+        target_audience=target_audience,
+    )
+    await _drive_pipeline(story_id, initial_state)
+
+
+def _hydrate_state_for_angle_resume(story: StoryORM, selected_angle: str) -> dict[str, Any]:
+    """
+    Rebuild graph state from the persisted story so the post-angle phase of the
+    pipeline can resume. researcher_node and analyst_node skip themselves when
+    research_package + analysis_result are present and no improvement plan is set.
+    """
+    from backend.models.research import ResearchPackage  # local import to avoid cycle
+    if not story.research_data or not story.analysis_data:
+        raise ValueError("Cannot resume: research_data or analysis_data is missing.")
+
+    state = create_initial_state(
+        topic=story.topic,
+        story_id=str(story.id),
+        tone=story.tone,
+        target_duration_minutes=story.target_duration_minutes,
+        target_audience=story.target_audience,
+    )
+    state["research_package"] = ResearchPackage(**story.research_data)
+    state["analysis_result"] = AnalysisResult(**story.analysis_data)
+    state["generated_angles"] = list(story.angles_data or [])
+    state["selected_angle"] = selected_angle
+    state["research_iteration"] = story.iteration_count or 1
+    return state
+
+
+async def _run_pipeline_resume_after_angle_selection(story_id: str, selected_angle: str) -> None:
+    """Resume the pipeline after the user picks an angle."""
+    from backend.db.database import AsyncSessionLocal
+    log.info("pipeline.resume_after_angle", story_id=story_id)
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
+        story = result.scalar_one_or_none()
+        if story is None:
+            log.error("pipeline.resume.story_not_found", story_id=story_id)
+            return
+
+    try:
+        state = _hydrate_state_for_angle_resume(story, selected_angle)
+    except ValueError as exc:
+        log.error("pipeline.resume.hydration_failed", story_id=story_id, error=str(exc))
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(StoryORM)
+                .where(StoryORM.id == uuid.UUID(story_id))
+                .values(status=StoryStatus.FAILED, error_message=str(exc))
+            )
+            await db.commit()
+        return
+
+    await _drive_pipeline(story_id, state)
+
+
+async def _run_regenerate_angles(story_id: str) -> None:
+    """Re-run just the angle generator using the persisted research/analysis."""
+    from backend.db.database import AsyncSessionLocal
+    from backend.agents.angle_generator import AngleGeneratorAgent
+    from backend.models.research import ResearchPackage
+
+    log.info("pipeline.regenerate_angles.started", story_id=story_id)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
+        story = result.scalar_one_or_none()
+        if story is None or not story.research_data or not story.analysis_data:
+            log.error("pipeline.regenerate_angles.missing_data", story_id=story_id)
+            return
+
+    state = {
+        "story_id": story_id,
+        "topic": story.topic,
+        "tone": story.tone,
+        "research_package": ResearchPackage(**story.research_data),
+        "analysis_result": AnalysisResult(**story.analysis_data),
+    }
+    try:
+        agent = AngleGeneratorAgent()
+        updates = await agent.run(state)
+    except Exception as exc:
+        log.error("pipeline.regenerate_angles.error", story_id=story_id, error=str(exc))
+        return
+
+    angles = updates.get("generated_angles") or []
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            update(StoryORM)
+            .where(StoryORM.id == uuid.UUID(story_id))
+            .values(
+                angles_data=angles,
+                selected_angle=None,
+                status=StoryStatus.AWAITING_ANGLE_SELECTION,
+            )
+        )
+        await db.commit()
+    log.info("pipeline.regenerate_angles.complete", story_id=story_id, count=len(angles))
 
 
 def _hydrate_existing_story_state(story: StoryORM) -> dict[str, Any]:
@@ -1226,6 +1401,87 @@ async def implement_recommendations(
     _attach_story_owner(clone, getattr(story, "owner_email", None))
     background_tasks.add_task(_run_implement_recommendations, story_id=str(clone.id), source_story_id=str(story_id), recommendations=payload.recommendations)
     return clone
+
+
+@router.post("/{story_id}/select-angle", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
+async def select_angle(
+    story_id: uuid.UUID,
+    payload: SelectAngleRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> StoryORM:
+    """Persist the user's selected angle and resume the pipeline from storyline_creator."""
+    story = await _get_story_for_user(
+        db,
+        story_id=story_id,
+        current_user=current_user,
+        include_owner=True,
+    )
+    if story.status != StoryStatus.AWAITING_ANGLE_SELECTION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Story is currently {story.status}; angle selection only applies while awaiting_angle_selection.",
+        )
+    angle = payload.selected_angle.strip()
+    # Allow the user to pick any of the generated angles, or (later, when inline
+    # editing ships) submit an edited version — for now we just trust the value.
+    await db.execute(
+        update(StoryORM)
+        .where(StoryORM.id == story_id)
+        .values(
+            selected_angle=angle,
+            status=StoryStatus.WRITING_STORYLINE,
+            error_message=None,
+        )
+    )
+    await db.commit()
+    await db.refresh(story)
+    _attach_story_owner(story, getattr(story, "owner_email", None))
+    background_tasks.add_task(
+        _run_pipeline_resume_after_angle_selection,
+        story_id=str(story_id),
+        selected_angle=angle,
+    )
+    return story
+
+
+@router.post("/{story_id}/regenerate-angles", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
+async def regenerate_angles(
+    story_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> StoryORM:
+    """Re-run the angle generator only, without re-running research/analysis."""
+    story = await _get_story_for_user(
+        db,
+        story_id=story_id,
+        current_user=current_user,
+        include_owner=True,
+    )
+    if story.status != StoryStatus.AWAITING_ANGLE_SELECTION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Story is currently {story.status}; can only regenerate angles while awaiting selection.",
+        )
+    if not story.research_data or not story.analysis_data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Story is missing persisted research/analysis required to regenerate angles.",
+        )
+    # Clear current angles + selection so the UI shows a loading state until the
+    # background task writes back the new set.
+    await db.execute(
+        update(StoryORM)
+        .where(StoryORM.id == story_id)
+        .values(angles_data=None, selected_angle=None)
+    )
+    await db.commit()
+    await db.refresh(story)
+    _attach_story_owner(story, getattr(story, "owner_email", None))
+    background_tasks.add_task(_run_regenerate_angles, story_id=str(story_id))
+    return story
 
 
 @router.get("/{story_id}/sources")
