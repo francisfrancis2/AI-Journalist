@@ -28,6 +28,11 @@ from backend.models import benchmark as _benchmark_models  # noqa: F401 — regi
 from backend.models import user as _user_models  # noqa: F401 — ensures UserORM is registered with Base
 from backend.models.benchmark import BIReferenceDocORM
 from backend.models.user import UserORM
+from backend.services.admin_notifications import cleanup_admin_notifications
+from backend.services.stale_pipeline_watchdog import (
+    mark_stale_pipelines_failed,
+    run_watchdog_loop,
+)
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -143,6 +148,14 @@ async def _seed_benchmark_corpus_if_empty() -> None:
     )
 
 
+async def _cleanup_old_admin_notifications() -> None:
+    """Prune old read admin notifications according to retention policy."""
+    async with AsyncSessionLocal() as session:
+        deleted = await cleanup_admin_notifications(session)
+    if deleted:
+        log.info("admin_notifications.cleanup_complete", deleted=deleted)
+
+
 def create_app() -> FastAPI:
     """
     Construct and configure the FastAPI application instance.
@@ -190,17 +203,32 @@ def create_app() -> FastAPI:
         return response
 
     # ── Startup / Shutdown ────────────────────────────────────────────────────
+    watchdog_task: dict[str, asyncio.Task | None] = {"handle": None}
+
     @app.on_event("startup")
     async def on_startup() -> None:
         log.info("app.startup", version=settings.app_version)
         await _run_database_migrations()
         await _seed_admin()
         log.info("app.database_ready")
+        await _cleanup_old_admin_notifications()
+        # Catch zombies left over from the previous machine generation BEFORE
+        # accepting traffic, so users see "failed" status instead of "stuck".
+        await mark_stale_pipelines_failed()
+        # Then schedule periodic scans for the lifetime of this machine.
+        watchdog_task["handle"] = asyncio.create_task(run_watchdog_loop())
         await _seed_benchmark_corpus_if_empty()
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:
         log.info("app.shutdown")
+        handle = watchdog_task.get("handle")
+        if handle is not None and not handle.done():
+            handle.cancel()
+            try:
+                await handle
+            except (asyncio.CancelledError, Exception):
+                pass
 
     # ── Health check ──────────────────────────────────────────────────────────
     @app.get("/health", tags=["System"])
