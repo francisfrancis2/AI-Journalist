@@ -25,6 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
+from backend.db.database import AsyncSessionLocal
 from backend.models.benchmark import (
     BIPatternLibrary,
     BIPatternLibraryORM,
@@ -176,14 +177,17 @@ class CorpusBuilderAgent:
         )
 
     async def _get_next_version(self, library_key: str) -> int:
-        result = await self._db.execute(
-            select(BIPatternLibraryORM)
-            .where(BIPatternLibraryORM.library_key == library_key)
-            .order_by(BIPatternLibraryORM.version.desc())
-            .limit(1)
-        )
-        latest = result.scalar_one_or_none()
-        return (latest.version + 1) if latest else 1
+        # Fresh session — called at the end of long builds where self._db
+        # may have been idled out.
+        async with AsyncSessionLocal() as fresh_db:
+            result = await fresh_db.execute(
+                select(BIPatternLibraryORM)
+                .where(BIPatternLibraryORM.library_key == library_key)
+                .order_by(BIPatternLibraryORM.version.desc())
+                .limit(1)
+            )
+            latest = result.scalar_one_or_none()
+            return (latest.version + 1) if latest else 1
 
     async def _save_library(
         self, library: BIPatternLibrary, library_key: str
@@ -207,8 +211,11 @@ class CorpusBuilderAgent:
             patterns=library.model_dump(),
             created_at=datetime.now(timezone.utc),
         )
-        self._db.add(orm)
-        await self._db.commit()
+        # Fresh session — _save_library runs at the end of a long build
+        # where self._db may have been idled out by Neon.
+        async with AsyncSessionLocal() as fresh_db:
+            fresh_db.add(orm)
+            await fresh_db.commit()
 
         # Write JSON cache for fast loading in BenchmarkAgent
         cache_path = Path(settings.get_pattern_cache_path(library_key))
@@ -397,10 +404,14 @@ class CorpusBuilderAgent:
             new_docs, structures, titles, channel_label=channel_label
         )
 
-        for doc in docs_to_replace:
-            await self._db.delete(doc)
-        self._db.add_all(new_docs)
-        await self._db.commit()
+        # Fresh session — refresh runs after slow LLM extraction; self._db
+        # may have been idled out by Neon during that time.
+        async with AsyncSessionLocal() as fresh_db:
+            for doc in docs_to_replace:
+                merged = await fresh_db.merge(doc)
+                await fresh_db.delete(merged)
+            fresh_db.add_all(new_docs)
+            await fresh_db.commit()
         await self._save_library(library, library_key=library_key)
 
         log.info(
@@ -529,8 +540,12 @@ class CorpusBuilderAgent:
                     extracted_structure=structure.model_dump(),
                     created_at=datetime.now(timezone.utc),
                 )
-                self._db.add(doc)
-                await self._db.commit()
+                # Use a fresh session for each persist — the held self._db
+                # session sits idle during the (slow) LLM extraction call
+                # above and gets killed by Neon's idle-connection timeout.
+                async with AsyncSessionLocal() as fresh_db:
+                    fresh_db.add(doc)
+                    await fresh_db.commit()
 
                 structures.append(structure)
                 titles.append(video["title"])
