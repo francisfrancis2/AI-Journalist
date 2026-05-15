@@ -16,7 +16,7 @@ from typing import Any, Literal
 import structlog
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.config import settings
 from backend.models.research import ResearchPackage, ResearchQuery, SourceType
