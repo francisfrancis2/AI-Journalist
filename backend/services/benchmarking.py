@@ -95,6 +95,8 @@ class BenchmarkLibraryStatus(BaseModel):
     version: Optional[int] = None
     doc_count: int = 0
     minimum_doc_count: int = settings.bi_corpus_min_docs
+    target_doc_count: int = settings.benchmark_default_rebuild_docs
+    below_target: bool = False
     built_at: Optional[datetime] = None
     cache_exists: bool = False
     cache_mtime: Optional[datetime] = None
@@ -177,14 +179,20 @@ def _status_from_library(
     })
     stale_cutoff = _utc_now() - timedelta(days=settings.benchmark_corpus_stale_after_days)
     doc_count = library.doc_count if library else 0
+    target_doc_count = settings.benchmark_default_rebuild_docs
     stale = bool(built_at and built_at < stale_cutoff)
     if doc_count and doc_count < settings.bi_corpus_min_docs:
         stale = True
+    below_target = bool(library is not None and doc_count < target_doc_count)
 
     ready_for_scoring = library is not None and doc_count >= settings.bi_corpus_min_docs
     if doc_count < settings.bi_corpus_min_docs and library is not None:
         notes.append(
             f"Corpus is below the recommended minimum of {settings.bi_corpus_min_docs} documents."
+        )
+    elif below_target:
+        notes.append(
+            f"Corpus is below the target of {target_doc_count} documents for this library."
         )
     if stale and built_at:
         notes.append("Corpus is stale and should be refreshed.")
@@ -201,6 +209,8 @@ def _status_from_library(
         ready_for_scoring=ready_for_scoring,
         version=library.version if library else None,
         doc_count=doc_count,
+        target_doc_count=target_doc_count,
+        below_target=below_target,
         built_at=built_at,
         cache_exists=cache_exists,
         cache_mtime=cache_mtime,
@@ -310,12 +320,18 @@ async def load_active_benchmark_library(
     missing_count = sum(1 for status in statuses if not status.available)
     not_ready_count = sum(1 for status in statuses if not status.ready_for_scoring)
     stale_count = sum(1 for status in statuses if status.stale)
+    below_target_count = sum(1 for status in statuses if status.below_target)
+    combined_target = settings.benchmark_default_rebuild_docs * len(_COMPONENT_LIBRARY_KEYS)
     if missing_count:
         notes.append("One or more component corpora are missing and should be rebuilt.")
     if not_ready_count and not missing_count:
         notes.append("One or more component corpora are below the minimum size for scoring.")
     if stale_count:
         notes.append("One or more component corpora are stale and should be refreshed.")
+    if below_target_count:
+        notes.append(
+            f"One or more component corpora are below the {combined_target}-document combined target."
+        )
     if missing_count or not_ready_count or not loaded:
         return None, BenchmarkLibraryStatus(
             key=_ACTIVE_LIBRARY_KEY,
@@ -326,6 +342,8 @@ async def load_active_benchmark_library(
             available=False,
             ready_for_scoring=False,
             doc_count=sum(status.doc_count for status in statuses),
+            target_doc_count=combined_target,
+            below_target=bool(below_target_count),
             cache_exists=all(status.cache_exists for status in statuses),
             stale=bool(stale_count),
             notes=notes,
@@ -383,6 +401,8 @@ async def load_active_benchmark_library(
         ready_for_scoring=missing_count == 0 and all(status.ready_for_scoring for _, status in loaded),
         version=combined.version,
         doc_count=combined.doc_count,
+        target_doc_count=combined_target,
+        below_target=below_target_count > 0,
         built_at=min(built_dates) if built_dates else None,
         cache_exists=all(status.cache_exists for _, status in loaded),
         cache_mtime=min(cache_dates) if cache_dates else None,
@@ -398,6 +418,7 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
     any_stale = False
     any_missing = False
     any_not_ready = False
+    any_below_target = False
 
     for item in _SUPPORTED_LIBRARY_CATALOG:
         key = str(item["key"])
@@ -409,6 +430,10 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
             any_not_ready = True
         elif lib_status.stale:
             any_stale = True
+        if lib_status.below_target:
+            any_below_target = True
+
+    combined_target = settings.benchmark_default_rebuild_docs * len(_COMPONENT_LIBRARY_KEYS)
 
     if any_missing:
         recommended_action = (
@@ -420,6 +445,12 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
             f"One or more benchmark libraries are below the minimum of "
             f"{settings.bi_corpus_min_docs} documents. Run a complete corpus rebuild."
         )
+    elif any_below_target:
+        recommended_action = (
+            f"One or more benchmark libraries are below the target of "
+            f"{settings.benchmark_default_rebuild_docs} documents per source. "
+            f"Run a corpus rebuild to expand toward the {combined_target}-document combined target."
+        )
     elif any_stale:
         recommended_action = "One or more benchmark libraries are stale and should be refreshed."
     else:
@@ -428,6 +459,7 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
     combined_missing = any_missing
     combined_not_ready = any_not_ready
     combined_stale = any_stale
+    combined_below_target = any_below_target
     combined_built_dates = [status.built_at for status in library_statuses if status.built_at]
     combined_cache_dates = [status.cache_mtime for status in library_statuses if status.cache_mtime]
     combined_versions = [status.version for status in library_statuses if status.version is not None]
@@ -454,6 +486,8 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
                 ),
                 version=max(combined_versions) if combined_versions else None,
                 doc_count=sum(status.doc_count for status in library_statuses),
+                target_doc_count=combined_target,
+                below_target=combined_below_target,
                 built_at=min(combined_built_dates) if combined_built_dates else None,
                 cache_exists=all(status.cache_exists for status in library_statuses),
                 cache_mtime=min(combined_cache_dates) if combined_cache_dates else None,
@@ -463,6 +497,8 @@ async def get_benchmark_admin_status(db: AsyncSession) -> BenchmarkAdminStatus:
                     if combined_missing
                     else ["One or more component corpora are below the minimum document count."]
                     if combined_not_ready
+                    else ["One or more component corpora are below the target document count."]
+                    if combined_below_target
                     else ["One or more component corpora should be refreshed."]
                     if combined_stale
                     else []
@@ -548,7 +584,27 @@ async def run_benchmark_rebuild(
                 meta = _CATALOG_META[target_key]
                 channel_label = str(meta["label"])
                 channel_identifier = settings.get_channel_identifier(target_key)
-                if refresh_fraction is not None:
+                existing_result = await db.execute(
+                    select(BIReferenceDocORM.id).where(
+                        BIReferenceDocORM.library_key == target_key,
+                        BIReferenceDocORM.extracted_structure.is_not(None),
+                    )
+                )
+                existing_usable_docs = len(existing_result.scalars().all())
+                should_refresh = (
+                    refresh_fraction is not None
+                    and existing_usable_docs >= docs
+                )
+
+                log.info(
+                    "benchmarking.rebuild_component",
+                    library_key=target_key,
+                    existing_usable_docs=existing_usable_docs,
+                    target_docs=docs,
+                    mode="refresh" if should_refresh else "expand",
+                )
+
+                if should_refresh:
                     await agent.refresh_latest_fraction(
                         max_docs=docs,
                         library_key=target_key,

@@ -5,7 +5,7 @@ Run manually via:
     python -m backend.scripts.build_corpus
 
 Workflow:
-  1. Fetch 25-50 reference documentaries from YouTube (metadata + transcripts)
+  1. Fetch reference documentaries from YouTube (metadata + transcripts)
   2. Extract structural features from each transcript using Claude Haiku
   3. Synthesise cross-corpus patterns using Claude Sonnet
   4. Write pattern library to DB + local JSON cache
@@ -32,6 +32,7 @@ from backend.models.benchmark import (
     BIReferenceDocORM,
     DocStructure,
 )
+from backend.services.prompt_loader import format_prompt, load_prompt
 from backend.tools.youtube_fetcher import YouTubeFetcher
 
 log = structlog.get_logger(__name__)
@@ -68,10 +69,8 @@ class InsufficientBenchmarkCorpusError(RuntimeError):
         self.need = need
 
 
-# ── Structure extraction prompt ───────────────────────────────────────────────
+# ── Editable prompts loaded from backend/prompts ─────────────────────────────
 
-_EXTRACT_SYSTEM = """You are a documentary structure analyst. Given a YouTube documentary transcript,
-extract its structural features. Be precise and data-driven."""
 
 
 class _PatternSynthesisOutput(BaseModel):
@@ -94,9 +93,6 @@ class _PatternSynthesisOutput(BaseModel):
         return v
 
 
-_SYNTHESISE_SYSTEM_TEMPLATE = """You are a documentary research analyst. Given structural data from multiple
-{channel_label} YouTube documentaries, synthesise the common patterns that make them successful.
-Focus on patterns that are consistent across the corpus and actionable for scoring new storylines."""
 
 
 class CorpusBuilderAgent:
@@ -106,7 +102,7 @@ class CorpusBuilderAgent:
     Example::
 
         agent = CorpusBuilderAgent(db)
-        library = await agent.build(max_docs=25)
+        library = await agent.build(max_docs=125)
     """
 
     def __init__(self, db: AsyncSession) -> None:
@@ -131,7 +127,7 @@ class CorpusBuilderAgent:
         excerpt = transcript[:24_000]
         try:
             return await self._haiku.ainvoke([
-                SystemMessage(content=_EXTRACT_SYSTEM),
+                SystemMessage(content=load_prompt("corpus_builder_extract")),
                 HumanMessage(content=(
                     f"Title: {title}\n\n"
                     f"Transcript (may be truncated):\n{excerpt}\n\n"
@@ -155,7 +151,7 @@ class CorpusBuilderAgent:
             for i, (title, s) in enumerate(zip(titles, structures))
         )
 
-        system = _SYNTHESISE_SYSTEM_TEMPLATE.format(channel_label=channel_label)
+        system = format_prompt("corpus_builder_synthesise", channel_label=channel_label)
         output: _PatternSynthesisOutput = await self._sonnet.ainvoke([
             SystemMessage(content=system),
             HumanMessage(content=(
@@ -240,7 +236,7 @@ class CorpusBuilderAgent:
 
     async def refresh_latest_fraction(
         self,
-        max_docs: int = 50,
+        max_docs: int = 125,
         library_key: str = "bi",
         channel_label: str = "Business Insider",
         channel_identifier: Optional[str] = None,
@@ -423,7 +419,7 @@ class CorpusBuilderAgent:
 
     async def build(
         self,
-        max_docs: int = 50,
+        max_docs: int = 125,
         library_key: str = "bi",
         channel_label: str = "Business Insider",
         channel_identifier: Optional[str] = None,
@@ -432,7 +428,7 @@ class CorpusBuilderAgent:
         Full corpus build pipeline for any supported channel. Skips videos already in DB.
 
         Args:
-            max_docs: Maximum number of docs to fetch and process.
+            max_docs: Target usable reference docs for this component library.
             library_key: Library identifier ("bi", "cnbc", "vox", "jh").
             channel_label: Human-readable channel name used in prompts.
             channel_identifier: YouTube channel ID or @handle. Falls back to config.
@@ -448,82 +444,116 @@ class CorpusBuilderAgent:
             max_docs=max_docs,
         )
 
-        # 1. Fetch video list from YouTube
-        videos = await self._fetcher.get_channel_videos(
-            channel_id=channel_id, max_results=max_docs + 10
-        )
-        log.info("corpus_builder.videos_fetched", count=len(videos))
-
-        # 2. Skip videos already in DB for this library
+        # 1. Load already extracted docs so rebuilds expand toward the target
+        #    instead of endlessly adding another full batch on every run.
         async with AsyncSessionLocal() as session:
-            existing = await session.execute(
-                select(BIReferenceDocORM.youtube_id)
+            existing_docs_result = await session.execute(
+                select(BIReferenceDocORM)
                 .where(BIReferenceDocORM.library_key == library_key)
+                .order_by(
+                    BIReferenceDocORM.view_count.desc(),
+                    BIReferenceDocORM.created_at.desc(),
+                )
             )
-            existing_ids = {row[0] for row in existing.fetchall()}
-        new_videos = [v for v in videos if v["id"] not in existing_ids][:max_docs]
-        log.info("corpus_builder.new_videos", count=len(new_videos))
+            existing_docs = list(existing_docs_result.scalars().all())
 
-        # 3. Fetch transcripts in parallel
-        transcripts = await self._fetcher.get_transcripts_batch(
-            [v["id"] for v in new_videos], concurrency=5
-        )
-
-        # 4. Extract structure + save each doc
         structures: list[DocStructure] = []
         titles: list[str] = []
+        for existing_doc in existing_docs:
+            structure = self._structure_from_doc(existing_doc)
+            if structure is not None:
+                structures.append(structure)
+                titles.append(existing_doc.title)
+
+        existing_ids = {doc.youtube_id for doc in existing_docs}
+        docs_needed = max(max_docs - len(structures), 0)
+
+        videos: list[dict] = []
+        new_videos: list[dict] = []
         saved_docs: list[BIReferenceDocORM] = []
         missing_transcript_count = 0
         extraction_failure_count = 0
 
-        for video in new_videos:
-            transcript = transcripts.get(video["id"])
-            if not transcript:
-                missing_transcript_count += 1
-                log.warning("corpus_builder.no_transcript", video_id=video["id"], title=video["title"])
-                continue
-
-            structure = await self._extract_structure(video["title"], transcript)
-            if not structure:
-                extraction_failure_count += 1
-                continue
-
-            doc = BIReferenceDocORM(
-                id=uuid.uuid4(),
-                library_key=library_key,
-                youtube_id=video["id"],
-                title=video["title"],
-                description=video["description"],
-                view_count=video["view_count"],
-                like_count=video["like_count"],
-                duration_seconds=video["duration_seconds"],
-                transcript=transcript,
-                extracted_structure=structure.model_dump(),
-                created_at=datetime.now(timezone.utc),
+        if docs_needed:
+            # 2. Fetch enough candidates to survive duplicate IDs and missing transcripts.
+            candidate_limit = max(max_docs + 50, len(existing_ids) + (docs_needed * 2))
+            videos = await self._fetcher.get_channel_videos(
+                channel_id=channel_id, max_results=candidate_limit
             )
-            async with AsyncSessionLocal() as session:
-                session.add(doc)
-                await session.commit()
+            log.info(
+                "corpus_builder.videos_fetched",
+                library_key=library_key,
+                count=len(videos),
+                target_docs=max_docs,
+                existing_usable_docs=len(structures),
+            )
 
-            structures.append(structure)
-            titles.append(video["title"])
-            saved_docs.append(doc)
-            log.info("corpus_builder.doc_processed", title=video["title"], library_key=library_key)
+            candidate_new_limit = max(docs_needed + 25, docs_needed * 2)
+            new_videos = [v for v in videos if v["id"] not in existing_ids][:candidate_new_limit]
+            log.info(
+                "corpus_builder.new_videos",
+                library_key=library_key,
+                count=len(new_videos),
+                docs_needed=docs_needed,
+            )
 
-        # 5. Include already-existing docs for this library in synthesis
-        new_video_ids = {v["id"] for v in new_videos}
-        if existing_ids:
-            async with AsyncSessionLocal() as session:
-                existing_docs_result = await session.execute(
-                    select(BIReferenceDocORM).where(BIReferenceDocORM.library_key == library_key)
+            # 3. Fetch transcripts in parallel
+            transcripts = await self._fetcher.get_transcripts_batch(
+                [v["id"] for v in new_videos], concurrency=5
+            )
+
+            # 4. Extract structure + save each doc until the target is reached
+            for video in new_videos:
+                if len(structures) >= max_docs:
+                    break
+
+                transcript = transcripts.get(video["id"])
+                if not transcript:
+                    missing_transcript_count += 1
+                    log.warning(
+                        "corpus_builder.no_transcript",
+                        video_id=video["id"],
+                        title=video["title"],
+                    )
+                    continue
+
+                structure = await self._extract_structure(video["title"], transcript)
+                if not structure:
+                    extraction_failure_count += 1
+                    continue
+
+                doc = BIReferenceDocORM(
+                    id=uuid.uuid4(),
+                    library_key=library_key,
+                    youtube_id=video["id"],
+                    title=video["title"],
+                    description=video["description"],
+                    view_count=video["view_count"],
+                    like_count=video["like_count"],
+                    duration_seconds=video["duration_seconds"],
+                    transcript=transcript,
+                    extracted_structure=structure.model_dump(),
+                    created_at=datetime.now(timezone.utc),
                 )
-                for existing_doc in existing_docs_result.scalars().all():
-                    if existing_doc.extracted_structure and existing_doc.youtube_id not in new_video_ids:
-                        try:
-                            structures.append(DocStructure(**existing_doc.extracted_structure))
-                            titles.append(existing_doc.title)
-                        except Exception:
-                            pass
+                async with AsyncSessionLocal() as session:
+                    session.add(doc)
+                    await session.commit()
+
+                structures.append(structure)
+                titles.append(video["title"])
+                saved_docs.append(doc)
+                log.info(
+                    "corpus_builder.doc_processed",
+                    title=video["title"],
+                    library_key=library_key,
+                )
+        else:
+            log.info(
+                "corpus_builder.target_already_met",
+                library_key=library_key,
+                target_docs=max_docs,
+                existing_usable_docs=len(structures),
+            )
 
         if len(structures) < settings.bi_corpus_min_docs:
             log.error(

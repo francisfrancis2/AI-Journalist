@@ -105,8 +105,9 @@ async def rebuild_benchmark_library(
         library_key=payload.library_key,
         requested_docs=docs,
         message=(
-            f"Benchmark refresh for '{payload.library_key}' started in the background. "
-            f"Existing healthy corpora will rotate the freshest {refresh_fraction:.0%} "
-            "of references; missing corpora will run a full build."
+            f"Benchmark rebuild for '{payload.library_key}' started in the background. "
+            f"Each source will expand toward {docs} usable reference docs. "
+            f"Sources already at target will rotate the freshest {refresh_fraction:.0%} "
+            "of references."
         ),
     )

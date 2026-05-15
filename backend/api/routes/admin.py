@@ -19,6 +19,7 @@ from backend.config import settings
 from backend.db.database import AsyncSessionLocal, get_db
 from backend.models.notification import AdminNotificationORM, AdminNotificationRead
 from backend.models.user import UserORM, UserRead
+from backend.services.admin_notifications import cleanup_admin_notifications
 from backend.services.agent_manual import build_agent_manual_markdown
 from backend.tools.rss_parser import GOOGLE_NEWS_RSS_URL, RSSParserTool
 
@@ -159,6 +160,47 @@ async def _probe_alpha_vantage() -> ServiceHealth:
                              detail=str(exc)[:200])
 
 
+async def _probe_s3() -> ServiceHealth:
+    t = time.monotonic()
+    try:
+        import boto3
+        loop = asyncio.get_event_loop()
+
+        def _check():
+            s3 = boto3.client(
+                "s3",
+                aws_access_key_id=settings.aws_access_key_id,
+                aws_secret_access_key=settings.aws_secret_access_key,
+                region_name=settings.aws_region,
+                **({"endpoint_url": settings.s3_endpoint_url} if settings.s3_endpoint_url else {}),
+            )
+            s3.head_bucket(Bucket=settings.s3_bucket_scripts)
+
+        await asyncio.wait_for(loop.run_in_executor(None, _check), timeout=10)
+        return ServiceHealth(
+            name="s3",
+            label="AWS S3",
+            status="ok",
+            latency_ms=int((time.monotonic() - t) * 1000),
+        )
+    except Exception as exc:
+        detail = str(exc)[:200]
+        if not settings.aws_access_key_id or settings.aws_access_key_id == "test":
+            return ServiceHealth(
+                name="s3",
+                label="AWS S3",
+                status="unknown",
+                detail="Not configured (local dev)",
+            )
+        return ServiceHealth(
+            name="s3",
+            label="AWS S3",
+            status="error",
+            latency_ms=int((time.monotonic() - t) * 1000),
+            detail=detail,
+        )
+
+
 # ── Health endpoint ───────────────────────────────────────────────────────────
 
 @router.get("/health", response_model=HealthReport)
@@ -173,6 +215,7 @@ async def api_health(
         _probe_newsapi(),
         _probe_google_news_rss(),
         _probe_alpha_vantage(),
+        _probe_s3(),
     ]
     results: list[ServiceHealth] = list(await asyncio.gather(*probes))
     log.info("admin.health_check", statuses={r.name: r.status for r in results})
@@ -247,6 +290,7 @@ async def list_notifications(
     db: AsyncSession = Depends(get_db),
 ) -> list[AdminNotificationORM]:
     """Return admin notifications, newest first."""
+    await cleanup_admin_notifications(db)
     query = select(AdminNotificationORM)
     if unread_only:
         query = query.where(AdminNotificationORM.is_read == False)  # noqa: E712

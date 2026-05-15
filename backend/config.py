@@ -20,9 +20,9 @@ class Settings(BaseSettings):
 
     # ── Anthropic ─────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(..., env="ANTHROPIC_API_KEY")
-    claude_opus_model: str = "claude-opus-4-7"              # high-stakes generation: scriptwriter, script_evaluator
-    claude_model: str = "claude-sonnet-4-6"                # default pipeline: storyline_creator, evaluator, benchmarker, script_rewriter, focused_researcher, corpus_builder
-    claude_haiku_model: str = "claude-haiku-4-5-20251001"  # fast agents: researcher, analyst (plus admin health + script chat)
+    claude_opus_model: str = "claude-opus-4-7"              # high-stakes: analyst, scriptwriter, script_evaluator
+    claude_model: str = "claude-sonnet-4-6"                # default: storyline_creator, script_rewriter, corpus_builder
+    claude_haiku_model: str = "claude-haiku-4-5-20251001"  # fast: researcher, evaluator, benchmarker (plus admin health + script chat)
     claude_max_tokens: int = 8192
     claude_temperature: float = 0.3
 
@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     tavily_api_key: str = Field(..., env="TAVILY_API_KEY")
     tavily_max_results: int = 5
     tavily_search_depth: str = "basic"  # "basic" | "advanced"
+
+    # ── Anthropic server-side web search (parallel to Tavily) ─────────────────
+    # When True, the researcher runs Anthropic's web_search tool on the same
+    # planned queries Tavily receives. Both sets of URLs merge into the same
+    # ResearchPackage; the analyst gets the union. Set False to fall back to
+    # Tavily-only if cost becomes a concern.
+    enable_anthropic_search: bool = True
+    anthropic_search_max_uses_per_query: int = 3   # caps cost per query call
+    anthropic_search_max_queries: int = 4          # caps how many planned queries we send
 
     # ── NewsAPI ───────────────────────────────────────────────────────────────
     news_api_key: str = Field(..., env="NEWS_API_KEY")
@@ -67,7 +76,7 @@ class Settings(BaseSettings):
 
     # ── Agent / Graph ─────────────────────────────────────────────────────────
     max_research_iterations: int = 3
-    max_refinement_cycles: int = 2
+    max_refinement_cycles: int = 1
     target_script_duration_min: int = 10
     target_script_duration_max: int = 15
     min_sources_required: int = 5
@@ -76,11 +85,11 @@ class Settings(BaseSettings):
     # ── Script revision ───────────────────────────────────────────────────────
     max_script_revision_cycles: int = 1     # post-script audit revision passes
     script_audit_score_threshold: float = 0.70  # below this → trigger revision
-    max_pipeline_cycles: int = 3            # full research→script cycles before giving up
+    max_pipeline_cycles: int = 2            # full research→script cycles only when evidence is missing
 
     # ── LangGraph runtime ─────────────────────────────────────────────────────
-    # Worst-case path: ~11 nodes/cycle × max_pipeline_cycles (3) ≈ 33 steps.
-    # 50 gives headroom; LangGraph's default of 25 is too low for this pipeline.
+    # Worst-case path: ~12 nodes/cycle × max_pipeline_cycles (2) plus rewrite
+    # headroom. LangGraph's default of 25 is tight for evidence restarts.
     graph_recursion_limit: int = 50
 
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
@@ -101,7 +110,7 @@ class Settings(BaseSettings):
 
     bi_corpus_min_docs: int = 5           # min docs before patterns are considered valid
     benchmark_corpus_stale_after_days: int = 150
-    benchmark_default_rebuild_docs: int = 50  # fixed corpus size for all libraries
+    benchmark_default_rebuild_docs: int = 125  # target docs per library; combined target is ~500
     benchmark_admin_refresh_fraction: float = 0.25
     benchmark_seed_on_startup: bool = False
 
