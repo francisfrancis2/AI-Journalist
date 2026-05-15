@@ -4,11 +4,12 @@ Analyst Agent — second node in the journalist pipeline.
 Responsibilities:
   1. Receive the ResearchPackage from the Researcher.
   2. Identify key findings, narrative angles, data gaps, and notable quotes.
-  3. Detect financial metrics and controversial elements.
-  4. Produce a structured AnalysisResult that the Storyline Creator can use.
+  3. Generate 3-5 distinct producer-selectable documentary angles.
+  4. Detect financial metrics and controversial elements.
+  5. Produce structured state that the Storyline Creator can use after angle selection.
 """
 
-from typing import Any, Optional
+from typing import Literal, Optional
 
 import structlog
 from langchain_anthropic import ChatAnthropic
@@ -20,6 +21,10 @@ from backend.models.research import (
     AnalysisResult,
     KeyFinding,
     ResearchPackage,
+)
+from backend.services.corpus_inspiration import (
+    load_hooks_inspiration,
+    load_titles_inspiration,
 )
 from backend.services.prompt_loader import load_prompt
 
@@ -33,7 +38,13 @@ class KeyFindingOutput(BaseModel):
     supporting_sources: list[str] = Field(default_factory=list)
     supporting_source_ids: list[str] = Field(default_factory=list)
     confidence: float = Field(0.5, ge=0.0, le=1.0)
-    category: str = "general"
+    category: str = Field(
+        default="general",
+        description=(
+            "One of: numeric_anchor | process_step | protagonist | origin_event | "
+            "counterintuitive | visual_artifact | quotable | general"
+        ),
+    )
 
 
 class QuoteOutput(BaseModel):
@@ -42,10 +53,34 @@ class QuoteOutput(BaseModel):
     source: str = ""
 
 
+FramingAxis = Literal[
+    "human_interest",
+    "data_driven",
+    "contrarian",
+    "consensus",
+    "local",
+    "global",
+    "narrative",
+    "explanatory",
+]
+
+
+class SelectableAngleOutput(BaseModel):
+    angle: str = Field(description="One-sentence documentary angle, ~20 words max")
+    framing_axis: FramingAxis = Field(
+        description="Which framing dimension this angle most strongly pushes on"
+    )
+    rationale: str = Field(
+        default="",
+        description="One sentence explaining why this angle is meaningfully distinct",
+    )
+
+
 class AnalysisOutput(BaseModel):
     executive_summary: str
     key_findings: list[KeyFindingOutput]
     narrative_angles: list[str] = Field(default_factory=list)
+    selectable_angles: list[SelectableAngleOutput] = Field(default_factory=list)
     data_gaps: list[str] = Field(default_factory=list)
     recommended_tone: str = "explanatory"
     controversies: list[str] = Field(default_factory=list)
@@ -85,6 +120,8 @@ def _build_source_digest(package: ResearchPackage) -> str:
     return "\n".join(lines)[:_MAX_SOURCE_CHARS]
 
 
+
+
 class AnalystAgent:
     """
     Editorial analyst that transforms raw research into structured insights.
@@ -97,10 +134,10 @@ class AnalystAgent:
 
     def __init__(self) -> None:
         _llm = ChatAnthropic(
-            model=settings.claude_haiku_model,
+            model=settings.claude_opus_model,
             api_key=settings.anthropic_api_key,
             max_tokens=4096,
-            temperature=0.2,
+            temperature=0.35,
         )
         self._structured_llm = _llm.with_structured_output(AnalysisOutput)
 
@@ -123,6 +160,23 @@ class AnalystAgent:
             executive_summary=f"Research analysis for: {topic}. Based on {package.total_sources} sources.",
             key_findings=findings,
             narrative_angles=[f"Exploring {topic} through available evidence"],
+            selectable_angles=[
+                SelectableAngleOutput(
+                    angle=f"How {topic} became a story of money, risk, and timing",
+                    framing_axis="explanatory",
+                    rationale="Uses the available research to frame the topic as a clear cause-and-effect documentary.",
+                ),
+                SelectableAngleOutput(
+                    angle=f"The human stakes behind {topic}",
+                    framing_axis="human_interest",
+                    rationale="Pulls the story toward people affected by the topic.",
+                ),
+                SelectableAngleOutput(
+                    angle=f"What the numbers reveal about {topic}",
+                    framing_axis="data_driven",
+                    rationale="Centers the strongest sourced metrics and verifiable claims.",
+                ),
+            ],
             data_gaps=["Further primary sources would strengthen this story"],
             recommended_tone="explanatory",
             controversies=[],
@@ -153,11 +207,36 @@ class AnalystAgent:
                     + "\nPrioritise these areas in your key_findings and narrative_angles.\n"
                 )
 
+        # Two layers of benchmark inspiration:
+        # 1) Real opening hooks → teach the analyst what FACT DENSITY looks like
+        #    in a published documentary (numeric_anchor, named place, counterintuitive
+        #    claim — never abstract framing). Used to calibrate key_findings.
+        # 2) Real titles + top formulas → teach the analyst what ANGLES look like
+        #    in this style. Used to calibrate selectable_angles.
+        hooks_inspiration = load_hooks_inspiration()
+        titles_inspiration = load_titles_inspiration()
+        inspiration_section = ""
+        if hooks_inspiration:
+            inspiration_section += (
+                "\n=== REFERENCE OPENING HOOKS (real first sentences from BI / CNBC / Vox / JH) ===\n"
+                + hooks_inspiration
+                + "\nNotice the fact density: a specific number, a named place, a counterintuitive "
+                  "claim — rarely abstract framing. Your key_findings should be at this level of "
+                  "specificity. Extract the kind of facts that could open a documentary like these.\n"
+            )
+        if titles_inspiration:
+            inspiration_section += (
+                "\n=== REFERENCE FRAMINGS (real titles + top title formulas) ===\n"
+                + titles_inspiration
+                + "\nThese are framing inspiration for selectable_angles only — never copy the "
+                  "wording. Your angles must be specific to this topic and span different axes.\n"
+            )
+
         prompt = (
             f"Topic: {topic}\n"
             f"Target tone: {tone}\n"
             f"Total sources collected: {package.total_sources}\n"
-            f"{gap_section}{focus_section}"
+            f"{gap_section}{focus_section}{inspiration_section}"
             f"\n=== RESEARCH SOURCES ===\n{_build_source_digest(package)}"
         )
 
@@ -222,12 +301,58 @@ class AnalystAgent:
             ],
             financial_metrics=output.financial_metrics,
         )
+        generated_angles = [
+            {
+                "angle": angle.angle.strip(),
+                "framing_axis": angle.framing_axis,
+                "rationale": angle.rationale.strip(),
+            }
+            for angle in (output.selectable_angles or [])
+        ]
+        if len(generated_angles) < 3:
+            generated_angles.extend(
+                {
+                    "angle": angle[:180],
+                    "framing_axis": "explanatory",
+                    "rationale": "Fallback from analyst narrative angle.",
+                }
+                for angle in output.narrative_angles
+                if angle
+            )
+        if len(generated_angles) < 3:
+            fallback_angles = [
+                {
+                    "angle": f"How {topic} became a story of money, risk, and timing",
+                    "framing_axis": "explanatory",
+                    "rationale": "Fallback angle built from the story topic.",
+                },
+                {
+                    "angle": f"The human stakes behind {topic}",
+                    "framing_axis": "human_interest",
+                    "rationale": "Fallback angle that turns the topic toward people and consequences.",
+                },
+                {
+                    "angle": f"What the numbers reveal about {topic}",
+                    "framing_axis": "data_driven",
+                    "rationale": "Fallback angle that centers sourced metrics and scale.",
+                },
+            ]
+            existing = {angle["angle"] for angle in generated_angles}
+            generated_angles.extend(
+                angle for angle in fallback_angles if angle["angle"] not in existing
+            )
+        generated_angles = generated_angles[:5]
+        for angle in generated_angles:
+            words = angle["angle"].split()
+            if len(words) > 24:
+                angle["angle"] = " ".join(words[:24]).rstrip(",;:") + "..."
 
         log.info(
             "analyst.complete",
             topic=topic,
             findings=len(result.key_findings),
-            angles=len(result.narrative_angles),
+            narrative_angles=len(result.narrative_angles),
+            selectable_angles=len(generated_angles),
         )
 
-        return {"analysis_result": result}
+        return {"analysis_result": result, "generated_angles": generated_angles}
