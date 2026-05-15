@@ -124,6 +124,8 @@ export interface BenchmarkLibraryStatus {
   version: number | null;
   doc_count: number;
   minimum_doc_count: number;
+  target_doc_count: number;
+  below_target: boolean;
   built_at: string | null;
   cache_exists: boolean;
   cache_mtime: string | null;
@@ -321,30 +323,6 @@ export interface ResearchSource {
   content_preview: string;
 }
 
-export interface FocusedResearchPlan {
-  objective: string;
-  evaluation_focus: string[];
-  source_strategy: string[];
-  source_strategy_reasoning: string;
-  primary_queries: string[];
-  deep_dive_queries: string[];
-  financial_symbols: string[];
-  rss_keyword: string;
-  expected_improvements: string[];
-}
-
-export interface FocusedResearchRun {
-  plan: FocusedResearchPlan;
-  summary: string;
-  sources: RawSource[];
-}
-
-export interface FocusedResearchStatus {
-  pending: boolean;
-  error: string | null;
-  run: FocusedResearchRun | null;
-}
-
 export interface YouTubeVideo {
   title: string;
   url: string;
@@ -519,23 +497,6 @@ class AIJournalistAPIClient {
   async getResearchSources(storyId: string): Promise<ResearchSource[]> {
     const { data } = await this.http.get<ResearchSource[]>(
       `/api/v1/stories/${storyId}/sources`
-    );
-    return data;
-  }
-
-  async startFocusedResearch(
-    storyId: string,
-    objective: string
-  ): Promise<void> {
-    await this.http.post(
-      `/api/v1/stories/${storyId}/focused-research`,
-      { objective }
-    );
-  }
-
-  async getFocusedResearchStatus(storyId: string): Promise<FocusedResearchStatus> {
-    const { data } = await this.http.get<FocusedResearchStatus>(
-      `/api/v1/stories/${storyId}/focused-research/status`
     );
     return data;
   }

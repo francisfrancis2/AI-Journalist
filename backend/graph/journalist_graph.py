@@ -2,7 +2,7 @@
 LangGraph StateGraph definition for the AI Journalist multi-agent pipeline.
 
 Pipeline stages:
-  researcher → analyst → angle_generator → storyline_creator → evaluator
+  researcher → analyst → storyline_creator → evaluator
   → scriptwriter → script_evaluator → [script_rewriter | quality_gate]
   → [researcher (evidence restart) | END]
 
@@ -22,7 +22,6 @@ import structlog
 from langgraph.graph import END, StateGraph
 
 from backend.agents.analyst import AnalystAgent
-from backend.agents.angle_generator import AngleGeneratorAgent
 from backend.agents.benchmarker import BenchmarkAgent
 from backend.agents.evaluator import EvaluatorAgent
 from backend.agents.quality_gate import QualityGateAgent
@@ -39,7 +38,6 @@ log = structlog.get_logger(__name__)
 # ── Instantiate agents (shared across graph invocations) ──────────────────────
 _researcher = ResearcherAgent()
 _analyst = AnalystAgent()
-_angle_generator = AngleGeneratorAgent()
 _storyline_creator = StorylineCreatorAgent()
 _evaluator = EvaluatorAgent()
 _benchmarker = BenchmarkAgent()
@@ -80,20 +78,6 @@ async def analyst_node(state: JournalistState) -> dict:
     except Exception as exc:
         log.error("graph.node.analyst.error", error=str(exc))
         return {"error": str(exc), "failed_node": "analyst"}
-
-
-async def angle_generator_node(state: JournalistState) -> dict:
-    """Run the AngleGenerator to surface 3-5 distinct angles for the user to choose from."""
-    log.info("graph.node.angle_generator", story_id=state["story_id"])
-    # On quality-gate restarts, selected_angle persists and we don't regenerate.
-    if state.get("selected_angle") and state.get("generated_angles"):
-        log.info("graph.node.angle_generator.skipped_on_restart", story_id=state["story_id"])
-        return {}
-    try:
-        return await _angle_generator.run(state)
-    except Exception as exc:
-        log.error("graph.node.angle_generator.error", error=str(exc))
-        return {"error": str(exc), "failed_node": "angle_generator"}
 
 
 async def storyline_creator_node(state: JournalistState) -> dict:
@@ -204,23 +188,13 @@ def route_after_evaluator(state: JournalistState) -> str:
 
 
 def route_after_analyst(state: JournalistState) -> str:
-    """Proceed to angle_generator, or END early if analyst failed without a result."""
+    """Pause for angle selection, or continue when an angle is already selected."""
     if state.get("error") or not state.get("analysis_result"):
         log.error("graph.route.analyst_failed", story_id=state.get("story_id"), error=state.get("error"))
         return END
-    return "angle_generator"
-
-
-def route_after_angle_generator(state: JournalistState) -> str:
-    """
-    Pause the pipeline for user angle selection unless an angle is already set
-    (carries over silently on quality-gate restarts).
-    """
-    if state.get("error"):
-        return END
     if state.get("selected_angle"):
         return "storyline_creator"
-    # No selection yet → pause. The API layer will relaunch the graph after the
+    # No selection yet: pause. The API layer will relaunch the graph after the
     # user picks an angle via POST /stories/{id}/select-angle.
     log.info(
         "graph.route.awaiting_angle_selection",
@@ -302,7 +276,6 @@ def build_journalist_graph() -> StateGraph:
     # Register nodes
     graph.add_node("researcher", researcher_node)
     graph.add_node("analyst", analyst_node)
-    graph.add_node("angle_generator", angle_generator_node)
     graph.add_node("storyline_creator", storyline_creator_node)
     graph.add_node("evaluator", evaluator_node)
     graph.add_node("scriptwriter", scriptwriter_node)
@@ -319,10 +292,6 @@ def build_journalist_graph() -> StateGraph:
         END: END,
     })
     graph.add_conditional_edges("analyst", route_after_analyst, {
-        "angle_generator": "angle_generator",
-        END: END,
-    })
-    graph.add_conditional_edges("angle_generator", route_after_angle_generator, {
         "storyline_creator": "storyline_creator",
         END: END,
     })

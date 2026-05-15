@@ -447,7 +447,7 @@ export default function ResultsPage() {
             versionNumber={revisionNumber}
           />
         )}
-        {isComplete && tab === "evaluation" && <ScriptEvaluationPanel story={story} storyId={id} />}
+        {isComplete && tab === "evaluation" && <ScriptEvaluationPanel story={story} />}
       </div>
     </div>
   );
@@ -826,11 +826,7 @@ function EvaluationPanel({ data }: { data: NonNullable<Story["evaluation_data"]>
 }
 
 /* ── Script audit panel ── */
-function researchHref(storyId: string, objective: string) {
-  return `/research?story=${storyId}&objective=${encodeURIComponent(objective)}`;
-}
-
-function ScriptAuditPanel({ data, storyId }: { data: NonNullable<Story["script_audit_data"]>; storyId: string }) {
+function ScriptAuditPanel({ data }: { data: NonNullable<Story["script_audit_data"]> }) {
   const criteria = [
     { key: "hook_strength", label: "Hook Strength" },
     { key: "narrative_flow", label: "Narrative Flow" },
@@ -929,16 +925,7 @@ function ScriptAuditPanel({ data, storyId }: { data: NonNullable<Story["script_a
 
       {data.rewrite_priorities.length > 0 && (
         <div className="card" style={{ padding: "16px 18px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 10 }}>
-            <p className="section-label" style={{ marginBottom: 0 }}>Rewrite priorities</p>
-            <Link
-              href={researchHref(storyId, data.rewrite_priorities[0] ?? "Find stronger sources for the weakest script sections.")}
-              className="btn-secondary"
-              style={{ textDecoration: "none" }}
-            >
-              Run focused research
-            </Link>
-          </div>
+          <p className="section-label" style={{ marginBottom: 10 }}>Rewrite priorities</p>
           <ol style={{ margin: 0, padding: "0 0 0 16px", display: "flex", flexDirection: "column", gap: 6 }}>
             {data.rewrite_priorities.map((item, i) => (
               <li key={i} style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
@@ -1059,7 +1046,7 @@ function ScriptAuditPanel({ data, storyId }: { data: NonNullable<Story["script_a
 }
 
 /* ── Combined Script Evaluation panel ── */
-function ScriptEvaluationPanel({ story, storyId: _storyId }: { story: Story; storyId: string }) {
+function ScriptEvaluationPanel({ story }: { story: Story }) {
   const eval_data = story.evaluation_data;
   const audit_data = story.script_audit_data;
   const bm_data = story.benchmark_data;
@@ -1362,7 +1349,7 @@ function sanitizeBenchmarkText(value: string) {
 }
 
 /* ── Benchmark panel ── */
-function BenchmarkPanel({ data, storyId }: { data: NonNullable<Story["benchmark_data"]>; storyId: string }) {
+function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }) {
   const metrics = [
     { key: "hook_potency",              label: "Hook Potency" },
     { key: "title_formula_fit",         label: "Title Formula Fit" },
@@ -1437,19 +1424,10 @@ function BenchmarkPanel({ data, storyId }: { data: NonNullable<Story["benchmark_
                       {sanitizeBenchmarkText(detail.assessment)}
                     </p>
                     {detail.improvement && (
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                        <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
-                          <strong style={{ color: "var(--color-text-secondary)" }}>Improve:</strong>{" "}
-                          {sanitizeBenchmarkText(detail.improvement)}
-                        </p>
-                        <Link
-                          href={researchHref(storyId, detail.improvement)}
-                          className="btn-ghost"
-                          style={{ textDecoration: "none", flexShrink: 0 }}
-                        >
-                          Research
-                        </Link>
-                      </div>
+                      <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+                        <strong style={{ color: "var(--color-text-secondary)" }}>Improve:</strong>{" "}
+                        {sanitizeBenchmarkText(detail.improvement)}
+                      </p>
                     )}
                   </div>
                 )}

@@ -263,21 +263,16 @@
         <text x="480" y="725" text-anchor="middle" class="title" style="font-size:13px">Script Rewriter</text>
         <text x="480" y="746" text-anchor="middle" class="mini">Audit-driven revision loop</text>
 
-        <rect x="100" y="806" width="220" height="66" class="agent"/>
-        <text x="210" y="831" text-anchor="middle" class="title" style="font-size:13px">Focused Research Agent</text>
-        <text x="210" y="852" text-anchor="middle" class="mini">Story-aware follow-up research from Research tab</text>
-
-        <rect x="380" y="806" width="220" height="66" class="agent"/>
-        <text x="490" y="831" text-anchor="middle" class="title" style="font-size:13px">Corpus Builder Agent</text>
-        <text x="490" y="852" text-anchor="middle" class="mini">Builds and refreshes benchmark reference libraries</text>
+        <rect x="240" y="806" width="220" height="66" class="agent"/>
+        <text x="350" y="831" text-anchor="middle" class="title" style="font-size:13px">Corpus Builder Agent</text>
+        <text x="350" y="852" text-anchor="middle" class="mini">Builds and refreshes benchmark reference libraries</text>
 
         <path d="M240 513 L275 513" class="line"/>
         <path d="M415 513 L450 513" class="line"/>
         <path d="M540 546 L540 590" class="line"/>
         <path d="M540 623 L540 700" class="line"/>
         <path d="M390 733 L335 733" class="line dashed"/>
-        <path d="M245 766 L245 786 L210 786 L210 806" class="line dashed"/>
-        <path d="M480 766 L480 806" class="line dashed"/>
+        <path d="M480 766 L480 786 L350 786 L350 806" class="line dashed"/>
         <path d="M170 546 L170 590" class="line"/>
         <path d="M240 623 L275 623" class="line"/>
         <path d="M415 623 L450 623" class="line"/>
@@ -352,7 +347,7 @@
       </svg>
       <div class="diagram-caption">
         Figure 1. High-level architecture. The main LangGraph pipeline handles initial story generation,
-        while focused research, corpus building, and rewrite workflows run as separate background tasks against the same persisted story model.
+        while corpus building and rewrite workflows run as separate background tasks against the same persisted story model.
       </div>
     </div>
   </section>
@@ -364,7 +359,7 @@
         <h3>3.1 User-facing pages</h3>
         <ul>
           <li><code>/</code> New Story workspace: topic entry, tone selection, target duration, live pipeline progress.</li>
-          <li><code>/research</code> Story-specific research workspace with focused follow-up research and source browser.</li>
+          <li><code>/research</code> Story-specific research workspace with source browser and editorial context.</li>
           <li><code>/benchmarking</code> Script-scoring workspace with benchmark metrics and heuristic-driven improvement actions.</li>
           <li><code>/history</code> Story archive with filters, download, and delete actions.</li>
           <li><code>/results/[id]</code> Final script view, evaluation tabs, and rewrite entry point.</li>
@@ -421,7 +416,7 @@
     <table>
       <tr><th>Router</th><th>Prefix</th><th>Purpose</th></tr>
       <tr><td>Auth</td><td><code>/api/v1/auth</code></td><td>Login, current user, dismiss password-change prompt, change password.</td></tr>
-      <tr><td>Stories</td><td><code>/api/v1/stories</code></td><td>Create stories, read status, stream events, read scripts, focused research, chat, regenerate, rewrite, delete.</td></tr>
+      <tr><td>Stories</td><td><code>/api/v1/stories</code></td><td>Create stories, read status, stream events, read scripts, chat, regenerate, rewrite, delete.</td></tr>
       <tr><td>Research</td><td><code>/api/v1/research</code></td><td>Direct tool-level access to Tavily, NewsAPI, RSS, and Alpha Vantage.</td></tr>
       <tr><td>Benchmarks</td><td><code>/api/v1/benchmarks</code></td><td>Corpus status, library catalog, reference docs, and rebuild trigger.</td></tr>
       <tr><td>Admin</td><td><code>/api/v1/admin</code></td><td>List, create, and delete users.</td></tr>
@@ -457,7 +452,6 @@
       <tr><td>ScriptwriterAgent</td><td>Claude Opus structured output</td><td>Writes each act in parallel, enforces source IDs, computes word count, and uploads final script JSON.</td><td><code>final_script</code>, <code>script_s3_key</code></td></tr>
       <tr><td>ScriptEvaluatorAgent</td><td>Claude Haiku structured output</td><td>Audits the finished script itself, including section-by-section notes and benchmark comparison.</td><td><code>script_audit_report</code></td></tr>
       <tr><td>ScriptRewriterAgent</td><td>Claude Opus structured output</td><td>Rewrites weak sections against audit feedback and source-linked facts.</td><td><code>final_script</code>, revision cycle</td></tr>
-      <tr><td>FocusedResearchAgent</td><td>Claude Haiku + research tools</td><td>Runs user-requested follow-up research for an existing story from the Research tab.</td><td>Background merge into <code>research_data</code></td></tr>
       <tr><td>CorpusBuilderAgent</td><td>Claude Haiku + Claude Sonnet + YouTube tools</td><td>Builds benchmark corpora from reference channels and synthesizes per-library pattern caches.</td><td><code>bi_reference_docs</code>, <code>bi_pattern_library</code>, JSON caches</td></tr>
     </table>
   </section>
@@ -473,12 +467,11 @@
       <li>The frontend watches status through polling and the story events stream.</li>
     </ol>
 
-    <h3>7.2 Focused research and regeneration</h3>
+    <h3>7.2 Regeneration flows</h3>
     <ol>
-      <li>The Research page starts a background focused-research job for a selected story.</li>
-      <li>FocusedResearchAgent uses the existing story, audit, benchmark, and source context to decide which sources to query.</li>
-      <li>Returned sources are deduplicated and merged into <code>story.research_data</code>; the latest focused run is stored separately for UI recovery.</li>
-      <li>The user can then trigger script regeneration, which re-runs analysis, storyline creation, evaluation, benchmark scoring, scriptwriting, and script audit from the updated research set.</li>
+      <li>The user can trigger script regeneration from the existing story context and stored research set.</li>
+      <li>Regeneration re-runs analysis, storyline creation, evaluation, benchmark scoring, scriptwriting, and script audit from persisted story inputs.</li>
+      <li>Revision lineage is tracked so regenerated outputs can be compared against previous script snapshots.</li>
     </ol>
 
     <h3>7.3 Rewrite and recommendation flows</h3>
@@ -551,7 +544,7 @@
       </div>
       <div class="ok">
         <span class="label">Refresh policy</span>
-        <p>Admin-triggered refresh can rotate the freshest 25% of each healthy corpus.</p>
+        <p>Admin-triggered rebuild expands each source toward 125 usable docs; sources already at target rotate the freshest 25%.</p>
       </div>
     </div>
     <h3>10.1 Benchmarking flow</h3>
@@ -649,7 +642,6 @@
           <li>backend/agents/scriptwriter.py</li>
           <li>backend/agents/script_evaluator.py</li>
           <li>backend/agents/script_rewriter.py</li>
-          <li>backend/agents/focused_researcher.py</li>
           <li>backend/agents/corpus_builder.py</li>
           <li>backend/services/benchmarking.py</li>
           <li>backend/services/script_storage.py</li>

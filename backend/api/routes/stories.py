@@ -5,7 +5,6 @@ Stories API routes — CRUD + pipeline trigger + research chat endpoints.
 import asyncio
 import json
 import uuid
-from datetime import datetime, timezone
 from typing import Any, Optional
 
 import structlog
@@ -20,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.agents.analyst import AnalystAgent
 from backend.agents.benchmarker import BenchmarkAgent
 from backend.agents.evaluator import EvaluatorAgent
-from backend.agents.focused_researcher import FocusedResearchAgent
 from backend.agents.script_evaluator import ScriptEvaluatorAgent
 from backend.agents.script_rewriter import ScriptRewriterAgent
 from backend.agents.scriptwriter import ScriptwriterAgent
@@ -35,7 +33,6 @@ from backend.models.benchmark import BenchmarkReport
 from backend.models.research import (
     AnalysisResult,
     EvaluationReport,
-    FocusedResearchRun,
     ResearchPackage,
     StorylineProposal,
 )
@@ -85,16 +82,6 @@ class YouTubeVideo(BaseModel):
 class ChatResponse(BaseModel):
     content: str
     youtube_results: list[YouTubeVideo] = []
-
-
-class FocusedResearchRequest(BaseModel):
-    objective: str = Field(..., min_length=3, max_length=1000)
-
-
-class FocusedResearchStatusResponse(BaseModel):
-    pending: bool
-    error: Optional[str] = None
-    run: Optional[FocusedResearchRun] = None
 
 
 # ── Chat helpers ──────────────────────────────────────────────────────────────
@@ -247,199 +234,6 @@ def _normalise_chat_content(raw: object) -> str:
     return str(raw)
 
 
-def _build_focused_research_context(story: StoryORM) -> str:
-    """Build compact story context for a follow-up research pass."""
-    lines: list[str] = [
-        f"Title: {story.title}",
-        f"Topic: {story.topic}",
-        f"Tone: {story.tone}",
-        f"Status: {story.status}",
-    ]
-
-    if story.evaluation_data:
-        evaluation = story.evaluation_data
-        criteria = evaluation.get("criteria", {})
-        lines.extend([
-            "",
-            "EDITORIAL EVALUATION:",
-            f"- Overall score: {evaluation.get('overall_score', 0) * 100:.0f}%",
-            f"- Factual accuracy: {criteria.get('factual_accuracy', 0) * 100:.0f}%",
-            f"- Source diversity: {criteria.get('source_diversity', 0) * 100:.0f}%",
-            f"- Narrative coherence: {criteria.get('narrative_coherence', 0) * 100:.0f}%",
-            f"- Weaknesses: {'; '.join(evaluation.get('weaknesses', [])) or 'None listed'}",
-            f"- Improvement suggestions: {'; '.join(evaluation.get('improvement_suggestions', [])) or 'None listed'}",
-            f"- Evaluator notes: {evaluation.get('evaluator_notes', '') or 'None'}",
-        ])
-
-    if story.benchmark_data:
-        benchmark = story.benchmark_data
-        lines.extend([
-            "",
-            "BENCHMARK:",
-            f"- Grade: {benchmark.get('grade', '?')}",
-            f"- Similarity score: {benchmark.get('bi_similarity_score', 0) * 100:.0f}%",
-            f"- Data density: {benchmark.get('data_density', 0) * 100:.0f}%",
-            f"- Gaps: {'; '.join(benchmark.get('gaps', [])) or 'None listed'}",
-            f"- Strengths: {'; '.join(benchmark.get('strengths', [])) or 'None listed'}",
-        ])
-
-    if story.script_audit_data:
-        audit = story.script_audit_data
-        criteria = audit.get("criteria", {})
-        section_notes = []
-        for section in audit.get("section_audits", [])[:6]:
-            section_notes.append(
-                f"Section {section.get('section_number')}: {section.get('title')} "
-                f"- {section.get('rewrite_recommendation', '')}"
-            )
-        lines.extend([
-            "",
-            "SCRIPT AUDIT:",
-            f"- Grade: {audit.get('grade', '?')}",
-            f"- Overall score: {audit.get('overall_score', 0) * 100:.0f}%",
-            f"- Evidence and specificity: {criteria.get('evidence_and_specificity', 0) * 100:.0f}%",
-            f"- Ready for production: {'Yes' if audit.get('ready_for_production') else 'No'}",
-            f"- Rewrite priorities: {'; '.join(audit.get('rewrite_priorities', [])) or 'None listed'}",
-            f"- Weaknesses: {'; '.join(audit.get('weaknesses', [])) or 'None listed'}",
-            f"- Section recommendations: {' | '.join(section_notes) or 'None listed'}",
-        ])
-
-    if story.storyline_data:
-        storyline = story.storyline_data
-        acts = storyline.get("acts", [])
-        act_lines = [
-            f"Act {act.get('act_number')}: {act.get('act_title')} - "
-            f"{'; '.join(act.get('key_points', [])[:3])}"
-            for act in acts[:8]
-        ]
-        lines.extend([
-            "",
-            "STORYLINE:",
-            f"- Logline: {storyline.get('logline', '')}",
-            f"- Unique angle: {storyline.get('unique_angle', '')}",
-            f"- Acts: {' | '.join(act_lines) or 'None'}",
-        ])
-
-    if story.script_data:
-        script = story.script_data
-        sections = script.get("sections", [])
-        section_lines = [
-            f"Section {section.get('section_number')}: {section.get('title')}"
-            for section in sections[:8]
-        ]
-        lines.extend([
-            "",
-            "FINAL SCRIPT:",
-            f"- Logline: {script.get('logline', '')}",
-            f"- Opening hook: {script.get('opening_hook', '')}",
-            f"- Sections: {' | '.join(section_lines) or 'None'}",
-            f"- Closing: {script.get('closing_statement', '')}",
-        ])
-
-    if story.research_data:
-        sources = story.research_data.get("sources", [])
-        source_previews = [
-            f"{source.get('title', 'Untitled')} ({source.get('source_type', 'unknown')}, "
-            f"{source.get('credibility', 'medium')})"
-            for source in sources[:12]
-        ]
-        lines.extend([
-            "",
-            "EXISTING RESEARCH:",
-            f"- Total sources: {len(sources)}",
-            f"- Existing source previews: {' | '.join(source_previews) or 'None'}",
-        ])
-
-    return "\n".join(lines)
-
-
-def _merge_focused_research_into_story(story: StoryORM, run: FocusedResearchRun) -> dict[str, Any]:
-    """Append focused research results into the story research_data JSON payload."""
-    research_data = dict(story.research_data or {"topic": story.topic})
-    existing_sources = list(research_data.get("sources", []))
-    seen = {
-        (source.get("url") or source.get("title") or "").strip().lower()
-        for source in existing_sources
-    }
-
-    for source in run.sources:
-        source_payload = source.model_dump(mode="json")
-        key = (source_payload.get("url") or source_payload.get("title") or "").strip().lower()
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        existing_sources.append(source_payload)
-
-    runs = list(research_data.get("focused_research_runs", []))
-    runs.append({
-        "requested_at": datetime.now(timezone.utc).isoformat(),
-        "objective": run.plan.objective,
-        "summary": run.summary,
-        "source_count": len(run.sources),
-        "plan": run.plan.model_dump(mode="json"),
-    })
-
-    research_data["sources"] = existing_sources
-    research_data["total_sources"] = len(existing_sources)
-    research_data["focused_research_runs"] = runs[-10:]
-    return research_data
-
-
-# ── Background focused-research runner ───────────────────────────────────────
-
-async def _run_focused_research(story_id: str, objective: str) -> None:
-    """Run focused research in the background so it survives client navigation."""
-    from backend.db.database import AsyncSessionLocal
-
-    log.info("focused_research.bg_started", story_id=story_id)
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
-        story = result.scalar_one_or_none()
-        if not story:
-            log.warning("focused_research.story_missing", story_id=story_id)
-            return
-        try:
-            context = _build_focused_research_context(story)
-            agent = FocusedResearchAgent()
-            run = await agent.run(
-                topic=story.topic,
-                user_input=objective,
-                story_context=context,
-            )
-            research_data = _merge_focused_research_into_story(story, run)
-            research_data["focused_research_pending"] = False
-            research_data["focused_research_error"] = None
-            research_data["latest_focused_run"] = run.model_dump(mode="json")
-            await db.execute(
-                update(StoryORM)
-                .where(StoryORM.id == uuid.UUID(story_id))
-                .values(research_data=research_data)
-            )
-            await db.commit()
-            log.info(
-                "focused_research.bg_complete",
-                story_id=story_id,
-                sources=len(run.sources),
-            )
-        except Exception as exc:
-            log.error("focused_research.bg_failed", story_id=story_id, error=str(exc))
-            try:
-                err_result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
-                err_story = err_result.scalar_one_or_none()
-                if err_story:
-                    rd = dict(err_story.research_data or {})
-                    rd["focused_research_pending"] = False
-                    rd["focused_research_error"] = str(exc)
-                    await db.execute(
-                        update(StoryORM)
-                        .where(StoryORM.id == uuid.UUID(story_id))
-                        .values(research_data=rd)
-                    )
-                    await db.commit()
-            except Exception:
-                pass
-
-
 # ── Background pipeline runner ────────────────────────────────────────────────
 
 _NODE_STATUS_MAP: dict[str, StoryStatus] = {
@@ -468,7 +262,7 @@ _STATUS_PHASE_ORDER: dict[StoryStatus, int] = {
 
 def _status_for_completed_node(node_name: str, state: dict) -> Optional[StoryStatus]:
     """Decide what status the story should advance to after a node completes."""
-    if node_name == "angle_generator":
+    if node_name == "analyst" and state.get("generated_angles"):
         # If selected_angle is set (quality-gate restart path), don't pause —
         # the next node (storyline_creator) will move status forward instead.
         if state.get("selected_angle"):
@@ -512,7 +306,7 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
             stream_mode="updates",
         ):
             node_name = next(iter(chunk))
-            node_updates = chunk[node_name]
+            node_updates = chunk[node_name] or {}
             final_state.update(node_updates)
 
             new_status = _status_for_completed_node(node_name, final_state)
@@ -532,7 +326,7 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
         return
 
     # ── Paused at angle selection ─────────────────────────────────────────────
-    # If we have angles but no selection, the graph ended at the angle_generator
+    # If we have angles but no selection, the graph ended after the analyst
     # node. Persist research/analysis + angles and exit cleanly; the user will
     # resume via POST /stories/{id}/select-angle.
     if final_state.get("generated_angles") and not final_state.get("selected_angle"):
@@ -704,9 +498,8 @@ async def _run_pipeline_resume_after_angle_selection(story_id: str, selected_ang
 
 
 async def _run_regenerate_angles(story_id: str) -> None:
-    """Re-run just the angle generator using the persisted research/analysis."""
+    """Re-run the merged analyst/angle step using persisted research."""
     from backend.db.database import AsyncSessionLocal
-    from backend.agents.angle_generator import AngleGeneratorAgent
     from backend.models.research import ResearchPackage
 
     log.info("pipeline.regenerate_angles.started", story_id=story_id)
@@ -722,16 +515,16 @@ async def _run_regenerate_angles(story_id: str) -> None:
         "topic": story.topic,
         "tone": story.tone,
         "research_package": ResearchPackage(**story.research_data),
-        "analysis_result": AnalysisResult(**story.analysis_data),
     }
     try:
-        agent = AngleGeneratorAgent()
+        agent = AnalystAgent()
         updates = await agent.run(state)
     except Exception as exc:
         log.error("pipeline.regenerate_angles.error", story_id=story_id, error=str(exc))
         return
 
     angles = updates.get("generated_angles") or []
+    analysis = updates.get("analysis_result")
     async with AsyncSessionLocal() as db:
         await db.execute(
             update(StoryORM)
@@ -739,6 +532,7 @@ async def _run_regenerate_angles(story_id: str) -> None:
             .values(
                 angles_data=angles,
                 selected_angle=None,
+                analysis_data=analysis.model_dump(mode="json") if analysis else story.analysis_data,
                 status=StoryStatus.AWAITING_ANGLE_SELECTION,
             )
         )
@@ -1520,56 +1314,6 @@ async def get_research_sources(
         for s in sorted_sources
         if s.get("title")
     ]
-
-
-@router.post("/{story_id}/focused-research", status_code=202)
-async def start_focused_research(
-    story_id: uuid.UUID,
-    payload: FocusedResearchRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
-) -> dict:
-    """
-    Start a story-aware follow-up research pass in the background.
-
-    Returns 202 immediately. Poll GET /{story_id}/focused-research/status
-    to check progress and retrieve the completed run.
-    """
-    validate_user_input(payload.objective, field="objective")
-
-    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user)
-
-    research_data = dict(story.research_data or {"topic": story.topic})
-    research_data["focused_research_pending"] = True
-    research_data.pop("focused_research_error", None)
-    await db.execute(
-        update(StoryORM)
-        .where(StoryORM.id == story_id)
-        .values(research_data=research_data)
-    )
-    await db.commit()
-
-    background_tasks.add_task(_run_focused_research, story_id=str(story_id), objective=payload.objective)
-    log.info("stories.focused_research.queued", story_id=str(story_id))
-    return {"status": "started"}
-
-
-@router.get("/{story_id}/focused-research/status", response_model=FocusedResearchStatusResponse)
-async def get_focused_research_status(
-    story_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
-) -> FocusedResearchStatusResponse:
-    """Poll this endpoint to check if a focused research run is in progress or complete."""
-    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user)
-
-    rd = story.research_data or {}
-    pending = bool(rd.get("focused_research_pending", False))
-    error = rd.get("focused_research_error") or None
-    run_data = rd.get("latest_focused_run")
-    run = FocusedResearchRun.model_validate(run_data) if run_data and not pending else None
-    return FocusedResearchStatusResponse(pending=pending, error=error, run=run)
 
 
 @router.post("/{story_id}/chat", response_model=ChatResponse)

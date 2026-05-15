@@ -148,7 +148,6 @@ AI-Journalist/
 | `GET` | `/api/v1/stories/{id}` | Get story details + status |
 | `GET` | `/api/v1/stories/{id}/events` | Stream live story status updates |
 | `GET` | `/api/v1/stories/{id}/script` | Retrieve final script |
-| `POST` | `/api/v1/stories/{id}/focused-research` | Run a story-aware follow-up research pass |
 | `POST` | `/api/v1/stories/{id}/rewrite` | Run an audit-guided script rewrite |
 | `DELETE` | `/api/v1/stories/{id}` | Delete a story |
 

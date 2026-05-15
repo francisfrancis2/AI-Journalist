@@ -623,7 +623,7 @@ export default function NewStoryPage() {
 
                     {selectAngleMutation.isError && (
                       <p style={{ marginTop: 10, fontSize: 12, color: "var(--color-danger, #b42318)" }}>
-                        Couldn't submit your angle:{" "}
+                        Could not submit your angle:{" "}
                         {selectAngleMutation.error instanceof Error ? selectAngleMutation.error.message : "Unknown error"}.
                       </p>
                     )}

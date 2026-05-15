@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from textwrap import dedent
 
+from backend.services.prompt_loader import load_prompt
+
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -16,21 +18,26 @@ _ROOT = Path(__file__).resolve().parents[2]
 class ManualSource:
     title: str
     path: str
+    prompt_names: tuple[str, ...] = ()
     include_full_run_logic: bool = True
 
 
 _AGENT_SOURCES = [
-    ManualSource("Researcher Agent", "backend/agents/researcher.py"),
-    ManualSource("Analyst Agent", "backend/agents/analyst.py"),
-    ManualSource("Storyline Creator Agent", "backend/agents/storyline_creator.py"),
-    ManualSource("Evaluator Agent", "backend/agents/evaluator.py"),
-    ManualSource("Benchmark Agent", "backend/agents/benchmarker.py"),
-    ManualSource("Scriptwriter Agent", "backend/agents/scriptwriter.py"),
-    ManualSource("Script Evaluator Agent", "backend/agents/script_evaluator.py"),
+    ManualSource("Researcher Agent", "backend/agents/researcher.py", ("researcher",)),
+    ManualSource("Analyst Agent", "backend/agents/analyst.py", ("analyst",)),
+    ManualSource("Storyline Creator Agent", "backend/agents/storyline_creator.py", ("storyline_creator",)),
+    ManualSource("Evaluator Agent", "backend/agents/evaluator.py", ("evaluator",)),
+    ManualSource("Benchmark Agent", "backend/agents/benchmarker.py", ("benchmarker",)),
+    ManualSource("Scriptwriter Agent", "backend/agents/scriptwriter.py", ("scriptwriter",)),
+    ManualSource("Script Evaluator Agent", "backend/agents/script_evaluator.py", ("script_evaluator",)),
     ManualSource("Quality Gate Agent", "backend/agents/quality_gate.py"),
-    ManualSource("Script Rewriter Agent", "backend/agents/script_rewriter.py"),
-    ManualSource("Focused Research Agent", "backend/agents/focused_researcher.py"),
-    ManualSource("Corpus Builder Agent", "backend/agents/corpus_builder.py", include_full_run_logic=False),
+    ManualSource("Script Rewriter Agent", "backend/agents/script_rewriter.py", ("script_rewriter",)),
+    ManualSource(
+        "Corpus Builder Agent",
+        "backend/agents/corpus_builder.py",
+        ("corpus_builder_extract", "corpus_builder_synthesise"),
+        include_full_run_logic=False,
+    ),
 ]
 
 
@@ -195,10 +202,20 @@ def _agent_section(manual_source: ManualSource) -> str:
     if method_signatures:
         lines.extend(["### Main Methods", "", *[f"- `{signature}`" for signature in method_signatures], ""])
 
-    if prompt:
+    if manual_source.prompt_names:
+        lines.extend(["### Editable Prompt Files", ""])
+        for prompt_name in manual_source.prompt_names:
+            prompt_path = f"backend/prompts/{prompt_name}.md"
+            lines.extend([
+                f"**Prompt file:** `{prompt_path}`",
+                "",
+                _markdown_code_block("markdown", load_prompt(prompt_name)),
+                "",
+            ])
+    elif prompt:
         lines.extend(["### System Prompt", "", _markdown_code_block("text", prompt), ""])
     else:
-        lines.extend(["### System Prompt", "", "This agent does not define a `_SYSTEM_PROMPT` constant.", ""])
+        lines.extend(["### System Prompt", "", "This agent does not use an LLM system prompt.", ""])
 
     if schema_blocks:
         lines.extend(["### Output Schemas", ""])
@@ -269,7 +286,7 @@ def _settings_section() -> str:
         - `max_refinement_cycles`: storyline refinement attempts before scripting.
         - `max_script_revision_cycles`: post-script rewrite attempts.
         - `max_pipeline_cycles`: full research-to-script restart limit.
-        - `benchmark_default_rebuild_docs`: benchmark corpus rebuild size.
+        - `benchmark_default_rebuild_docs`: target docs per benchmark source; 125 gives a ~500-doc combined corpus.
         - `benchmark_corpus_stale_after_days`: corpus freshness threshold.
         """
     ).strip()
@@ -284,6 +301,8 @@ def build_agent_manual_markdown() -> str:
         f"Generated: {generated_at}",
         "",
         "This admin export is generated from source code. It includes prompts, output schemas, model settings, and core run/routing logic. It intentionally does not include environment variable values, API keys, passwords, or database connection strings.",
+        "",
+        "Editable prompts live in `backend/prompts/*.md`. The app loads those Markdown files when an agent calls the model.",
         "",
         _graph_section(),
         "",

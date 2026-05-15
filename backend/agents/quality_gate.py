@@ -1,12 +1,12 @@
 """
-QualityGateAgent — rule-based gate that controls full pipeline restart cycles.
+QualityGateAgent — rule-based gate for final script quality decisions.
 
 After script_evaluator runs, this node:
   1. Tracks the best script seen across cycles.
-  2. If the new score is ≥ threshold AND improving → marks pipeline complete.
+  2. If the best script score is ≥ threshold → marks pipeline complete.
   3. If score is below threshold OR is a regression:
-     - Below max cycles: builds a targeted ImprovementPlan and restarts from researcher.
-     - At max cycles: surfaces the best script with a failure summary.
+     - Restarts from researcher only when the audit shows genuine evidence gaps.
+     - Otherwise surfaces the best revised script with a failure summary.
   4. Detects technical failures (API errors, empty research) and flags them for
      admin notification via is_technical_failure.
 """
@@ -150,13 +150,68 @@ def _build_improvement_plan(
     )
 
 
+def _script_has_source_shortfall(script: Optional[FinalScript]) -> bool:
+    """Return True when the finished script is not sufficiently source-linked."""
+    if script is None or not script.sections:
+        return False
+
+    if len(script.sources) < settings.min_sources_required:
+        return True
+
+    linked_sections = sum(1 for section in script.sections if section.source_ids)
+    return (linked_sections / len(script.sections)) < 0.5
+
+
+def _requires_research_restart(
+    *,
+    state: dict,
+    audit: ScriptAuditReport,
+    plan: ImprovementPlan,
+    current_script: Optional[FinalScript],
+    technical_failure: bool,
+) -> bool:
+    """
+    Decide whether a full research restart is worth the time.
+
+    Most below-threshold scripts should be fixed by script_rewriter before this
+    gate runs. A full restart is reserved for missing evidence, weak sourcing,
+    or explicit upstream research needs.
+    """
+    if technical_failure:
+        return False
+
+    if state.get("needs_more_research"):
+        return True
+
+    evidence_score = audit.criteria.evidence_and_specificity
+    if evidence_score < 0.55 and plan.research_gaps:
+        return True
+
+    if evidence_score < 0.65 and _script_has_source_shortfall(current_script):
+        return True
+
+    research_terms = ("statistic", "data", "source", "evidence", "fact", "number", "verified")
+    return evidence_score < 0.65 and any(
+        any(term in gap.lower() for term in research_terms)
+        for gap in plan.research_gaps
+    )
+
+
 def _build_failure_summary(
     plan: ImprovementPlan,
     best_score: float,
     cycles_run: int,
     technical: bool,
+    rewrite_cycles: int = 0,
 ) -> str:
     reasons = "\n".join(f"• {r}" for r in plan.failure_reasons)
+    cycle_word = "cycle" if cycles_run == 1 else "cycles"
+    rewrite_clause = (
+        f" and {rewrite_cycles} targeted script rewrite "
+        f"{'pass' if rewrite_cycles == 1 else 'passes'}"
+        if rewrite_cycles
+        else ""
+    )
     prefix = (
         "**Technical failure detected** — the pipeline could not complete due to "
         "infrastructure or API errors. Please contact your administrator.\n\n"
@@ -165,7 +220,8 @@ def _build_failure_summary(
     )
     return (
         f"{prefix}"
-        f"The AI Journalist pipeline ran {cycles_run} full research-and-writing cycles "
+        f"The AI Journalist pipeline ran {cycles_run} full research-and-writing {cycle_word}"
+        f"{rewrite_clause} "
         f"but was unable to produce a script with a quality score above 70%. "
         f"The best result achieved was {best_score:.0%}.\n\n"
         f"**Reasons for failure:**\n{reasons}"
@@ -175,7 +231,7 @@ def _build_failure_summary(
 class QualityGateAgent:
     """
     Rule-based gate that decides whether the pipeline has produced a passing script
-    or should restart with a targeted improvement plan.
+    or should finish/restart with a targeted improvement plan.
 
     Returns a state patch with routing info in ``_quality_gate_route``.
     """
@@ -209,10 +265,7 @@ class QualityGateAgent:
             pipeline_cycle > 0  # not the first run
             and current_score < best_score  # strictly worse than the best we've seen
         )
-        passed = (
-            current_score >= settings.script_audit_score_threshold
-            and not is_regression
-        )
+        passed = best_score >= settings.script_audit_score_threshold
 
         updates: dict = {
             "best_script": best_script,
@@ -223,42 +276,17 @@ class QualityGateAgent:
         if passed:
             log.info(
                 "quality_gate.passed",
-                score=f"{current_score:.2f}",
+                score=f"{best_score:.2f}",
                 grade=audit.grade if audit else "?",
             )
             updates["pipeline_complete"] = True
+            updates["final_script"] = best_script or current_script
             updates["_quality_gate_route"] = "done"
             return updates
 
-        # ── Failed — decide whether to restart or give up ─────────────────────
-        if new_cycle >= settings.max_pipeline_cycles:
-            technical = _is_technical_failure(state)
-            plan = _build_improvement_plan(
-                cycle_number=new_cycle,
-                previous_score=current_score,
-                audit=audit or ScriptAuditReport(criteria=_empty_criteria()),
-                evaluation=evaluation,
-                is_regression=is_regression,
-            )
-            summary = _build_failure_summary(plan, best_score, new_cycle, technical)
-
-            log.warning(
-                "quality_gate.max_cycles_reached",
-                cycles=new_cycle,
-                best_score=f"{best_score:.2f}",
-                technical_failure=technical,
-            )
-            updates.update({
-                "pipeline_failure_summary": summary,
-                "is_technical_failure": technical,
-                "pipeline_complete": True,
-                # Surface the best script we have
-                "final_script": best_script or current_script,
-                "_quality_gate_route": "done",
-            })
-            return updates
-
-        # ── Restart with targeted improvement plan ────────────────────────────
+        # ── Failed — prefer finishing with the best revised script unless more
+        # research is genuinely required.
+        technical = _is_technical_failure(state)
         plan = _build_improvement_plan(
             cycle_number=new_cycle,
             previous_score=current_score,
@@ -266,24 +294,65 @@ class QualityGateAgent:
             evaluation=evaluation,
             is_regression=is_regression,
         )
+
+        can_restart_for_research = (
+            audit is not None
+            and new_cycle < settings.max_pipeline_cycles
+            and _requires_research_restart(
+                state=state,
+                audit=audit,
+                plan=plan,
+                current_script=current_script,
+                technical_failure=technical,
+            )
+        )
+
+        if can_restart_for_research:
+            # ── Restart with targeted research guidance ───────────────────────
+            log.info(
+                "quality_gate.restart_for_research",
+                cycle=new_cycle,
+                research_gaps=len(plan.research_gaps),
+                script_directives=len(plan.script_directives),
+            )
+            updates.update({
+                "quality_improvement_plan": plan,
+                "pipeline_complete": False,
+                # Reset per-cycle counters so downstream agents run fresh
+                "research_iteration": 0,
+                "refinement_cycle": 0,
+                "script_revision_cycle": 0,
+                "approved_for_scripting": False,
+                "needs_more_research": False,
+                "final_script": None,
+                "script_audit_report": None,
+                "_quality_gate_route": "restart",
+            })
+            return updates
+
+        summary = _build_failure_summary(
+            plan,
+            best_score,
+            new_cycle,
+            technical,
+            rewrite_cycles=state.get("script_revision_cycle", 0),
+        )
         log.info(
-            "quality_gate.restart",
+            "quality_gate.finished_below_threshold",
             cycle=new_cycle,
+            best_score=f"{best_score:.2f}",
+            technical_failure=technical,
             research_gaps=len(plan.research_gaps),
             script_directives=len(plan.script_directives),
         )
         updates.update({
             "quality_improvement_plan": plan,
-            "pipeline_complete": False,
-            # Reset per-cycle counters so downstream agents run fresh
-            "research_iteration": 0,
-            "refinement_cycle": 0,
-            "script_revision_cycle": 0,
-            "approved_for_scripting": False,
-            "needs_more_research": False,
-            "final_script": None,
-            "script_audit_report": None,
-            "_quality_gate_route": "restart",
+            "pipeline_failure_summary": summary,
+            "is_technical_failure": technical,
+            "pipeline_complete": True,
+            # Surface the best script we have
+            "final_script": best_script or current_script,
+            "_quality_gate_route": "done",
         })
         return updates
 

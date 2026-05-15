@@ -5,6 +5,7 @@ The LangGraph pipeline is NOT invoked in these tests — we test the API layer o
 """
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
@@ -632,6 +633,48 @@ class TestAdminEndpoints:
         data = response.json()
         assert any(service["name"] == "google_news_rss" for service in data["services"])
 
+    @pytest.mark.asyncio
+    async def test_list_notifications_cleans_up_old_read_entries(self, api_client, db_session):
+        from backend.models.notification import AdminNotificationORM
+
+        old_read = AdminNotificationORM(
+            story_id=None,
+            level="info",
+            title="Old read notification",
+            message="Should be cleaned up.",
+            is_read=True,
+            created_at=datetime.now(timezone.utc) - timedelta(days=120),
+            read_at=datetime.now(timezone.utc) - timedelta(days=100),
+        )
+        old_unread = AdminNotificationORM(
+            story_id=None,
+            level="warning",
+            title="Old unread notification",
+            message="Should remain because it is unread.",
+            is_read=False,
+            created_at=datetime.now(timezone.utc) - timedelta(days=120),
+            read_at=None,
+        )
+        recent_read = AdminNotificationORM(
+            story_id=None,
+            level="info",
+            title="Recent read notification",
+            message="Should remain because it is recent.",
+            is_read=True,
+            created_at=datetime.now(timezone.utc) - timedelta(days=10),
+            read_at=datetime.now(timezone.utc) - timedelta(days=5),
+        )
+        db_session.add_all([old_read, old_unread, recent_read])
+        await db_session.commit()
+
+        response = await api_client.get("/api/v1/admin/notifications")
+
+        assert response.status_code == 200
+        titles = {item["title"] for item in response.json()}
+        assert "Old read notification" not in titles
+        assert "Old unread notification" in titles
+        assert "Recent read notification" in titles
+
 
 class TestBenchmarkEndpoints:
     @pytest.mark.asyncio
@@ -693,9 +736,9 @@ class TestBenchmarkEndpoints:
         data = response.json()
         assert data["accepted"] is True
         assert data["library_key"] == "combined"
-        assert data["requested_docs"] == 50
+        assert data["requested_docs"] == 125
         rebuild.assert_awaited_once_with(
             library_key="combined",
-            max_docs=50,
+            max_docs=125,
             refresh_fraction=0.25,
         )

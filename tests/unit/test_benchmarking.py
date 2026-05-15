@@ -96,6 +96,112 @@ async def test_corpus_builder_does_not_save_empty_library(db_session):
 
 
 @pytest.mark.asyncio
+async def test_corpus_build_expands_existing_library_to_target(
+    db_session, monkeypatch, tmp_path
+):
+    from backend.agents.corpus_builder import CorpusBuilderAgent
+    from backend.config import settings
+    from backend.models.benchmark import BIPatternLibraryORM, BIReferenceDocORM, DocStructure
+
+    monkeypatch.setattr(settings, "bi_pattern_cache_path", str(tmp_path / "bi_patterns.json"))
+
+    def structure(index: int = 0) -> DocStructure:
+        return DocStructure(
+            hook_type="stat",
+            hook_text=f"Hook {index}",
+            act_count=4,
+            act_titles=["One", "Two", "Three", "Four"],
+            act_durations_seconds=[120, 120, 120, 120],
+            has_human_story=True,
+            human_story_act=2,
+            closing_device="forward_look",
+            stat_count=5,
+            rhetorical_question_count=1,
+            title_formula="how_x_became_y",
+        )
+
+    for index in range(3):
+        db_session.add(
+            BIReferenceDocORM(
+                library_key="bi",
+                youtube_id=f"old-{index}",
+                title=f"Old reference {index}",
+                description="Old reference",
+                view_count=1_000 + index,
+                like_count=100 + index,
+                duration_seconds=600,
+                transcript="Existing transcript",
+                extracted_structure=structure(index).model_dump(),
+            )
+        )
+    await db_session.commit()
+
+    class ExpansionFetcher:
+        async def get_channel_videos(
+            self, channel_id: str, max_results: int, order: str = "viewCount"
+        ) -> list[dict]:
+            return [
+                {
+                    "id": f"new-{index}",
+                    "title": f"New reference {index}",
+                    "description": "New reference",
+                    "view_count": 2_000 + index,
+                    "like_count": 200 + index,
+                    "duration_seconds": 700,
+                }
+                for index in range(10)
+            ]
+
+        async def get_transcripts_batch(
+            self, video_ids: list[str], concurrency: int = 5
+        ) -> dict[str, str]:
+            return {video_id: "Fresh transcript" for video_id in video_ids}
+
+    agent = CorpusBuilderAgent.__new__(CorpusBuilderAgent)
+    agent._db = db_session
+    agent._fetcher = ExpansionFetcher()
+
+    async def fake_extract(title: str, transcript: str) -> DocStructure:
+        return structure(100)
+
+    async def fake_synthesise(
+        docs: list[BIReferenceDocORM],
+        structures: list[DocStructure],
+        titles: list[str],
+        channel_label: str = "Business Insider",
+    ) -> BIPatternLibrary:
+        library = _library(doc_count=len(structures))
+        library.sample_titles = titles
+        return library
+
+    agent._extract_structure = fake_extract
+    agent._synthesise_patterns = fake_synthesise
+
+    library = await agent.build(
+        max_docs=5,
+        library_key="bi",
+        channel_identifier="test-channel",
+    )
+
+    assert library.doc_count == 5
+
+    docs_result = await db_session.execute(
+        select(BIReferenceDocORM).where(BIReferenceDocORM.library_key == "bi")
+    )
+    docs = docs_result.scalars().all()
+    ids = {doc.youtube_id for doc in docs}
+
+    assert len(docs) == 5
+    assert {"new-0", "new-1"}.issubset(ids)
+    assert "new-2" not in ids
+
+    library_result = await db_session.execute(select(BIPatternLibraryORM))
+    library_rows = library_result.scalars().all()
+    assert len(library_rows) == 1
+    assert library_rows[0].doc_count == 5
+
+
+@pytest.mark.asyncio
 async def test_corpus_refresh_replaces_only_one_quarter_with_fresh_videos(
     db_session, monkeypatch, tmp_path
 ):

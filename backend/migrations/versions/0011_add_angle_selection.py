@@ -23,7 +23,7 @@ def _is_postgres() -> bool:
 
 def upgrade() -> None:
     # angles_data: list of {angle: str, framing_axis: str} objects produced by the
-    # angle_generator agent. selected_angle: the angle the user picked, also
+    # merged analyst/angle step. selected_angle: the angle the user picked, also
     # echoed into the scriptwriter and storyline_creator prompts as the
     # primary creative directive.
     if _is_postgres():

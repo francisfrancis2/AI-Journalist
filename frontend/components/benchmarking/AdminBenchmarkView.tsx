@@ -110,7 +110,7 @@ export function AdminBenchmarkView({ embedded = false }: { embedded?: boolean } 
           {
             label: "Reference docs",
             value: activeLibrary?.doc_count ?? 0,
-            sub: `Recommended minimum ${activeLibrary?.minimum_doc_count ?? 20}`,
+            sub: `Target ${activeLibrary?.target_doc_count ?? 500}`,
           },
           {
             label: "Freshness",
@@ -135,7 +135,7 @@ export function AdminBenchmarkView({ embedded = false }: { embedded?: boolean } 
       <div className="card" style={{ padding: "18px 20px" }}>
         <div className="section-rule"><span>Corpus rebuild</span></div>
         <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: 14 }}>
-          Refresh up to 25% of each healthy corpus with the newest usable videos from Business Insider, CNBC Make It, Vox, and Johnny Harris. Missing corpora still run a full build.
+          Expand the combined corpus toward 500 usable reference docs: up to 125 each from Business Insider, CNBC Make It, Vox, and Johnny Harris. Sources already at target rotate their freshest 25% of usable videos.
         </p>
         <button
           onClick={() => rebuildMutation.mutate()}
@@ -143,8 +143,8 @@ export function AdminBenchmarkView({ embedded = false }: { embedded?: boolean } 
           disabled={buildBusy}
         >
           {buildBusy
-            ? <><Loader2 size={13} className="animate-spin" />{status?.build_in_progress ? "Refresh running…" : "Starting…"}</>
-            : <><RefreshCw size={13} />Refresh benchmark corpus</>}
+            ? <><Loader2 size={13} className="animate-spin" />{status?.build_in_progress ? "Rebuild running…" : "Starting…"}</>
+            : <><RefreshCw size={13} />Rebuild benchmark corpus</>}
         </button>
         {rebuildMutation.isError && (
           <p style={{ fontSize: 12, color: "var(--color-danger)", marginTop: 10 }}>

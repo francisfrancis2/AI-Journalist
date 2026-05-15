@@ -73,28 +73,6 @@ class ResearchPackage(BaseModel):
         return sorted(self.sources, key=lambda s: s.relevance_score, reverse=True)[:n]
 
 
-# ── Focused follow-up research ────────────────────────────────────────────────
-
-class FocusedResearchPlan(BaseModel):
-    """Story-aware plan for a follow-up research pass."""
-    objective: str
-    evaluation_focus: list[str] = Field(default_factory=list)
-    source_strategy: list[str] = Field(default_factory=list)
-    source_strategy_reasoning: str = ""
-    primary_queries: list[str] = Field(default_factory=list)
-    deep_dive_queries: list[str] = Field(default_factory=list)
-    financial_symbols: list[str] = Field(default_factory=list)
-    rss_keyword: str = ""
-    expected_improvements: list[str] = Field(default_factory=list)
-
-
-class FocusedResearchRun(BaseModel):
-    """Result returned by the focused research agent."""
-    plan: FocusedResearchPlan
-    summary: str
-    sources: list[RawSource] = Field(default_factory=list)
-
-
 # ── Analysis ──────────────────────────────────────────────────────────────────
 
 class KeyFinding(BaseModel):

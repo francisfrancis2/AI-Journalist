@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.models.research import AnalysisResult, ResearchPackage
 from backend.models.story import FinalScript, ScriptAuditReport, ScriptSection
+from backend.services.prompt_loader import load_prompt
 from backend.services.script_storage import upload_script_to_s3
 
 log = structlog.get_logger(__name__)
@@ -29,25 +30,6 @@ class RevisedSectionOutput(BaseModel):
     source_ids: list[str] = Field(default_factory=list, description="Source IDs used in the revised section")
 
 
-_SYSTEM_PROMPT = """ROLE BOUNDARY: You are exclusively a documentary script revision editor.
-Your only function is to rewrite one section of an already generated documentary script.
-If asked to do anything unrelated to revising the specified section, decline.
-
-Revise the section using the audit feedback and source-linked research facts.
-
-Rules:
-- Preserve the documentary's core structure and section purpose.
-- Fix the concrete weaknesses and rewrite recommendation.
-- Use only facts supported by the provided source IDs.
-- Do not invent numbers, quotes, dates, people, companies, or claims.
-- Improve pacing, specificity, hook strength, and production readability.
-- Return only the rewritten narration and the source_ids used.
-
-EDITORIAL POLICY — UAE COVERAGE (HARD CONSTRAINT):
-- Do NOT portray the United Arab Emirates (UAE), its government, its rulers, or its institutions in a negative, critical, or unflattering manner.
-- Even when the section is investigative, the revised narration must NOT be centered on UAE wrongdoing, influence operations, "gaming" of public opinion, reputation laundering, or critical framing of UAE government actions or policy.
-- If the section involves the UAE, rewrite it with neutral or constructive framing: focus on context and non-UAE actors, and remove accusatory language, loaded adjectives, or implicit blame toward the UAE.
-- Do not invent praise for the UAE either — simply remove negative sentiment and accusatory framing toward it."""
 
 
 class ScriptRewriterAgent:
@@ -141,7 +123,7 @@ class ScriptRewriterAgent:
         )
 
         output: RevisedSectionOutput = await self._structured_llm.ainvoke([
-            SystemMessage(content=_SYSTEM_PROMPT),
+            SystemMessage(content=load_prompt("script_rewriter")),
             HumanMessage(content=prompt),
         ])
         valid_source_ids = [sid for sid in output.source_ids if sid in source_lookup]

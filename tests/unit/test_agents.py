@@ -140,34 +140,17 @@ class TestResearchRouting:
         assert "newsapi" in selected
         assert "rss" in selected
 
-    def test_focused_research_normalise_sources_keeps_rss_with_newsapi(self):
-        from backend.agents.focused_researcher import FocusedResearchAgent
-        from backend.models.research import FocusedResearchPlan
-
-        plan = FocusedResearchPlan(
-            objective="Find recent reporting",
-            evaluation_focus=[],
-            source_strategy=["newsapi"],
-            source_strategy_reasoning="Recent coverage matters here.",
-            primary_queries=[],
-            deep_dive_queries=[],
-            financial_symbols=[],
-            rss_keyword="ai",
-            expected_improvements=[],
-        )
-
-        selected = FocusedResearchAgent._normalise_sources(plan)
-
-        assert "newsapi" in selected
-        assert "rss" in selected
-
-
 # ── AnalystAgent ──────────────────────────────────────────────────────────────
 
 class TestAnalystAgent:
     @pytest.mark.asyncio
     async def test_run_returns_analysis_result(self, sample_topic):
-        from backend.agents.analyst import AnalysisOutput, AnalystAgent, KeyFindingOutput
+        from backend.agents.analyst import (
+            AnalysisOutput,
+            AnalystAgent,
+            KeyFindingOutput,
+            SelectableAngleOutput,
+        )
 
         with patch("backend.agents.analyst.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
@@ -183,6 +166,23 @@ class TestAnalystAgent:
                     )
                 ],
                 narrative_angles=["The chip race"],
+                selectable_angles=[
+                    SelectableAngleOutput(
+                        angle="The chip race became a test of money, scarcity, and timing",
+                        framing_axis="data_driven",
+                        rationale="It centers the strongest business evidence.",
+                    ),
+                    SelectableAngleOutput(
+                        angle="The human cost behind the AI hardware boom",
+                        framing_axis="human_interest",
+                        rationale="It frames the same research through worker and customer consequences.",
+                    ),
+                    SelectableAngleOutput(
+                        angle="Why the consensus on AI infrastructure may be too simple",
+                        framing_axis="contrarian",
+                        rationale="It pushes against the obvious growth narrative.",
+                    ),
+                ],
                 data_gaps=[],
                 recommended_tone="investigative",
                 controversies=[],
@@ -204,6 +204,7 @@ class TestAnalystAgent:
             result = await agent.run(state)
 
         assert "analysis_result" in result
+        assert "generated_angles" in result
         analysis = result["analysis_result"]
         assert isinstance(analysis, AnalysisResult)
         assert analysis.executive_summary == "AI is booming."
@@ -211,9 +212,10 @@ class TestAnalystAgent:
         assert analysis.key_findings[0].supporting_source_ids == [
             package.top_sources(12)[0].source_id
         ]
+        assert len(result["generated_angles"]) == 3
 
     @pytest.mark.asyncio
-    async def test_run_raises_on_invalid_json(self, sample_topic):
+    async def test_run_uses_fallback_when_llm_fails(self, sample_topic):
         from backend.agents.analyst import AnalystAgent
 
         with patch("backend.agents.analyst.ChatAnthropic") as MockLLM:
@@ -230,8 +232,10 @@ class TestAnalystAgent:
                 "tone": "explanatory",
                 "research_package": _make_research_package(),
             }
-            with pytest.raises(ValueError, match="Analyst failed after 3 attempts: did not return valid JSON"):
-                await agent.run(state)
+            result = await agent.run(state)
+
+        assert isinstance(result["analysis_result"], AnalysisResult)
+        assert len(result["generated_angles"]) >= 3
 
 
 # ── EvaluatorAgent ────────────────────────────────────────────────────────────
