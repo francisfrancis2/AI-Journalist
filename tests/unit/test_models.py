@@ -281,7 +281,7 @@ class TestStoryCreate:
     def test_valid_creation(self):
         story = StoryCreate(topic="This is a valid topic of sufficient length.")
         assert story.tone == StoryTone.EXPLANATORY
-        assert story.target_duration_minutes == 12
+        assert story.target_duration_minutes == 10
         assert story.target_audience is None
 
     def test_valid_targeting_options(self):

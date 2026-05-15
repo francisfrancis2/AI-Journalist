@@ -22,6 +22,18 @@ _MIN_DURATION_SECONDS = 180
 _MAX_DURATION_SECONDS = 3600
 
 
+def _classify_transcript_error(exc: Exception) -> str:
+    """Return a stable category for transcript fetch failures."""
+    message = str(exc).lower()
+    if "429" in message or "too many requests" in message or "rate limit" in message:
+        return "youtube_rate_limited"
+    if "transcriptsdisabled" in message or "transcripts disabled" in message:
+        return "youtube_transcripts_disabled"
+    if "notranscriptfound" in message or "no transcript" in message:
+        return "youtube_transcript_missing"
+    return "youtube_transcript_error"
+
+
 def _parse_iso_duration(duration: str) -> int:
     """Convert ISO 8601 duration string (e.g. PT10M30S) to total seconds."""
     match = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration)
@@ -34,13 +46,42 @@ def _parse_iso_duration(duration: str) -> int:
 
 
 def _fetch_transcript_via_yta(video_id: str) -> Optional[str]:
-    """Fetch transcript using youtube-transcript-api (direct YouTube captions)."""
+    """Fetch transcript using youtube-transcript-api (direct YouTube captions).
+
+    Handles both the v1.x instance API (YouTubeTranscriptApi().fetch(...)) and
+    the legacy classmethod API (YouTubeTranscriptApi.get_transcript(...))
+    so a transient pin bump doesn't break the corpus rebuild.
+    """
+    languages = ["en", "en-US", "en-GB"]
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=["en", "en-US", "en-GB"])
-        return " ".join(entry["text"] for entry in transcript_list if entry.get("text", "").strip())
+        from youtube_transcript_api import YouTubeTranscriptApi  # noqa: F401
+
+        # New instance-based API (youtube-transcript-api >= 1.0)
+        if hasattr(YouTubeTranscriptApi, "fetch") or not hasattr(YouTubeTranscriptApi, "get_transcript"):
+            api = YouTubeTranscriptApi()
+            fetched = api.fetch(video_id, languages=languages)
+            parts: list[str] = []
+            for snippet in fetched:
+                text = getattr(snippet, "text", None)
+                if text is None and isinstance(snippet, dict):
+                    text = snippet.get("text")
+                if text and str(text).strip():
+                    parts.append(str(text))
+            return " ".join(parts) if parts else None
+
+        # Legacy classmethod API (youtube-transcript-api < 1.0)
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+        return " ".join(
+            entry["text"] for entry in transcript_list
+            if isinstance(entry, dict) and entry.get("text", "").strip()
+        )
     except Exception as exc:
-        log.warning("youtube_fetcher.yta_failed", video_id=video_id, error=str(exc))
+        log.warning(
+            "youtube_fetcher.yta_failed",
+            video_id=video_id,
+            error=str(exc),
+            category=_classify_transcript_error(exc),
+        )
         return None
 
 

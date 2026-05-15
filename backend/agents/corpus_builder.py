@@ -25,7 +25,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
-from backend.db.database import AsyncSessionLocal
 from backend.models.benchmark import (
     BIPatternLibrary,
     BIPatternLibraryORM,
@@ -177,15 +176,14 @@ class CorpusBuilderAgent:
         )
 
     async def _get_next_version(self, library_key: str) -> int:
-        async with AsyncSessionLocal() as session:
-            result = await session.execute(
-                select(BIPatternLibraryORM)
-                .where(BIPatternLibraryORM.library_key == library_key)
-                .order_by(BIPatternLibraryORM.version.desc())
-                .limit(1)
-            )
-            latest = result.scalar_one_or_none()
-            return (latest.version + 1) if latest else 1
+        result = await self._db.execute(
+            select(BIPatternLibraryORM)
+            .where(BIPatternLibraryORM.library_key == library_key)
+            .order_by(BIPatternLibraryORM.version.desc())
+            .limit(1)
+        )
+        latest = result.scalar_one_or_none()
+        return (latest.version + 1) if latest else 1
 
     async def _save_library(
         self, library: BIPatternLibrary, library_key: str
@@ -209,9 +207,8 @@ class CorpusBuilderAgent:
             patterns=library.model_dump(),
             created_at=datetime.now(timezone.utc),
         )
-        async with AsyncSessionLocal() as session:
-            session.add(orm)
-            await session.commit()
+        self._db.add(orm)
+        await self._db.commit()
 
         # Write JSON cache for fast loading in BenchmarkAgent
         cache_path = Path(settings.get_pattern_cache_path(library_key))
@@ -251,13 +248,12 @@ class CorpusBuilderAgent:
         channel_id = channel_identifier or settings.get_channel_identifier(library_key)
         fraction = min(max(refresh_fraction, 0.0), 1.0)
 
-        async with AsyncSessionLocal() as session:
-            existing_result = await session.execute(
-                select(BIReferenceDocORM)
-                .where(BIReferenceDocORM.library_key == library_key)
-                .order_by(BIReferenceDocORM.created_at.asc())
-            )
-            existing_docs = list(existing_result.scalars().all())
+        existing_result = await self._db.execute(
+            select(BIReferenceDocORM)
+            .where(BIReferenceDocORM.library_key == library_key)
+            .order_by(BIReferenceDocORM.created_at.asc())
+        )
+        existing_docs = list(existing_result.scalars().all())
         if len(existing_docs) < settings.bi_corpus_min_docs or fraction <= 0:
             log.info(
                 "corpus_builder.refresh_fallback_full_build",
@@ -401,11 +397,10 @@ class CorpusBuilderAgent:
             new_docs, structures, titles, channel_label=channel_label
         )
 
-        async with AsyncSessionLocal() as session:
-            for doc in docs_to_replace:
-                await session.delete(await session.merge(doc))
-            session.add_all(new_docs)
-            await session.commit()
+        for doc in docs_to_replace:
+            await self._db.delete(doc)
+        self._db.add_all(new_docs)
+        await self._db.commit()
         await self._save_library(library, library_key=library_key)
 
         log.info(
@@ -446,16 +441,15 @@ class CorpusBuilderAgent:
 
         # 1. Load already extracted docs so rebuilds expand toward the target
         #    instead of endlessly adding another full batch on every run.
-        async with AsyncSessionLocal() as session:
-            existing_docs_result = await session.execute(
-                select(BIReferenceDocORM)
-                .where(BIReferenceDocORM.library_key == library_key)
-                .order_by(
-                    BIReferenceDocORM.view_count.desc(),
-                    BIReferenceDocORM.created_at.desc(),
-                )
+        existing_docs_result = await self._db.execute(
+            select(BIReferenceDocORM)
+            .where(BIReferenceDocORM.library_key == library_key)
+            .order_by(
+                BIReferenceDocORM.view_count.desc(),
+                BIReferenceDocORM.created_at.desc(),
             )
-            existing_docs = list(existing_docs_result.scalars().all())
+        )
+        existing_docs = list(existing_docs_result.scalars().all())
 
         structures: list[DocStructure] = []
         titles: list[str] = []
@@ -535,9 +529,8 @@ class CorpusBuilderAgent:
                     extracted_structure=structure.model_dump(),
                     created_at=datetime.now(timezone.utc),
                 )
-                async with AsyncSessionLocal() as session:
-                    session.add(doc)
-                    await session.commit()
+                self._db.add(doc)
+                await self._db.commit()
 
                 structures.append(structure)
                 titles.append(video["title"])

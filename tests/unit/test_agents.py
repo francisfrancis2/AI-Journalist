@@ -21,6 +21,7 @@ from backend.models.research import (
     StorylineProposal,
 )
 from backend.models.benchmark import BenchmarkReport
+from backend.services.benchmarking import BenchmarkLibraryStatus
 from backend.models.story import StoryTone
 from backend.models.story import FinalScript, ScriptSection
 
@@ -558,7 +559,21 @@ class TestScriptEvaluatorAgent:
                 ),
             }
 
-            with patch.object(agent, "_load_library", return_value=None):
+            with patch(
+                "backend.agents.script_evaluator.load_active_benchmark_library",
+                new=AsyncMock(return_value=(
+                    None,
+                    BenchmarkLibraryStatus(
+                        key="combined",
+                        label="Benchmark Corpus",
+                        description="",
+                        implemented=True,
+                        active=True,
+                        available=False,
+                        ready_for_scoring=False,
+                    ),
+                )),
+            ):
                 result = await agent.run(state)
 
         assert "script_audit_report" in result

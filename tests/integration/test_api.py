@@ -246,7 +246,7 @@ class TestStoriesList:
                 title="Bob story",
                 topic="A valid topic for Bob admin visibility testing",
                 status=StoryStatus.COMPLETED,
-                tone=StoryTone.PROFILE,
+                tone=StoryTone.NARRATIVE,
                 owner_user_id=bob.id,
             ),
         ])
@@ -266,7 +266,7 @@ class TestStoriesGet:
         mocker.patch("backend.api.routes.stories._run_pipeline")
         create_resp = await api_client.post(
             "/api/v1/stories/",
-            json={"topic": "A valid topic for integration testing", "tone": "trend"},
+            json={"topic": "A valid topic for integration testing", "tone": "investigative"},
         )
         story_id = create_resp.json()["id"]
 
@@ -317,7 +317,7 @@ class TestStoriesGet:
         mocker.patch("backend.api.routes.stories._run_pipeline")
         create_resp = await api_client.post(
             "/api/v1/stories/",
-            json={"topic": "A valid topic for integration testing", "tone": "profile"},
+            json={"topic": "A valid topic for integration testing", "tone": "narrative"},
         )
         story_id = create_resp.json()["id"]
 
@@ -400,7 +400,7 @@ class TestStoryRewrite:
             title="No script yet",
             topic="A valid topic for rewrite rejection testing",
             status=StoryStatus.COMPLETED,
-            tone=StoryTone.PROFILE,
+            tone=StoryTone.NARRATIVE,
             analysis_data={"topic": "x", "executive_summary": "x", "key_findings": []},
             research_data={"topic": "x", "sources": [], "total_sources": 0},
         )
