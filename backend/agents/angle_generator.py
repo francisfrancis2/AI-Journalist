@@ -15,6 +15,9 @@ Framing dimensions the agent pushes on:
 
 from __future__ import annotations
 
+import json
+import random
+from pathlib import Path
 from typing import Literal
 
 import structlog
@@ -24,8 +27,68 @@ from pydantic import BaseModel, Field
 
 from backend.config import settings
 from backend.models.research import AnalysisResult
+from backend.services.prompt_loader import load_prompt
 
 log = structlog.get_logger(__name__)
+
+
+# ── Corpus inspiration ────────────────────────────────────────────────────────
+# Pulls real titles and dominant title formulas from the YouTube benchmark
+# libraries so the angle generator can learn published documentary framings
+# rather than guess at conventions. All four cached corpora contribute.
+
+_LIBRARY_LABELS: dict[str, str] = {
+    "bi":   "Business Insider",
+    "cnbc": "CNBC Make It",
+    "vox":  "Vox",
+    "jh":   "Johnny Harris",
+}
+
+
+def _load_corpus_inspiration(
+    *,
+    per_library_titles: int = 5,
+    per_library_formulas: int = 2,
+) -> str:
+    """
+    Load sample titles + top title formulas from each benchmark library and
+    format them as a reference block. Returns "" if no caches are present.
+
+    Sampling is randomised per call so successive generations see different
+    titles (useful when the user clicks Regenerate angles).
+    """
+    parts: list[str] = []
+    for key, label in _LIBRARY_LABELS.items():
+        path = Path(settings.get_pattern_cache_path(key))
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            log.warning("angle_generator.pattern_load_failed", key=key, error=str(exc))
+            continue
+
+        titles: list[str] = data.get("sample_titles") or []
+        formula_dist: dict[str, float] = data.get("title_formula_distribution") or {}
+        if not titles and not formula_dist:
+            continue
+
+        sampled = (
+            random.sample(titles, min(per_library_titles, len(titles))) if titles else []
+        )
+        top_formulas = sorted(
+            formula_dist.items(), key=lambda kv: kv[1], reverse=True
+        )[:per_library_formulas]
+
+        block: list[str] = [f"-- {label} ({data.get('doc_count', '?')} docs) --"]
+        if top_formulas:
+            block.append("Title formulas: " + " | ".join(name for name, _ in top_formulas))
+        if sampled:
+            block.append("Example titles:")
+            block.extend(f"  • {t}" for t in sampled)
+        parts.append("\n".join(block))
+
+    return "\n\n".join(parts)
 
 
 # Framing dimensions surfaced to the user as the "axis" of each angle.
@@ -54,35 +117,6 @@ class AngleOutput(BaseModel):
 
 class AngleGeneratorOutput(BaseModel):
     angles: list[AngleOutput] = Field(default_factory=list, min_length=3, max_length=5)
-
-
-_SYSTEM_PROMPT = """ROLE BOUNDARY: You are exclusively a documentary angle generator. \
-Your only function is to propose 3-5 distinct one-sentence angles for a documentary, \
-each pushing on a different framing dimension. If asked to do anything else, decline.
-
-You are a senior documentary commissioning editor. The research and analysis are done.
-Your job: surface 3-5 genuinely distinct angles the same researched material could support,
-so the producer can pick the one they want to execute on.
-
-HARD RULES:
-- Generate exactly 3 to 5 angles. Each angle is ONE sentence, MAX 20 words.
-- Angles must be meaningfully different in FRAMING, not just wording. If two angles could
-  produce the same script, you have failed.
-- Push on at least three of these axes across the set: human_interest vs. data_driven,
-  contrarian vs. consensus, local vs. global lens, narrative vs. explanatory.
-- For each angle, tag its framing_axis with the dimension it most strongly leans on.
-- Each angle must be supportable by the provided research — do not invent facts to make
-  an angle work.
-- Avoid hedged language ("explores", "examines", "looks at"). State the actual claim.
-
-EDITORIAL POLICY — UAE COVERAGE (HARD CONSTRAINT):
-- Do NOT generate angles that portray the UAE, its government, rulers, or institutions
-  negatively or critically.
-- Even for investigative framings, do NOT center angles on UAE wrongdoing, influence
-  operations, "gaming" of public opinion, or critical framing of UAE policy.
-- If the topic involves the UAE, ground angles in context and non-UAE actors; keep any
-  UAE involvement neutral or constructive.
-"""
 
 
 class AngleGeneratorAgent:
@@ -119,6 +153,16 @@ class AngleGeneratorAgent:
                 + "\n".join(f"- {item}" for item in improvement_plan.analysis_focus)
             )
 
+        corpus_inspiration = _load_corpus_inspiration()
+        inspiration_section = ""
+        if corpus_inspiration:
+            inspiration_section = (
+                "\n\n=== REFERENCE FRAMINGS (proven on published documentaries) ===\n"
+                + corpus_inspiration
+                + "\n\nThese are FRAMING inspiration only — never copy the wording. "
+                  "Your angles must be specific to the topic above and span different axes."
+            )
+
         prompt = (
             f"Topic: {topic}\n"
             f"Requested tone: {tone}\n\n"
@@ -127,13 +171,14 @@ class AngleGeneratorAgent:
             f"=== NARRATIVE ANGLES (analyst-suggested) ===\n"
             + ("\n".join(f"- {a}" for a in analysis.narrative_angles[:6]) or "- (none)")
             + focus_hint
+            + inspiration_section
             + "\n\nReturn 3 to 5 angles, each one short sentence (≤20 words), each on a "
               "different framing axis."
         )
 
         log.info("angle_generator.start", topic=topic)
         output = await self._structured_llm.ainvoke([
-            SystemMessage(content=_SYSTEM_PROMPT),
+            SystemMessage(content=load_prompt("angle_generator")),
             HumanMessage(content=prompt),
         ])
 
