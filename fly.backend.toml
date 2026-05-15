@@ -1,11 +1,12 @@
 app = "aijournalist-backend"
 primary_region = "sin"  # Singapore — closest to Neon ap-southeast-1
 
-# Give in-flight pipelines up to 10 minutes to finish on SIGTERM before Fly
-# escalates to SIGKILL. Without this (Fly's default is 5s) every redeploy
-# orphans any running scriptwriter call, leaving stories stuck mid-pipeline.
+# Give in-flight pipelines up to 5 minutes to finish on SIGTERM before Fly
+# escalates to SIGKILL. 5 minutes is Fly's hard cap on stop_config.timeout;
+# without this (default 5s) every redeploy orphans any running scriptwriter
+# call. The stale-pipeline watchdog handles anything that exceeds the cap.
 kill_signal  = "SIGTERM"
-kill_timeout = "600s"
+kill_timeout = "300s"
 
 [build]
   dockerfile = "backend/Dockerfile"
