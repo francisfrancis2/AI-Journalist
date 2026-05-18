@@ -6,7 +6,6 @@ import { formatDistanceToNow } from "date-fns";
 import { Activity, Bell, BookOpen, Download, FileText, Loader2, RefreshCw, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { apiClient, type AdminNotification, type HealthReport, type ServiceHealth } from "@/lib/api";
 import { downloadAgentManualMarkdown, downloadAgentManualPdf } from "@/lib/agent-manual-export";
-import { AdminBenchmarkView } from "@/components/benchmarking/AdminBenchmarkView";
 import { getUserInfo } from "@/lib/auth";
 
 type AdminUser = {
@@ -18,7 +17,7 @@ type AdminUser = {
   created_at: string;
 };
 
-type Tab = "users" | "benchmarking" | "manual" | "health" | "notifications";
+type Tab = "users" | "manual" | "health" | "notifications";
 
 // ── API Health Panel ──────────────────────────────────────────────────────────
 
@@ -285,7 +284,7 @@ export default function AdminConsolePage() {
   });
 
   return (
-    <div style={{ padding: "32px 40px", maxWidth: tab === "benchmarking" ? 1280 : 860, margin: "0 auto" }}>
+    <div style={{ padding: "32px 40px", maxWidth: 860, margin: "0 auto" }}>
 
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
@@ -296,7 +295,6 @@ export default function AdminConsolePage() {
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, padding: 3, background: "var(--color-background-secondary)", borderRadius: 10, marginBottom: 24, width: "fit-content" }}>
         <button style={TAB_STYLE(tab === "users")}         onClick={() => setTab("users")}>User Management</button>
-        <button style={TAB_STYLE(tab === "benchmarking")}  onClick={() => setTab("benchmarking")}>Benchmarking</button>
         <button style={TAB_STYLE(tab === "manual")}        onClick={() => setTab("manual")}>Agent Manual</button>
         <button style={TAB_STYLE(tab === "health")}        onClick={() => setTab("health")}>API Health</button>
         <button style={TAB_STYLE(tab === "notifications")} onClick={() => setTab("notifications")}>Notifications</button>
@@ -385,19 +383,6 @@ export default function AdminConsolePage() {
               </table>
             )}
           </div>
-        </>
-      )}
-
-      {/* ── BENCHMARKING TAB ─────────────────────────────────────────────────── */}
-      {tab === "benchmarking" && (
-        <>
-          <div className="card" style={{ padding: 20, marginBottom: 24 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Benchmarking Console</h2>
-            <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: 16 }}>
-              Manage benchmark corpus health, reference libraries, and rebuilds here.
-            </p>
-          </div>
-          <AdminBenchmarkView embedded />
         </>
       )}
 

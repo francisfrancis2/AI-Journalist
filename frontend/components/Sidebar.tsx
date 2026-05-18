@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FilePen, Clock, LogOut, Search, Gauge, ShieldCheck, UserCircle } from "lucide-react";
+import { FilePen, Clock, LogOut, Search, ShieldCheck, UserCircle } from "lucide-react";
 import { removeToken, getUserInfo } from "@/lib/auth";
 
 const NAV = [
   { href: "/",             label: "New Story",    icon: FilePen },
   { href: "/research",     label: "Research",     icon: Search },
-  { href: "/benchmarking", label: "Benchmarking", icon: Gauge },
   { href: "/history",      label: "History",      icon: Clock },
 ];
 
