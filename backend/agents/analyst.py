@@ -188,25 +188,11 @@ class AnalystAgent:
         package: ResearchPackage = state["research_package"]
         topic: str = state["topic"]
         tone: str = state.get("tone", "explanatory")
-        improvement_plan = state.get("quality_improvement_plan")
 
         log.info("analyst.start", topic=topic, source_count=package.total_sources)
 
         gap_section = ""
         focus_section = ""
-        if improvement_plan:
-            if improvement_plan.research_gaps:
-                gap_section = (
-                    "\n=== RESEARCH GAPS TO CLOSE ===\n"
-                    + "\n".join(f"- {g}" for g in improvement_plan.research_gaps)
-                    + "\nFor each gap above, explicitly state whether the new sources close it, partially close it, or leave it open. Add this assessment to data_gaps.\n"
-                )
-            if improvement_plan.analysis_focus:
-                focus_section = (
-                    "\n=== ANALYSIS FOCUS AREAS ===\n"
-                    + "\n".join(f"- {f}" for f in improvement_plan.analysis_focus)
-                    + "\nPrioritise these areas in your key_findings and narrative_angles.\n"
-                )
 
         reference_pack = get_reference_pack(
             role="analyst",

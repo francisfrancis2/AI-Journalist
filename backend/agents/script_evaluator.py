@@ -18,7 +18,6 @@ from backend.models.benchmark import BIPatternLibrary
 from backend.models.story import (
     BenchmarkComparison,
     FinalScript,
-    ScriptAuditCriteria,
     ScriptAuditReport,
     ScriptSectionAudit,
 )
@@ -35,9 +34,8 @@ log = structlog.get_logger(__name__)
 
 
 class ScriptAuditOutput(BaseModel):
-    """Structured output returned by the LLM before local score computation."""
+    """Structured rewrite recommendations returned by the LLM."""
 
-    criteria: ScriptAuditCriteria
     audit_summary: str
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
@@ -95,12 +93,16 @@ class ScriptEvaluatorAgent:
 
         sections: list[str] = []
         if evaluation:
+            recommendation_text = ", ".join(
+                evaluation.scriptwriter_recommendations
+                or evaluation.improvement_suggestions
+                or []
+            ) or "None"
             sections.append(
                 "Pre-script editorial evaluation:\n"
-                f"- Overall score: {evaluation.overall_score:.2f}\n"
                 f"- Strengths: {', '.join(evaluation.strengths) or 'None'}\n"
                 f"- Weaknesses: {', '.join(evaluation.weaknesses) or 'None'}\n"
-                f"- Suggestions: {', '.join(evaluation.improvement_suggestions) or 'None'}"
+                f"- Scriptwriter recommendations: {recommendation_text}"
             )
         if benchmark:
             sections.append(
@@ -189,21 +191,18 @@ class ScriptEvaluatorAgent:
         if reference_context:
             reference_section = (
                 f"\n=== SCRIPT AUDIT LIBRARY REFERENCE ===\n{reference_context}\n"
-                "Use this to judge hook strength, evidence density, narration flow, and payoff. "
+                "Use this to produce rewrite recommendations from learned best practices. "
                 "Do not reveal source channels or reference titles.\n"
+                "\n=== REWRITE RECOMMENDATION CALIBRATION ===\n"
+                "Do not assign scores. Compare the written script to the best-practice patterns "
+                "in the library reference pack and convert gaps into executable rewrite priorities. "
+                "Cover hook shape, evidence density, narration flow, pacing, write-for-the-ear "
+                "cadence, visual practicality, source support, and closing payoff when relevant. "
+                "Every rewrite_priority and section rewrite_recommendation must tell the "
+                "ScriptRewriter exactly what to preserve, cut, add, strengthen, or verify.\n"
             )
 
-        improvement_plan = state.get("quality_improvement_plan")
         directives_section = ""
-        if improvement_plan and improvement_plan.script_directives:
-            directives_section = (
-                "\n=== IMPROVEMENT DIRECTIVES TO VERIFY ===\n"
-                "The following directives were given to the scriptwriter for this revision. "
-                "For each directive, explicitly note in your rewrite_priorities whether it was addressed, "
-                "partially addressed, or ignored.\n"
-                + "\n".join(f"- {d}" for d in improvement_plan.script_directives)
-                + "\n"
-            )
 
         prompt = (
             f"Topic: {topic}\n"
@@ -235,7 +234,6 @@ class ScriptEvaluatorAgent:
         ])
 
         report = ScriptAuditReport(
-            criteria=output.criteria,
             audit_summary=output.audit_summary,
             strengths=output.strengths,
             weaknesses=output.weaknesses,
@@ -243,16 +241,15 @@ class ScriptEvaluatorAgent:
             section_audits=self._normalise_section_audits(script, output.section_audits),
             benchmark_comparison=output.benchmark_comparison if library else None,
         )
-        report.compute_overall()
 
         log.info(
             "script_evaluator.complete",
             title=script.title,
-            overall_score=f"{report.overall_score:.2f}",
-            grade=report.grade,
+            rewrite_priorities=len(report.rewrite_priorities),
         )
 
         return {
             "script_audit_report": report,
+            "script_rewriter_recommendations": report.rewrite_priorities,
             "reference_packs": merge_reference_pack(state, reference_pack),
         }

@@ -30,7 +30,6 @@ _AGENT_SOURCES = [
     ManualSource("Benchmark Agent", "backend/agents/benchmarker.py", ("benchmarker",)),
     ManualSource("Scriptwriter Agent", "backend/agents/scriptwriter.py", ("scriptwriter",)),
     ManualSource("Script Evaluator Agent", "backend/agents/script_evaluator.py", ("script_evaluator",)),
-    ManualSource("Quality Gate Agent", "backend/agents/quality_gate.py"),
     ManualSource("Script Rewriter Agent", "backend/agents/script_rewriter.py", ("script_rewriter",)),
     ManualSource(
         "Corpus Builder Agent",
@@ -249,7 +248,6 @@ def _graph_section() -> str:
             "route_after_analyst",
             "route_after_storyline_creator",
             "route_after_evaluator",
-            "route_after_quality_gate",
             "build_journalist_graph",
         },
     )

@@ -3,17 +3,12 @@ LangGraph StateGraph definition for the AI Journalist multi-agent pipeline.
 
 Pipeline stages:
   researcher → analyst → storyline_creator → evaluator
-  → scriptwriter → script_evaluator → [script_rewriter | quality_gate]
-  → [researcher (evidence restart) | END]
+  → scriptwriter → script_evaluator → [script_rewriter | END]
 
 Routing logic:
-  - After evaluator: if approved → scriptwriter, else if cycles < max → storyline_creator,
-    else if needs_more_research → researcher
-  - After script_evaluator: if final score is below threshold and rewrite cycles remain
-    → script_rewriter, otherwise → quality_gate
-  - After quality_gate: if best score ≥ 70% → END; if the audit shows
-    genuine evidence gaps and full-cycle budget remains → researcher; otherwise
-    surface the best revised script with a failure summary
+  - After evaluator: pass recommendations directly to scriptwriter.
+  - After script_evaluator: if rewrite recommendations exist and rewrite budget remains
+    → script_rewriter, otherwise → END.
 """
 
 import asyncio
@@ -24,7 +19,6 @@ from langgraph.graph import END, StateGraph
 from backend.agents.analyst import AnalystAgent
 from backend.agents.benchmarker import BenchmarkAgent
 from backend.agents.evaluator import EvaluatorAgent
-from backend.agents.quality_gate import QualityGateAgent
 from backend.agents.researcher import ResearcherAgent
 from backend.agents.script_evaluator import ScriptEvaluatorAgent
 from backend.agents.script_rewriter import ScriptRewriterAgent
@@ -44,7 +38,6 @@ _benchmarker = BenchmarkAgent()
 _scriptwriter = ScriptwriterAgent()
 _script_evaluator = ScriptEvaluatorAgent()
 _script_rewriter = ScriptRewriterAgent()
-_quality_gate = QualityGateAgent()
 
 
 # ── Node functions ─────────────────────────────────────────────────────────────
@@ -52,10 +45,8 @@ _quality_gate = QualityGateAgent()
 async def researcher_node(state: JournalistState) -> dict:
     """Run the Researcher agent and update research artefacts."""
     log.info("graph.node.researcher", story_id=state["story_id"])
-    # Resume-after-angle-selection: research is already done and there's no
-    # improvement plan demanding fresh sourcing → no-op. (Quality-gate restarts
-    # set quality_improvement_plan, so they still re-run the researcher.)
-    if state.get("research_package") and not state.get("quality_improvement_plan"):
+    # Resume-after-angle-selection: research is already done → no-op.
+    if state.get("research_package"):
         log.info("graph.node.researcher.skipped_on_resume", story_id=state["story_id"])
         return {}
     try:
@@ -70,7 +61,7 @@ async def analyst_node(state: JournalistState) -> dict:
     """Run the Analyst agent to synthesise research into structured findings."""
     log.info("graph.node.analyst", story_id=state["story_id"])
     # Same idempotency as researcher_node: skip on resume after angle selection.
-    if state.get("analysis_result") and not state.get("quality_improvement_plan"):
+    if state.get("analysis_result"):
         log.info("graph.node.analyst.skipped_on_resume", story_id=state["story_id"])
         return {}
     try:
@@ -147,43 +138,17 @@ async def script_rewriter_node(state: JournalistState) -> dict:
         return {"error": str(exc), "failed_node": "script_rewriter"}
 
 
-async def quality_gate_node(state: JournalistState) -> dict:
-    """Run the quality gate to decide whether to restart the pipeline or finish."""
-    log.info("graph.node.quality_gate", story_id=state["story_id"])
-    try:
-        return await _quality_gate.run(state)
-    except Exception as exc:
-        log.error("graph.node.quality_gate.error", error=str(exc))
-        return {"pipeline_complete": True, "_quality_gate_route": "done", "error": str(exc)}
-
-
 # ── Conditional routing ────────────────────────────────────────────────────────
 
 def route_after_evaluator(state: JournalistState) -> str:
     """
     Decide next node after evaluation:
-    - 'scriptwriter'        → quality threshold met
-    - 'storyline_creator'   → needs refinement, cycles remaining
-    - 'researcher'          → needs more data
-    - END                   → max cycles exhausted, exit with best effort
+    - 'scriptwriter' → evaluator recommendations are passed downstream
+    - END            → evaluator failed
     """
     if state.get("error"):
         return END
 
-    if state.get("approved_for_scripting"):
-        return "scriptwriter"
-
-    if state["refinement_cycle"] < settings.max_refinement_cycles:
-        if state.get("needs_more_research") and state["research_iteration"] < settings.max_research_iterations:
-            return "researcher"
-        return "storyline_creator"
-
-    # Max refinement cycles reached — write what we have
-    log.warning(
-        "graph.route.max_refinement_reached",
-        story_id=state["story_id"],
-        score=state["evaluation_report"].overall_score if state.get("evaluation_report") else 0,
-    )
     return "scriptwriter"
 
 
@@ -218,40 +183,27 @@ def route_after_storyline_creator(state: JournalistState) -> str:
 
 def route_after_script_evaluator(state: JournalistState) -> str:
     """
-    Prefer a targeted script rewrite before any full research restart.
-
-    The rewriter keeps the current structure and fixes weak sections using the
-    audit report. Full restarts are left to the quality gate and only used for
-    genuine evidence/research gaps.
+    Trigger a targeted script rewrite when audit recommendations exist and
+    rewrite budget remains; otherwise finish.
     """
     if state.get("error"):
-        return "quality_gate"
+        return END
 
     audit = state.get("script_audit_report")
     if audit is None or state.get("final_script") is None:
-        return "quality_gate"
+        return END
 
-    if audit.overall_score >= settings.script_audit_score_threshold:
-        return "quality_gate"
-
+    recommendations = state.get("script_rewriter_recommendations") or audit.rewrite_priorities
     revision_cycle = state.get("script_revision_cycle", 0)
-    if revision_cycle < settings.max_script_revision_cycles:
+    if recommendations and revision_cycle < settings.max_script_revision_cycles:
         log.info(
             "graph.route.script_rewrite",
             story_id=state.get("story_id"),
-            score=f"{audit.overall_score:.2f}",
+            recommendations=len(recommendations),
             revision_cycle=revision_cycle,
         )
         return "script_rewriter"
 
-    return "quality_gate"
-
-
-def route_after_quality_gate(state: JournalistState) -> str:
-    """Route based on the quality gate decision embedded in state."""
-    route = state.get("_quality_gate_route", "done")
-    if route == "restart":
-        return "researcher"
     return END
 
 
@@ -281,7 +233,6 @@ def build_journalist_graph() -> StateGraph:
     graph.add_node("scriptwriter", scriptwriter_node)
     graph.add_node("script_evaluator", script_evaluator_node)
     graph.add_node("script_rewriter", script_rewriter_node)
-    graph.add_node("quality_gate", quality_gate_node)
 
     # Entry point
     graph.set_entry_point("researcher")
@@ -315,13 +266,9 @@ def build_journalist_graph() -> StateGraph:
     graph.add_edge("scriptwriter", "script_evaluator")
     graph.add_conditional_edges("script_evaluator", route_after_script_evaluator, {
         "script_rewriter": "script_rewriter",
-        "quality_gate": "quality_gate",
-    })
-    graph.add_edge("script_rewriter", "script_evaluator")
-    graph.add_conditional_edges("quality_gate", route_after_quality_gate, {
-        "researcher": "researcher",
         END: END,
     })
+    graph.add_edge("script_rewriter", "script_evaluator")
 
     return graph.compile()
 

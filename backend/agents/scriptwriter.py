@@ -102,7 +102,7 @@ class ScriptwriterAgent:
         revision_goals = ""
         if rewrite_recommendations:
             revision_goals = (
-                "Targeted revision goals:\n"
+                "Evaluator recommendations to apply while writing:\n"
                 + "\n".join(f"  - {item}" for item in rewrite_recommendations)
                 + "\n\n"
             )
@@ -172,9 +172,9 @@ class ScriptwriterAgent:
         target_duration_minutes = state.get("target_duration_minutes") or settings.target_script_duration_min
         target_audience = state.get("target_audience")
         rewrite_recommendations: list[str] = state.get("user_rewrite_recommendations") or []
-        improvement_plan = state.get("quality_improvement_plan")
-        if improvement_plan and improvement_plan.script_directives:
-            rewrite_recommendations = improvement_plan.script_directives + rewrite_recommendations
+        evaluator_recommendations: list[str] = state.get("scriptwriter_recommendations") or []
+        if evaluator_recommendations:
+            rewrite_recommendations = evaluator_recommendations + rewrite_recommendations
         duration_scale = target_duration_minutes / max(
             storyline.total_estimated_duration_seconds / 60,
             1,
@@ -278,10 +278,7 @@ class ScriptwriterAgent:
                 "target_duration_minutes": target_duration_minutes,
                 "target_audience": target_audience or storyline.target_audience,
                 "unique_angle": storyline.unique_angle,
-                "evaluation_score": (
-                    state["evaluation_report"].overall_score
-                    if state.get("evaluation_report") else None
-                ),
+                "scriptwriter_recommendations": rewrite_recommendations[:10],
                 "library_reference_cards": len(reference_pack.cards),
             },
         )
