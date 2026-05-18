@@ -17,6 +17,11 @@ from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.models.research import AnalysisResult, ResearchPackage
 from backend.models.story import FinalScript, ScriptAuditReport, ScriptSection
+from backend.services.library_knowledge import (
+    format_reference_pack,
+    get_reference_pack,
+    merge_reference_pack,
+)
 from backend.services.prompt_loader import load_prompt
 from backend.services.script_storage import upload_script_to_s3
 
@@ -96,6 +101,7 @@ class ScriptRewriterAgent:
         analysis: AnalysisResult,
         source_lookup: dict[str, dict],
         target_audience: str | None,
+        library_reference: str = "",
     ) -> ScriptSection:
         audit_summary = "No section-specific audit was provided."
         if audit:
@@ -117,6 +123,7 @@ class ScriptRewriterAgent:
             f"Existing source IDs: {', '.join(section.source_ids) or 'None'}\n"
             f"Current narration:\n{section.narration}\n\n"
             f"=== AUDIT FEEDBACK ===\n{audit_summary}\n\n"
+            f"{library_reference}"
             f"=== VERIFIED FINDINGS ===\n{self._format_findings(analysis)}\n\n"
             f"=== SOURCE LOOKUP ===\n{self._format_sources(source_lookup)}\n\n"
             "Return source_ids containing only IDs from the source lookup."
@@ -155,6 +162,20 @@ class ScriptRewriterAgent:
             audit.section_number: audit.model_dump()
             for audit in audit_report.section_audits
         }
+        reference_pack = get_reference_pack(
+            role="script_rewriter",
+            topic=state["topic"],
+            state=state,
+            max_cards=5,
+            token_budget=1500,
+        )
+        reference_context = format_reference_pack(reference_pack)
+        library_reference = ""
+        if reference_context:
+            library_reference = (
+                f"=== REVISION LIBRARY REFERENCE ===\n{reference_context}\n"
+                "Use this to tighten shape, specificity, and transitions without adding unsupported facts.\n\n"
+            )
 
         log.info(
             "script_rewriter.start",
@@ -171,6 +192,7 @@ class ScriptRewriterAgent:
                 analysis=analysis,
                 source_lookup=source_lookup,
                 target_audience=state.get("target_audience"),
+                library_reference=library_reference,
             )
             for section in script.sections
         ])
@@ -190,6 +212,7 @@ class ScriptRewriterAgent:
                 **script.metadata,
                 "revision_cycle": state.get("script_revision_cycle", 0) + 1,
                 "revision_reason": "post_script_audit",
+                "library_reference_cards": len(reference_pack.cards),
             },
         )
 
@@ -212,4 +235,5 @@ class ScriptRewriterAgent:
             "final_script": revised,
             "script_s3_key": s3_key or state.get("script_s3_key"),
             "script_revision_cycle": state.get("script_revision_cycle", 0) + 1,
+            "reference_packs": merge_reference_pack(state, reference_pack),
         }

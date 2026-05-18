@@ -19,6 +19,11 @@ from backend.models.research import (
     EvaluationReport,
     StorylineProposal,
 )
+from backend.services.library_knowledge import (
+    format_reference_pack,
+    get_reference_pack,
+    merge_reference_pack,
+)
 from backend.services.prompt_loader import load_prompt
 
 log = structlog.get_logger(__name__)
@@ -85,6 +90,21 @@ class EvaluatorAgent:
             f"    Key points: {', '.join(a.key_points[:3])}"
             for a in storyline.acts
         )
+        reference_pack = get_reference_pack(
+            role="evaluator",
+            topic=topic,
+            state=state,
+            max_cards=4,
+            token_budget=1200,
+        )
+        reference_section = ""
+        reference_context = format_reference_pack(reference_pack)
+        if reference_context:
+            reference_section = (
+                f"\n=== LIBRARY EVALUATION REFERENCE ===\n{reference_context}\n"
+                "Use this to identify precise gaps versus the reference-library standard. "
+                "Do not reveal source channels or reference titles.\n\n"
+            )
 
         prompt = (
             f"Topic: {topic}\n"
@@ -98,6 +118,7 @@ class EvaluatorAgent:
             f"Opening Hook: {storyline.opening_hook}\n\n"
             f"Acts:\n{acts_summary}\n\n"
             f"Closing Statement: {storyline.closing_statement}\n\n"
+            f"{reference_section}"
             f"=== RESEARCH QUALITY ===\n"
             f"Total Sources: {state['research_package'].total_sources}\n"
             f"Key Findings: {len(analysis.key_findings)}\n"
@@ -141,4 +162,5 @@ class EvaluatorAgent:
             "evaluation_report": report,
             "approved_for_scripting": report.approved_for_scripting,
             "needs_more_research": report.requires_additional_research,
+            "reference_packs": merge_reference_pack(state, reference_pack),
         }

@@ -46,6 +46,7 @@ class JournalistState(TypedDict):
     # ── Research phase ────────────────────────────────────────────────────────
     research_package: Optional[ResearchPackage]
     research_iteration: int                 # How many times the researcher has run
+    reference_packs: dict[str, dict]        # Role-specific library guidance used in this run
 
     # ── Analysis phase ────────────────────────────────────────────────────────
     analysis_result: Optional[AnalysisResult]
@@ -116,6 +117,7 @@ def create_initial_state(
         messages=[],
         research_package=None,
         research_iteration=0,
+        reference_packs={},
         analysis_result=None,
         generated_angles=[],
         selected_angle=None,

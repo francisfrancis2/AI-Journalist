@@ -27,6 +27,12 @@ from backend.models.story import (
     StoryStatus,
     StoryTone,
 )
+from backend.models.benchmark import (
+    LibraryKnowledgeCard,
+    LibraryKnowledgeCardORM,
+    LibraryReferenceCard,
+    LibraryReferencePack,
+)
 
 __all__ = [
     # research
@@ -54,4 +60,9 @@ __all__ = [
     "ScriptSectionAudit",
     "BenchmarkComparison",
     "ScriptAuditReport",
+    # library knowledge
+    "LibraryKnowledgeCard",
+    "LibraryKnowledgeCardORM",
+    "LibraryReferenceCard",
+    "LibraryReferencePack",
 ]

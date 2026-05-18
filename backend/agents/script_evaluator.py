@@ -23,6 +23,11 @@ from backend.models.story import (
     ScriptSectionAudit,
 )
 from backend.services.benchmarking import load_active_benchmark_library
+from backend.services.library_knowledge import (
+    format_reference_pack,
+    get_reference_pack,
+    merge_reference_pack,
+)
 from backend.services.prompt_loader import load_prompt
 
 log = structlog.get_logger(__name__)
@@ -172,6 +177,21 @@ class ScriptEvaluatorAgent:
 
         topic: str = state["topic"]
         library, library_status = await load_active_benchmark_library()
+        reference_pack = get_reference_pack(
+            role="script_evaluator",
+            topic=topic,
+            state=state,
+            max_cards=5,
+            token_budget=1500,
+        )
+        reference_context = format_reference_pack(reference_pack)
+        reference_section = ""
+        if reference_context:
+            reference_section = (
+                f"\n=== SCRIPT AUDIT LIBRARY REFERENCE ===\n{reference_context}\n"
+                "Use this to judge hook strength, evidence density, narration flow, and payoff. "
+                "Do not reveal source channels or reference titles.\n"
+            )
 
         improvement_plan = state.get("quality_improvement_plan")
         directives_section = ""
@@ -197,6 +217,7 @@ class ScriptEvaluatorAgent:
             f"\n=== FINAL SCRIPT ===\n{self._format_sections(script)}\n\n"
             f"=== SOURCE REFS ===\n{self._format_sources(script)}\n\n"
             f"=== PRIOR FEEDBACK ===\n{self._format_storyline_feedback(state)}\n\n"
+            f"{reference_section}"
             f"=== BENCHMARK CONTEXT ===\n{self._format_benchmark_context(library)}"
         )
 
@@ -231,4 +252,7 @@ class ScriptEvaluatorAgent:
             grade=report.grade,
         )
 
-        return {"script_audit_report": report}
+        return {
+            "script_audit_report": report,
+            "reference_packs": merge_reference_pack(state, reference_pack),
+        }

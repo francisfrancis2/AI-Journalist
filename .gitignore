@@ -1,3 +1,6 @@
+# Database backups — local only, contain prod data
+backups/
+
 # Environment — never commit real secrets
 .env
 .env.*

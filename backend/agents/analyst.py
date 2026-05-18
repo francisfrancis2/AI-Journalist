@@ -22,9 +22,10 @@ from backend.models.research import (
     KeyFinding,
     ResearchPackage,
 )
-from backend.services.corpus_inspiration import (
-    load_hooks_inspiration,
-    load_titles_inspiration,
+from backend.services.library_knowledge import (
+    format_reference_pack,
+    get_reference_pack,
+    merge_reference_pack,
 )
 from backend.services.prompt_loader import load_prompt
 
@@ -207,29 +208,21 @@ class AnalystAgent:
                     + "\nPrioritise these areas in your key_findings and narrative_angles.\n"
                 )
 
-        # Two layers of benchmark inspiration:
-        # 1) Real opening hooks → teach the analyst what FACT DENSITY looks like
-        #    in a published documentary (numeric_anchor, named place, counterintuitive
-        #    claim — never abstract framing). Used to calibrate key_findings.
-        # 2) Real titles + top formulas → teach the analyst what ANGLES look like
-        #    in this style. Used to calibrate selectable_angles.
-        hooks_inspiration = load_hooks_inspiration()
-        titles_inspiration = load_titles_inspiration()
+        reference_pack = get_reference_pack(
+            role="analyst",
+            topic=topic,
+            state=state,
+            max_cards=6,
+            token_budget=1700,
+        )
         inspiration_section = ""
-        if hooks_inspiration:
-            inspiration_section += (
-                "\n=== REFERENCE OPENING HOOKS (real first sentences from BI / CNBC / Vox / JH) ===\n"
-                + hooks_inspiration
-                + "\nNotice the fact density: a specific number, a named place, a counterintuitive "
-                  "claim — rarely abstract framing. Your key_findings should be at this level of "
-                  "specificity. Extract the kind of facts that could open a documentary like these.\n"
-            )
-        if titles_inspiration:
-            inspiration_section += (
-                "\n=== REFERENCE FRAMINGS (real titles + top title formulas) ===\n"
-                + titles_inspiration
-                + "\nThese are framing inspiration for selectable_angles only — never copy the "
-                  "wording. Your angles must be specific to this topic and span different axes.\n"
+        reference_context = format_reference_pack(reference_pack)
+        if reference_context:
+            inspiration_section = (
+                "\n"
+                + reference_context
+                + "\nUse the pack to calibrate fact density and selectable angle shape. "
+                  "Do not copy examples or treat them as source material.\n"
             )
 
         prompt = (
@@ -355,4 +348,8 @@ class AnalystAgent:
             selectable_angles=len(generated_angles),
         )
 
-        return {"analysis_result": result, "generated_angles": generated_angles}
+        return {
+            "analysis_result": result,
+            "generated_angles": generated_angles,
+            "reference_packs": merge_reference_pack(state, reference_pack),
+        }

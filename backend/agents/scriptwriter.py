@@ -20,6 +20,11 @@ from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.models.research import AnalysisResult, StorylineProposal
 from backend.models.story import FinalScript, ScriptSection
+from backend.services.library_knowledge import (
+    format_reference_pack,
+    get_reference_pack,
+    merge_reference_pack,
+)
 from backend.services.prompt_loader import load_prompt
 from backend.services.script_storage import upload_script_to_s3
 
@@ -71,6 +76,7 @@ class ScriptwriterAgent:
         previous_act: dict | None = None,
         next_act: dict | None = None,
         selected_angle: str | None = None,
+        library_reference: str = "",
     ) -> ScriptSection:
         """Write narration for a single act."""
         relevant_quotes = "\n".join(
@@ -129,6 +135,7 @@ class ScriptwriterAgent:
             f"{revision_goals}"
             f"=== FULL STORY ARC ===\n{act_arc}\n\n"
             f"=== CONTINUITY CONTEXT ===\n{previous_context}{next_context}\n"
+            f"{library_reference}"
             f"=== ACT TO WRITE ===\n"
             f"Act {act_data['act_number']}: {act_data['act_title']}\n"
             f"Purpose: {act_data['purpose']}\n"
@@ -205,6 +212,21 @@ class ScriptwriterAgent:
         )
 
         selected_angle: str | None = state.get("selected_angle")
+        reference_pack = get_reference_pack(
+            role="scriptwriter",
+            topic=topic,
+            state=state,
+            max_cards=6,
+            token_budget=1800,
+        )
+        reference_context = format_reference_pack(reference_pack)
+        library_reference = ""
+        if reference_context:
+            library_reference = (
+                f"=== SCRIPTWRITER LIBRARY REFERENCE ===\n{reference_context}\n"
+                "Use this only for narration shape, specificity, transitions, and cadence. "
+                "Facts must come from the research package below.\n\n"
+            )
 
         # Write acts in parallel while giving each one the full arc for continuity.
         act_tasks = [
@@ -220,6 +242,7 @@ class ScriptwriterAgent:
                 previous_act=act_plans[index - 1] if index > 0 else None,
                 next_act=act_plans[index + 1] if index + 1 < len(act_plans) else None,
                 selected_angle=selected_angle,
+                library_reference=library_reference,
             )
             for index, act_data in enumerate(act_plans)
         ]
@@ -259,6 +282,7 @@ class ScriptwriterAgent:
                     state["evaluation_report"].overall_score
                     if state.get("evaluation_report") else None
                 ),
+                "library_reference_cards": len(reference_pack.cards),
             },
         )
 
@@ -278,4 +302,5 @@ class ScriptwriterAgent:
         return {
             "final_script": final_script,
             "script_s3_key": s3_key,
+            "reference_packs": merge_reference_pack(state, reference_pack),
         }

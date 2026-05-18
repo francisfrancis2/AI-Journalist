@@ -255,14 +255,22 @@ class YouTubeFetcher:
         return await loop.run_in_executor(None, _fetch_transcript_sync, video_id)
 
     async def get_transcripts_batch(
-        self, video_ids: list[str], concurrency: int = 1
+        self, video_ids: list[str], concurrency: int = 5
     ) -> dict[str, Optional[str]]:
-        """Fetch transcripts sequentially with a short delay to respect rate limits."""
-        results: dict[str, Optional[str]] = {}
-        for vid in video_ids:
-            try:
-                results[vid] = await self.get_transcript(vid)
-            except Exception:
-                results[vid] = None
-            await asyncio.sleep(3.0)
-        return results
+        """Fetch transcripts in parallel with bounded concurrency.
+
+        Supadata enforces its own per-request retry/backoff on 429s, so a
+        small bounded concurrency is safe and turns a 15+ min sequential
+        pull (180 videos x ~5s each) into a few-minute parallel one.
+        """
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _fetch_one(vid: str) -> tuple[str, Optional[str]]:
+            async with sem:
+                try:
+                    return vid, await self.get_transcript(vid)
+                except Exception:
+                    return vid, None
+
+        pairs = await asyncio.gather(*(_fetch_one(vid) for vid in video_ids))
+        return dict(pairs)

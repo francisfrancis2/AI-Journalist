@@ -2,13 +2,13 @@
 Benchmark models — reference corpus ORM and Pydantic schemas.
 """
 
+import re
 import uuid
 from datetime import datetime, timezone
-import re
 from typing import Optional
 
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import JSON
@@ -66,6 +66,30 @@ class BIPatternLibraryORM(Base):
     )
 
 
+class LibraryKnowledgeCardORM(Base):
+    """Reusable craft knowledge extracted from reference scripts/documentaries."""
+
+    __tablename__ = "library_knowledge_cards"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    library_key: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    artifact_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    topic_tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    guidance: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    source_doc_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    quality_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    embedding: Mapped[Optional[list[float]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class DocStructure(BaseModel):
@@ -97,6 +121,45 @@ class BIPatternLibrary(BaseModel):
     human_story_act_avg: float                     # typically 4-5
     sample_hooks: list[str]                        # 5 strongest opening hooks from corpus
     sample_titles: list[str]                       # all reference titles
+
+
+class LibraryKnowledgeCard(BaseModel):
+    """Canonical library-memory card stored in DB or generated from local caches."""
+
+    library_key: str = "combined"
+    role: str
+    artifact_type: str
+    title: str
+    summary: str
+    text: str
+    topic_tags: list[str] = Field(default_factory=list)
+    guidance: dict[str, list[str] | str] = Field(default_factory=dict)
+    source_doc_id: Optional[str] = None
+    quality_score: float = Field(0.5, ge=0.0, le=1.0)
+
+
+class LibraryReferenceCard(BaseModel):
+    """Prompt-ready card retrieved for a specific agent role."""
+
+    role: str
+    artifact_type: str
+    pattern: str
+    example_shape: str = ""
+    do: list[str] = Field(default_factory=list)
+    dont: list[str] = Field(default_factory=list)
+    library_key: str = "combined"
+    topic_tags: list[str] = Field(default_factory=list)
+    relevance_score: float = Field(0.0, ge=0.0)
+
+
+class LibraryReferencePack(BaseModel):
+    """Role-specific, source-neutral guidance injected into one pipeline stage."""
+
+    role: str
+    topic: str
+    cards: list[LibraryReferenceCard] = Field(default_factory=list)
+    corpus_doc_count: int = 0
+    notes: list[str] = Field(default_factory=list)
 
 
 class BenchmarkCriterionDetail(BaseModel):

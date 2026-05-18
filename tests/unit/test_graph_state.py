@@ -18,6 +18,7 @@ class TestCreateInitialState:
         assert state["target_duration_minutes"] == 12
         assert state["target_audience"] is None
         assert state["research_iteration"] == 0
+        assert state["reference_packs"] == {}
         assert state["refinement_cycle"] == 0
         assert state["script_revision_cycle"] == 0
         assert state["needs_more_research"] is False

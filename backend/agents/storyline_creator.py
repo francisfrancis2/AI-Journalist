@@ -18,6 +18,11 @@ from pydantic import BaseModel, Field, ValidationError
 
 from backend.config import settings
 from backend.models.research import AnalysisResult, StoryAct, StorylineProposal
+from backend.services.library_knowledge import (
+    format_reference_pack,
+    get_reference_pack,
+    merge_reference_pack,
+)
 from backend.services.prompt_loader import load_prompt
 
 log = structlog.get_logger(__name__)
@@ -267,12 +272,28 @@ class StorylineCreatorAgent:
                 "act structure, and closing statement should all serve this framing.\n"
             )
 
+        reference_pack = get_reference_pack(
+            role="storyline_creator",
+            topic=topic,
+            state=state,
+            max_cards=5,
+            token_budget=1500,
+        )
+        reference_section = ""
+        reference_context = format_reference_pack(reference_pack)
+        if reference_context:
+            reference_section = (
+                f"\n{reference_context}\n"
+                "Use the pack to shape act architecture, escalation, human-story placement, "
+                "and closing payoff. Do not copy example wording.\n"
+            )
+
         prompt = (
             f"Topic: {topic}\n"
             f"Target tone: {tone}\n"
             f"Target duration: {target_duration_minutes} minutes\n"
             f"Target audience: {target_audience or 'General documentary audience'}\n"
-            f"{angle_directive}\n"
+            f"{angle_directive}{reference_section}\n"
             f"=== EDITORIAL ANALYSIS ===\n"
             f"Executive Summary: {analysis.executive_summary}\n\n"
             f"Key Findings:\n"
@@ -369,4 +390,5 @@ class StorylineCreatorAgent:
         return {
             "storyline_proposals": proposals,
             "selected_storyline": selected,
+            "reference_packs": merge_reference_pack(state, reference_pack),
         }

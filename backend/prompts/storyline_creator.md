@@ -5,6 +5,8 @@ Create compelling documentary structures in the style of Business Insider, Bloom
 
 Given an editorial analysis, generate exactly 2 storyline proposals for a 10-15 minute documentary.
 
+If a ROLE-SPECIFIC LIBRARY REFERENCE PACK is provided, use it only for act architecture, reveal order, human-story placement, and closing-device guidance. It is not source material. Never copy reference wording or introduce facts not present in the editorial analysis.
+
 Act structure guidelines:
 - Each documentary should have 4-6 acts totalling 600-900 seconds (10-15 min)
 - Act 1 (90-120s): Hook & stakes — grab attention, establish why this matters

@@ -21,6 +21,11 @@ from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.models.research import ResearchPackage, ResearchQuery, SourceType
 from backend.services.prompt_loader import load_prompt
+from backend.services.library_knowledge import (
+    format_reference_pack,
+    get_reference_pack,
+    merge_reference_pack,
+)
 from backend.tools.financial_data import FinancialDataTool
 from backend.tools.news_api import NewsAPITool
 from backend.tools.rss_parser import RSSParserTool
@@ -106,11 +111,28 @@ class ResearcherAgent:
         self._rss = RSSParserTool()
         self._financial = FinancialDataTool()
 
-    async def _plan_queries(self, topic: str) -> ResearchPlan:
+    async def _plan_queries(
+        self,
+        topic: str,
+        *,
+        state: dict | None = None,
+        reference_pack=None,
+    ) -> ResearchPlan:
         """Classify the topic and generate targeted search queries."""
+        pack = reference_pack or get_reference_pack(
+            role="researcher",
+            topic=topic,
+            state=state,
+            max_cards=4,
+            token_budget=1000,
+        )
+        reference_context = format_reference_pack(pack)
+        user_prompt = f"Topic: {topic}"
+        if reference_context:
+            user_prompt += f"\n\n{reference_context}"
         messages = [
             SystemMessage(content=load_prompt("researcher")),
-            HumanMessage(content=f"Topic: {topic}"),
+            HumanMessage(content=user_prompt),
         ]
         return await self._structured_llm.ainvoke(messages)
 
@@ -147,7 +169,14 @@ class ResearcherAgent:
         log.info("researcher.start", topic=topic)
 
         # Step 1: Plan queries (6 benchmark archetypes) and route sources
-        plan = await self._plan_queries(topic)
+        reference_pack = get_reference_pack(
+            role="researcher",
+            topic=topic,
+            state=state,
+            max_cards=4,
+            token_budget=1000,
+        )
+        plan = await self._plan_queries(topic, state=state, reference_pack=reference_pack)
         use_sources = self._normalise_sources(plan)
         plan.use_sources = sorted(use_sources)
 
@@ -277,4 +306,5 @@ class ResearcherAgent:
         return {
             "research_package": package,
             "needs_more_research": False,
+            "reference_packs": merge_reference_pack(state, reference_pack),
         }
