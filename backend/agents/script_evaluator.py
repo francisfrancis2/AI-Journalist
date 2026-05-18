@@ -3,7 +3,7 @@ ScriptEvaluatorAgent — post-script audit for the finished documentary script.
 
 This agent runs after ScriptwriterAgent and inspects the final script itself,
 not just the storyline. It produces section-level notes, rewrite priorities,
-and a best-in-class comparison against the benchmark corpus when available.
+and best-practice comparison notes when benchmark context is available.
 """
 
 from typing import Optional
@@ -46,7 +46,7 @@ class ScriptAuditOutput(BaseModel):
 
 class ScriptEvaluatorAgent:
     """
-    Final-script quality auditor that runs after script generation.
+    Final-script auditor that turns script feedback into rewriter guidance.
 
     Example::
 
@@ -55,11 +55,12 @@ class ScriptEvaluatorAgent:
     """
 
     def __init__(self) -> None:
+        # Claude Opus 4.7 is a reasoning model and rejects the `temperature`
+        # argument at the API layer; omit it (matches scriptwriter config).
         _llm = ChatAnthropic(
             model=settings.claude_opus_model,
             api_key=settings.anthropic_api_key,
             max_tokens=2500,
-            temperature=0.1,
         )
         self._structured_llm = _llm.with_structured_output(ScriptAuditOutput)
 
@@ -107,8 +108,6 @@ class ScriptEvaluatorAgent:
         if benchmark:
             sections.append(
                 "Pre-script benchmark:\n"
-                f"- Grade: {benchmark.grade}\n"
-                f"- Similarity score: {benchmark.bi_similarity_score:.2f}\n"
                 f"- Gaps: {', '.join(benchmark.gaps) or 'None'}\n"
                 f"- Strengths: {', '.join(benchmark.strengths) or 'None'}"
             )
@@ -148,14 +147,13 @@ class ScriptEvaluatorAgent:
         for section in script.sections:
             existing = audit_by_number.get(section.section_number)
             if existing:
-                normalised.append(existing)
+                normalised.append(existing.model_copy(update={"score": None}))
                 continue
 
             normalised.append(
                 ScriptSectionAudit(
                     section_number=section.section_number,
                     title=section.title,
-                    score=0.5,
                     summary="This section was not individually audited by the model.",
                     strengths=[],
                     weaknesses=["Missing section-level audit output."],
@@ -202,8 +200,6 @@ class ScriptEvaluatorAgent:
                 "ScriptRewriter exactly what to preserve, cut, add, strengthen, or verify.\n"
             )
 
-        directives_section = ""
-
         prompt = (
             f"Topic: {topic}\n"
             f"Script title: {script.title}\n"
@@ -212,7 +208,6 @@ class ScriptEvaluatorAgent:
             f"Closing statement: {script.closing_statement}\n"
             f"Estimated duration: {script.estimated_duration_minutes} minutes\n"
             f"Total word count: {script.total_word_count}\n"
-            f"{directives_section}"
             f"\n=== FINAL SCRIPT ===\n{self._format_sections(script)}\n\n"
             f"=== SOURCE REFS ===\n{self._format_sources(script)}\n\n"
             f"=== PRIOR FEEDBACK ===\n{self._format_storyline_feedback(state)}\n\n"

@@ -134,11 +134,12 @@ class AnalystAgent:
     """
 
     def __init__(self) -> None:
+        # Claude Opus 4.7 is a reasoning model and rejects the `temperature`
+        # argument at the API layer; omit it (matches scriptwriter config).
         _llm = ChatAnthropic(
             model=settings.claude_opus_model,
             api_key=settings.anthropic_api_key,
             max_tokens=4096,
-            temperature=0.35,
         )
         self._structured_llm = _llm.with_structured_output(AnalysisOutput)
 
