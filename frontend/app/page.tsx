@@ -33,15 +33,15 @@ const PIPELINE_STAGES = [
   { label: "Research",          statuses: ["pending", "researching"] },
   { label: "Analysis",          statuses: ["analysing", "awaiting_angle_selection", "writing_storyline"] },
   { label: "Script Writing",    statuses: ["evaluating", "scripting"] },
-  { label: "Script Evaluation", statuses: ["completed"] },
+  { label: "Complete",          statuses: ["completed"] },
 ];
 
 const STAGE_MESSAGES: Record<string, string[]> = {
   pending:           ["Initialising pipeline", "Preparing research agents", "Setting up context"],
   researching:       ["Scanning news sources", "Querying web for evidence", "Pulling recent articles", "Cross-referencing sources", "Gathering data points"],
-  analysing:         ["Synthesising findings", "Extracting key insights", "Scoring source credibility", "Mapping narrative angles"],
-  writing_storyline: ["Designing documentary structure", "Drafting act breakdowns", "Shaping the story arc", "Selecting strongest angle"],
-  evaluating:        ["Evaluating storyline quality", "Scoring against benchmarks", "Checking narrative coherence", "Running quality checks"],
+  analysing:         ["Synthesising findings", "Extracting key insights", "Checking source credibility", "Mapping narrative angles"],
+  writing_storyline: ["Designing documentary structure", "Drafting act breakdowns", "Shaping the story arc"],
+  evaluating:        ["Reviewing storyline guidance", "Checking benchmark fit", "Checking narrative coherence", "Preparing script direction"],
   scripting:         ["Writing script narration", "Crafting opening hook", "Building act-by-act script", "Polishing final draft"],
   completed:         ["Script complete"],
 };
@@ -574,24 +574,9 @@ export default function NewStoryPage() {
                               )}
                             </div>
                             <div style={{ minWidth: 0 }}>
-                              <p style={{ fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.5, marginBottom: 4 }}>
+                              <p style={{ fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.5 }}>
                                 {a.angle}
                               </p>
-                              <span
-                                style={{
-                                  display: "inline-block",
-                                  fontSize: 10,
-                                  fontWeight: 500,
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.06em",
-                                  color: "var(--color-text-tertiary)",
-                                  padding: "2px 6px",
-                                  borderRadius: 4,
-                                  background: "var(--color-background-secondary)",
-                                }}
-                              >
-                                {a.framing_axis.replace(/_/g, " ")}
-                              </span>
                             </div>
                           </button>
                         );
@@ -721,13 +706,6 @@ export default function NewStoryPage() {
                         </span>
                       </div>
                     </div>
-
-                    {/* Quality */}
-                    {story.quality_score != null && (
-                      <span style={{ fontSize: 12, color: "var(--color-text-secondary)", flexShrink: 0 }}>
-                        {(story.quality_score * 100).toFixed(0)}%
-                      </span>
-                    )}
 
                     <ChevronRight size={14} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
                   </Link>
