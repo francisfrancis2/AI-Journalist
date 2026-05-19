@@ -28,7 +28,6 @@ from backend.services.library_knowledge import (
     merge_reference_pack,
 )
 from backend.services.prompt_loader import load_prompt
-from backend.services.script_storage import upload_script_to_s3
 
 log = structlog.get_logger(__name__)
 
@@ -247,15 +246,6 @@ class ScriptRewriterAgent:
             },
         )
 
-        s3_key: str | None = None
-        try:
-            s3_key = await upload_script_to_s3(
-                revised,
-                suffix=f"revision_{state.get('script_revision_cycle', 0) + 1}",
-            )
-        except Exception as exc:
-            log.warning("script_rewriter.s3_upload_failed", error=str(exc))
-
         log.info(
             "script_rewriter.complete",
             title=revised.title,
@@ -264,7 +254,6 @@ class ScriptRewriterAgent:
 
         return {
             "final_script": revised,
-            "script_s3_key": s3_key or state.get("script_s3_key"),
             "script_revision_cycle": state.get("script_revision_cycle", 0) + 1,
             "reference_packs": merge_reference_pack(state, reference_pack),
         }

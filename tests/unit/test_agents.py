@@ -514,26 +514,21 @@ class TestScriptwriterAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            with patch(
-                "backend.agents.scriptwriter.upload_script_to_s3",
-                new=AsyncMock(return_value="scripts/test.md"),
-            ):
-                result = await ScriptwriterAgent().run({
-                    "story_id": str(uuid.uuid4()),
-                    "topic": sample_topic,
-                    "selected_storyline": _make_storyline(),
-                    "analysis_result": analysis,
-                    "research_package": package,
-                    "evaluation_report": None,
-                    "scriptwriter_recommendations": [
-                        "Open with the evaluator's strongest verified number."
-                    ],
-                    "target_duration_minutes": 15,
-                    "target_audience": "Business viewers",
-                })
+            result = await ScriptwriterAgent().run({
+                "story_id": str(uuid.uuid4()),
+                "topic": sample_topic,
+                "selected_storyline": _make_storyline(),
+                "analysis_result": analysis,
+                "research_package": package,
+                "evaluation_report": None,
+                "scriptwriter_recommendations": [
+                    "Open with the evaluator's strongest verified number."
+                ],
+                "target_duration_minutes": 15,
+                "target_audience": "Business viewers",
+            })
 
         script = result["final_script"]
-        assert result["script_s3_key"] == "scripts/test.md"
         assert script.metadata["target_duration_minutes"] == 15
         assert script.metadata["target_audience"] == "Business viewers"
         assert script.metadata["scriptwriter_recommendations"] == [
@@ -677,43 +672,38 @@ class TestScriptRewriterAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            with patch(
-                "backend.agents.script_rewriter.upload_script_to_s3",
-                new=AsyncMock(return_value="scripts/revision.md"),
-            ):
-                result = await ScriptRewriterAgent().run({
-                    "story_id": str(uuid.uuid4()),
-                    "topic": sample_topic,
-                    "final_script": _make_final_script(),
-                    "script_audit_report": ScriptAuditReport(
-                        rewrite_priorities=["Add one concrete source-backed number."],
-                        section_audits=[
-                            ScriptSectionAudit(
-                                section_number=1,
-                                title="The Hook",
-                                summary="Needs sharper specificity.",
-                                weaknesses=["Too generic"],
-                                rewrite_recommendation="Add a supported number.",
-                            ),
-                            ScriptSectionAudit(
-                                section_number=2,
-                                title="The Buildout",
-                                summary="Needs a cleaner transition.",
-                                weaknesses=["Transition is soft"],
-                                rewrite_recommendation="Clarify the cause-effect handoff.",
-                            ),
-                        ],
-                    ),
-                    "analysis_result": _make_analysis_result(sample_topic),
-                    "research_package": _make_research_package(sample_topic),
-                    "script_rewriter_recommendations": [
-                        "Add one concrete source-backed number."
+            result = await ScriptRewriterAgent().run({
+                "story_id": str(uuid.uuid4()),
+                "topic": sample_topic,
+                "final_script": _make_final_script(),
+                "script_audit_report": ScriptAuditReport(
+                    rewrite_priorities=["Add one concrete source-backed number."],
+                    section_audits=[
+                        ScriptSectionAudit(
+                            section_number=1,
+                            title="The Hook",
+                            summary="Needs sharper specificity.",
+                            weaknesses=["Too generic"],
+                            rewrite_recommendation="Add a supported number.",
+                        ),
+                        ScriptSectionAudit(
+                            section_number=2,
+                            title="The Buildout",
+                            summary="Needs a cleaner transition.",
+                            weaknesses=["Transition is soft"],
+                            rewrite_recommendation="Clarify the cause-effect handoff.",
+                        ),
                     ],
-                    "script_revision_cycle": 0,
-                    "target_audience": "Business viewers",
-                })
+                ),
+                "analysis_result": _make_analysis_result(sample_topic),
+                "research_package": _make_research_package(sample_topic),
+                "script_rewriter_recommendations": [
+                    "Add one concrete source-backed number."
+                ],
+                "script_revision_cycle": 0,
+                "target_audience": "Business viewers",
+            })
 
-        assert result["script_s3_key"] == "scripts/revision.md"
         prompt = mock_structured.ainvoke.call_args_list[0].args[0][1].content
         assert "SCRIPT EVALUATOR AGENT RECOMMENDATIONS TO APPLY IN THIS REWRITE" in prompt
         assert "mandatory rewrite direction" in prompt

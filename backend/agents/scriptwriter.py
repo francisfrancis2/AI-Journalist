@@ -5,8 +5,7 @@ Responsibilities:
   1. Receive the approved storyline and full research package.
   2. Write a complete, production-ready narrator script act-by-act in parallel.
   3. Include on-screen text, b-roll cues, and interview prompts.
-  4. Upload the finished script to S3.
-  5. Persist word count, duration estimate, and S3 key back into state.
+  4. Persist word count and duration estimate back into state.
 """
 
 import asyncio
@@ -31,7 +30,6 @@ from backend.services.library_knowledge import (
     merge_reference_pack,
 )
 from backend.services.prompt_loader import load_prompt
-from backend.services.script_storage import upload_script_to_s3
 
 log = structlog.get_logger(__name__)
 
@@ -304,12 +302,6 @@ class ScriptwriterAgent:
             },
         )
 
-        s3_key: str | None = None
-        try:
-            s3_key = await upload_script_to_s3(final_script)
-        except Exception as exc:
-            log.warning("scriptwriter.s3_upload_failed", error=str(exc))
-
         log.info(
             "scriptwriter.complete",
             title=storyline.title,
@@ -319,6 +311,5 @@ class ScriptwriterAgent:
 
         return {
             "final_script": final_script,
-            "script_s3_key": s3_key,
             "reference_packs": merge_reference_pack(state, reference_pack),
         }

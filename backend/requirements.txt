@@ -32,10 +32,6 @@ asyncpg==0.30.0
 alembic==1.14.0
 psycopg2-binary==2.9.10
 
-# ── AWS / S3 ──────────────────────────────────────────────────────────────────
-aioboto3==13.2.0
-# boto3 intentionally unpinned — aioboto3 pulls a compatible version via aiobotocore
-
 # ── Auth ──────────────────────────────────────────────────────────────────────
 python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4

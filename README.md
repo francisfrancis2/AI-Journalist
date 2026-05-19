@@ -24,7 +24,7 @@ User Topic
 └──────────────────────────────────────────────────────┘
                               │
                               ▼
-                    FinalScript (JSON + S3)
+                    FinalScript (database JSON)
 ```
 
 ### Agents
@@ -43,7 +43,7 @@ User Topic
 - **Web Scraping**: Playwright (headless Chromium)
 - **Data Sources**: NewsAPI, Alpha Vantage, RSS/Atom feeds including Google News RSS
 - **Backend**: FastAPI + SQLAlchemy (async) + PostgreSQL
-- **Storage**: AWS S3 (LocalStack for local dev)
+- **Storage**: PostgreSQL JSON columns for generated scripts and pipeline artifacts
 - **Frontend**: Next.js 15 + React Query + Tailwind CSS
 
 ---
@@ -64,7 +64,7 @@ cp .env.example .env
 
 ### 3. Start Infrastructure
 ```bash
-docker compose up db localstack -d
+docker compose up db -d
 ```
 
 ### 4. Install & Run Backend
@@ -176,7 +176,6 @@ All settings live in `backend/config.py` and are loaded from `.env`:
 | `ALPHA_VANTAGE_API_KEY` | Alpha Vantage key |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `RUN_MIGRATIONS_ON_STARTUP` | Apply Alembic migrations when the backend starts (default: true) |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | AWS credentials (use `test`/`test` with LocalStack) |
 | `JWT_SECRET_KEY` | JWT signing secret |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Optional first admin account; created with `must_change_password=true` and never reset automatically after creation |
 | `CLAUDE_MODEL` | Defaults to `claude-sonnet-4-6` |

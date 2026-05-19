@@ -71,7 +71,6 @@ class JournalistState(TypedDict):
     final_script: Optional[FinalScript]
     script_audit_report: Optional[ScriptAuditReport]
     script_rewriter_recommendations: list[str]    # Script audit guidance passed to ScriptRewriter
-    script_s3_key: Optional[str]            # S3 key of the uploaded script document
     script_revision_cycle: int              # How many audit-triggered rewrites have run
 
     # ── Legacy pipeline tracking ──────────────────────────────────────────────
@@ -133,7 +132,6 @@ def create_initial_state(
         final_script=None,
         script_audit_report=None,
         script_rewriter_recommendations=[],
-        script_s3_key=None,
         script_revision_cycle=0,
         pipeline_cycle=0,
         best_script=None,

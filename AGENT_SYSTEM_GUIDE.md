@@ -109,7 +109,6 @@ Important fields:
   - `refinement_cycle`
 - Script:
   - `final_script`
-  - `script_s3_key`
 - Routing flags:
   - `needs_more_research`
   - `approved_for_scripting`
@@ -181,7 +180,6 @@ Configured external dependencies:
 - NewsAPI
 - Alpha Vantage
 - PostgreSQL
-- S3-compatible storage
 - Playwright
 - YouTube API for benchmark corpus building
 
@@ -578,7 +576,7 @@ Purpose:
 
 - Final graph node.
 - Writes the full documentary script act-by-act.
-- Uploads the final script JSON to S3-compatible storage.
+- Returns the final script for database persistence.
 
 Model setup:
 
@@ -600,22 +598,19 @@ Inputs read from state:
 Outputs written to state:
 
 - `final_script`
-- `script_s3_key`
 
 Execution logic:
 
 1. For each act in the selected storyline, build an act-specific prompt.
 2. Write all acts concurrently using `asyncio.gather`.
 3. Build `FinalScript`.
-4. Attempt S3 upload.
-5. Return the final script and optional S3 key.
+4. Return the final script.
 
 Important implementation details:
 
 - Script sections are written independently in parallel.
 - The final word count is recomputed from generated narration, not trusted from model output.
 - Duration estimate uses `_WORDS_PER_MINUTE = 150`.
-- S3 upload failures are logged as warnings and do not fail the story.
 
 Where to modify behavior:
 
@@ -624,18 +619,6 @@ Where to modify behavior:
 - Section payload:
   - `ActOutput`
   - `ScriptSection` / `FinalScript` in `backend/models/story.py`
-- Upload behavior:
-  - `_upload_to_s3()`
-
-S3 setup details:
-
-- Uses `aioboto3`
-- Reads:
-  - `aws_access_key_id`
-  - `aws_secret_access_key`
-  - `aws_region`
-  - `s3_endpoint_url`
-  - `s3_bucket_scripts`
 
 ## 6.7 CorpusBuilderAgent
 
@@ -788,7 +771,6 @@ Fields written back to `StoryORM`:
 
 - `status`
 - `script_data`
-- `script_s3_key`
 - `quality_score`
 - `word_count`
 - `estimated_duration_minutes`
@@ -918,7 +900,7 @@ If you plan to iterate on the system, these are high-leverage changes:
 - Add source-count minimum enforcement before storylining
 - Add explicit quote verification before script generation
 - Add a timeline artifact in the analyst stage
-- Add retries or fallbacks for S3 and Playwright-heavy steps
+- Add retries or fallbacks for Playwright-heavy steps
 - Add snapshot tests for graph state transitions
 
 ## 13. Quick File Index

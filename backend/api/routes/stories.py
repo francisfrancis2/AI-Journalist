@@ -331,7 +331,6 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
         values: dict[str, Any] = {
             "status": StoryStatus.COMPLETED if script else StoryStatus.FAILED,
             "script_data": script.model_dump(mode="json") if script else None,
-            "script_s3_key": final_state.get("script_s3_key"),
             "quality_score": _evaluation_quality_score(evaluation),
             "word_count": script.total_word_count if script else None,
             "estimated_duration_minutes": script.estimated_duration_minutes if script else None,
@@ -382,7 +381,7 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
                 technical_detail=error_detail,
                 suggested_fix=(
                     "Check API key validity and credit balances for Tavily, NewsAPI, "
-                    "Alpha Vantage, and Anthropic. Verify database connectivity and S3 access."
+                    "Alpha Vantage, and Anthropic. Verify database connectivity."
                 ),
             )
             db.add(notification)
@@ -541,7 +540,6 @@ def _hydrate_existing_story_state(story: StoryORM) -> dict[str, Any]:
             BenchmarkReport(**story.benchmark_data)
             if story.benchmark_data else None
         ),
-        "script_s3_key": story.script_s3_key,
     }
 
 
@@ -585,7 +583,6 @@ async def _clone_story_for_revision(
         quality_score=source.quality_score if carry_outputs else None,
         word_count=source.word_count if carry_outputs else None,
         estimated_duration_minutes=source.estimated_duration_minutes if carry_outputs else None,
-        script_s3_key=source.script_s3_key if carry_outputs else None,
         iteration_count=source.iteration_count,
         parent_story_id=root_id,
         revision=new_revision,
@@ -623,7 +620,6 @@ async def _run_manual_script_rewrite(story_id: str, source_story_id: str) -> Non
                     status=StoryStatus.COMPLETED,
                     title=script.title,
                     script_data=script.model_dump(mode="json"),
-                    script_s3_key=state.get("script_s3_key"),
                     word_count=script.total_word_count,
                     estimated_duration_minutes=script.estimated_duration_minutes,
                     script_audit_data=(
@@ -751,7 +747,6 @@ async def _run_implement_recommendations(story_id: str, source_story_id: str, re
                     status=StoryStatus.COMPLETED,
                     title=script.title,
                     script_data=script.model_dump(mode="json"),
-                    script_s3_key=state.get("script_s3_key"),
                     analysis_data=(
                         state["analysis_result"].model_dump(mode="json")
                         if state.get("analysis_result") else source_story.analysis_data

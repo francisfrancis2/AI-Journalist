@@ -622,11 +622,6 @@ class TestAdminEndpoints:
             "backend.api.routes.admin._probe_alpha_vantage",
             new=probe(return_value=ServiceHealth(name="alpha_vantage", label="Alpha Vantage", status="ok")),
         )
-        mocker.patch(
-            "backend.api.routes.admin._probe_s3",
-            new=probe(return_value=ServiceHealth(name="s3", label="AWS S3", status="unknown")),
-        )
-
         response = await api_client.get("/api/v1/admin/health")
 
         assert response.status_code == 200

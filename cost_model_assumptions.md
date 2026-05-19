@@ -55,9 +55,6 @@ This model is based on the current application code in `backend/agents/` and `ba
 - Alpha Vantage premium pricing:
 - https://www.alphavantage.co/premium/
 
-- AWS S3 pricing:
-- https://aws.amazon.com/s3/pricing/
-
 ## Important caveat
 
 This model is a cash-cost estimate per completed script, not full profitability accounting.

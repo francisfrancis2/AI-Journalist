@@ -57,14 +57,6 @@ class Settings(BaseSettings):
     db_pool_timeout: int = 30
     db_pool_recycle_seconds: int = 300
 
-    # ── AWS / S3 ──────────────────────────────────────────────────────────────
-    aws_access_key_id: Optional[str] = Field(None, env="AWS_ACCESS_KEY_ID")
-    aws_secret_access_key: Optional[str] = Field(None, env="AWS_SECRET_ACCESS_KEY")
-    aws_region: str = "us-east-1"
-    s3_endpoint_url: Optional[str] = Field(None, env="S3_ENDPOINT_URL")
-    s3_bucket_scripts: str = "ai-journalist-scripts"
-    s3_bucket_assets: str = "ai-journalist-assets"
-
     # ── Playwright ────────────────────────────────────────────────────────────
     playwright_headless: bool = True
     playwright_timeout_ms: int = 10_000

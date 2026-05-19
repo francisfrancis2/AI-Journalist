@@ -149,8 +149,7 @@
     <p>
       AI Journalist is a full-stack documentary-production application. It starts from a story topic,
       runs a multi-agent research and writing pipeline, stores intermediate artifacts in Postgres JSON
-      fields, uploads final scripts to S3-compatible storage, and exposes both editorial and benchmark
-      scoring back to the user.
+      fields, and exposes both editorial and benchmark scoring back to the user.
     </p>
     <div class="callout">
       <p><strong>Core architectural idea:</strong> the app treats each story as a persisted workflow instance.
@@ -169,7 +168,7 @@
       </div>
       <div class="ok">
         <span class="label">Local environment</span>
-        <p>Docker Compose runs frontend, backend, local Postgres, and LocalStack. Neon is not required locally.</p>
+        <p>Docker Compose runs frontend, backend, and local Postgres. Neon is not required locally.</p>
       </div>
       <div class="ok">
         <span class="label">Fly environment</span>
@@ -328,11 +327,11 @@
         <text x="450" y="1016" text-anchor="middle" class="mini">backend/data/jh_patterns.json</text>
 
         <rect x="590" y="912" width="250" height="126" class="store"/>
-        <text x="715" y="940" text-anchor="middle" class="title" style="font-size:13px">S3-compatible Script Storage</text>
-        <text x="715" y="962" text-anchor="middle" class="mini">Bucket: ai-journalist-scripts</text>
-        <text x="715" y="980" text-anchor="middle" class="mini">Local: LocalStack creates buckets automatically</text>
-        <text x="715" y="998" text-anchor="middle" class="mini">Production: expects real S3-compatible credentials</text>
-        <text x="715" y="1016" text-anchor="middle" class="mini">Stores final and revised script JSON payloads</text>
+        <text x="715" y="940" text-anchor="middle" class="title" style="font-size:13px">Script JSON Artifacts</text>
+        <text x="715" y="962" text-anchor="middle" class="mini">Stored in Postgres stories.script_data</text>
+        <text x="715" y="980" text-anchor="middle" class="mini">Revisions stay in story version rows</text>
+        <text x="715" y="998" text-anchor="middle" class="mini">No object storage service required</text>
+        <text x="715" y="1016" text-anchor="middle" class="mini">Frontend reads script payloads from the API</text>
 
         <path d="M240 872 L185 912" class="line"/>
         <path d="M450 872 L450 912" class="line"/>
@@ -341,7 +340,7 @@
 
         <rect x="60" y="1070" width="780" height="118" class="box-soft"/>
         <text x="450" y="1100" text-anchor="middle" class="title" style="font-size:14px">Deployment Summary</text>
-        <text x="450" y="1124" text-anchor="middle" class="mini">Local Docker stack: frontend + backend + Postgres + LocalStack on a private bridge network</text>
+        <text x="450" y="1124" text-anchor="middle" class="mini">Local Docker stack: frontend + backend + Postgres on a private bridge network</text>
         <text x="450" y="1144" text-anchor="middle" class="mini">Fly stack: aijournalist-frontend and aijournalist-backend deploy separately; backend runs Alembic at startup and uses hosted Postgres</text>
         <text x="450" y="1164" text-anchor="middle" class="mini">GitHub Actions deploy path sets Fly secrets directly; frontend points at backend via HTTPS and backend health checks are wired for Fly</text>
       </svg>
@@ -449,7 +448,7 @@
       <tr><td>StorylineCreatorAgent</td><td>Claude Sonnet structured output</td><td>Creates two 10-15 minute documentary structures and selects the stronger proposal.</td><td><code>storyline_proposals</code>, <code>selected_storyline</code></td></tr>
       <tr><td>EvaluatorAgent</td><td>Claude Haiku structured output</td><td>Scores the selected storyline across editorial criteria and decides if it is ready for scripting.</td><td><code>evaluation_report</code>, routing flags</td></tr>
       <tr><td>BenchmarkAgent</td><td>Claude Haiku structured output + benchmark library</td><td>Scores the storyline against the benchmark corpus and produces benchmark-grade explanations.</td><td><code>benchmark_report</code></td></tr>
-      <tr><td>ScriptwriterAgent</td><td>Claude Opus structured output</td><td>Writes each act in parallel, enforces source IDs, computes word count, and uploads final script JSON.</td><td><code>final_script</code>, <code>script_s3_key</code></td></tr>
+      <tr><td>ScriptwriterAgent</td><td>Claude Opus structured output</td><td>Writes each act in parallel, enforces source IDs, and computes word count.</td><td><code>final_script</code></td></tr>
       <tr><td>ScriptEvaluatorAgent</td><td>Claude Haiku structured output</td><td>Audits the finished script itself, including section-by-section notes and benchmark comparison.</td><td><code>script_audit_report</code></td></tr>
       <tr><td>ScriptRewriterAgent</td><td>Claude Opus structured output</td><td>Rewrites weak sections against audit feedback and source-linked facts.</td><td><code>final_script</code>, revision cycle</td></tr>
       <tr><td>CorpusBuilderAgent</td><td>Claude Haiku + Claude Sonnet + YouTube tools</td><td>Builds benchmark corpora from reference channels and synthesizes per-library pattern caches.</td><td><code>bi_reference_docs</code>, <code>bi_pattern_library</code>, JSON caches</td></tr>
@@ -498,14 +497,8 @@
     <table>
       <tr><th>Store</th><th>Format</th><th>Used for</th></tr>
       <tr><td>Pattern caches in <code>backend/data</code></td><td>JSON files</td><td>Fast local loading of benchmark libraries and DB fallback repair.</td></tr>
-      <tr><td>S3-compatible script storage</td><td>JSON object per script</td><td>Durable storage of generated scripts and revisions outside the database row.</td></tr>
       <tr><td>Frontend auth storage</td><td>localStorage / sessionStorage</td><td>JWT token and cached user identity.</td></tr>
     </table>
-
-    <div class="warning">
-      <p><strong>Operational nuance:</strong> local development uses LocalStack for S3 bucket emulation, but Fly deployment expects valid
-      S3-compatible credentials if script-object uploads need to work outside the local environment.</p>
-    </div>
   </section>
 
   <section>
@@ -523,7 +516,6 @@
       <tr><td>youtube-transcript-api</td><td><code>YouTubeFetcher</code></td><td>Fallback transcript extraction when Supadata is unavailable or exhausted.</td></tr>
       <tr><td>Postgres</td><td>SQLAlchemy async engine</td><td>Primary durable application database.</td></tr>
       <tr><td>Neon Postgres</td><td>Fly deployment design</td><td>Hosted Postgres provider through <code>DATABASE_URL</code>.</td></tr>
-      <tr><td>LocalStack</td><td><code>docker-compose.yml</code></td><td>Local S3 emulation for script uploads and asset buckets.</td></tr>
     </table>
   </section>
 
@@ -570,7 +562,6 @@
       <li><code>frontend</code>: Next.js app on port 3000.</li>
       <li><code>backend</code>: FastAPI app on an internal port 8000.</li>
       <li><code>db</code>: local Postgres 16 container.</li>
-      <li><code>localstack</code>: S3 emulation with bootstrap bucket creation.</li>
     </ul>
     <p>
       The backend service in <code>docker-compose.yml</code> explicitly overrides <code>DATABASE_URL</code>
@@ -587,10 +578,10 @@
 
     <h3>11.3 Environment split</h3>
     <table>
-      <tr><th>Environment</th><th>Database target</th><th>Object storage target</th></tr>
-      <tr><td>Local Docker</td><td>Bundled Postgres container</td><td>LocalStack buckets</td></tr>
-      <tr><td>Local non-Docker</td><td>Whatever <code>.env</code> points to</td><td>S3-compatible endpoint defined in <code>.env</code></td></tr>
-      <tr><td>Fly</td><td>Hosted Postgres from <code>DATABASE_URL</code> (designed for Neon)</td><td>Real S3-compatible service if production credentials are supplied</td></tr>
+      <tr><th>Environment</th><th>Database target</th><th>Script artifact target</th></tr>
+      <tr><td>Local Docker</td><td>Bundled Postgres container</td><td>Postgres JSON columns</td></tr>
+      <tr><td>Local non-Docker</td><td>Whatever <code>.env</code> points to</td><td>Postgres JSON columns</td></tr>
+      <tr><td>Fly</td><td>Hosted Postgres from <code>DATABASE_URL</code> (designed for Neon)</td><td>Postgres JSON columns</td></tr>
     </table>
   </section>
 
@@ -644,7 +635,6 @@
           <li>backend/agents/script_rewriter.py</li>
           <li>backend/agents/corpus_builder.py</li>
           <li>backend/services/benchmarking.py</li>
-          <li>backend/services/script_storage.py</li>
         </ul>
       </div>
       <div>

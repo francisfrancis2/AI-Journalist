@@ -10,7 +10,5 @@ news,NewsAPI Advanced,base_fee_per_script_formula,1749.00,1,1,1,,,,"1749/scripts
 finance,Alpha Vantage premium 75 rpm,base_fee_per_script_formula,49.99,1,1,1,,,,"49.99/scripts_per_month",Best treated as a fixed monthly subscription instead of per-request overage
 rss,RSS feeds,request,0.000000,9,9,9,0.000000,0.000000,0.000000,usage*unit_price,RSS feed polling has no direct vendor fee in current setup
 scraping,Playwright,browser_scrape_vendor_cost,0.000000,5,5,5,0.000000,0.000000,0.000000,usage*unit_price,No direct third-party per-scrape fee; compute cost is separate
-storage,AWS S3 Standard,put_request,0.000005,1,1,1,0.000005,0.000005,0.000005,usage*unit_price,Derived from 0.005 per 1000 PUT requests
-storage,AWS S3 Standard,storage_gb_month,0.023000,0.000300,0.000300,0.000300,0.000007,0.000007,0.000007,usage*unit_price,Assumes one 300 KB JSON script stored for one month
-summary,Third-party marginal cash cost excluding fixed subscriptions,total,,0,0,0,0.341612,0.439105,0.813605,sum(selected rows except alternative NewsAPI lines),Includes Anthropic Opus 4.6 plus Tavily plus S3 plus NewsAPI Business overage
+summary,Third-party marginal cash cost excluding fixed subscriptions,total,,0,0,0,0.341600,0.439093,0.813593,sum(selected rows except alternative NewsAPI lines),Includes Anthropic Opus 4.6 plus Tavily plus NewsAPI Business overage
 summary,Third-party marginal cash cost excluding fixed subscriptions total with NewsAPI advanced overage,total,,0,0,0,0.339812,0.437305,0.811805,sum(selected rows except alternative NewsAPI lines),Same as above but using NewsAPI Advanced overage rate

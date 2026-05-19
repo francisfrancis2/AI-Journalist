@@ -15,9 +15,6 @@ kill_timeout = "300s"
 
 [env]
   PYTHONPATH       = "/app"
-  AWS_REGION       = "us-east-1"
-  S3_BUCKET_SCRIPTS = "ai-journalist-scripts"
-  S3_BUCKET_ASSETS  = "ai-journalist-assets"
   LOG_LEVEL        = "INFO"
   DEBUG            = "false"
   CORS_ORIGINS     = "https://aijournalist-frontend.fly.dev"

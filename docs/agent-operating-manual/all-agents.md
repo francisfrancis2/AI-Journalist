@@ -1129,8 +1129,7 @@ Responsibilities:
   1. Receive the approved storyline and full research package.
   2. Write a complete, production-ready narrator script act-by-act in parallel.
   3. Include on-screen text, b-roll cues, and interview prompts.
-  4. Upload the finished script to S3.
-  5. Persist word count, duration estimate, and S3 key back into state.
+  4. Persist word count and duration estimate back into state.
 
 ### Agent Classes
 
@@ -1276,12 +1275,6 @@ async def run(self, state: dict) -> dict:
             },
         )
 
-        s3_key: str | None = None
-        try:
-            s3_key = await upload_script_to_s3(final_script)
-        except Exception as exc:
-            log.warning("scriptwriter.s3_upload_failed", error=str(exc))
-
         log.info(
             "scriptwriter.complete",
             title=storyline.title,
@@ -1291,7 +1284,6 @@ async def run(self, state: dict) -> dict:
 
         return {
             "final_script": final_script,
-            "script_s3_key": s3_key,
         }
 ```
 
@@ -1723,15 +1715,6 @@ async def run(self, state: dict) -> dict:
             },
         )
 
-        s3_key: str | None = None
-        try:
-            s3_key = await upload_script_to_s3(
-                revised,
-                suffix=f"revision_{state.get('script_revision_cycle', 0) + 1}",
-            )
-        except Exception as exc:
-            log.warning("script_rewriter.s3_upload_failed", error=str(exc))
-
         log.info(
             "script_rewriter.complete",
             title=revised.title,
@@ -1740,7 +1723,6 @@ async def run(self, state: dict) -> dict:
 
         return {
             "final_script": revised,
-            "script_s3_key": s3_key or state.get("script_s3_key"),
             "script_revision_cycle": state.get("script_revision_cycle", 0) + 1,
         }
 ```

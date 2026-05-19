@@ -250,7 +250,6 @@ export interface Story {
   quality_score: number | null;
   word_count: number | null;
   estimated_duration_minutes: number | null;
-  script_s3_key: string | null;
   error_message: string | null;
   iteration_count: number;
   evaluation_data: EvaluationData | null;

@@ -22,30 +22,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── LocalStack (S3 emulation for local dev) ─────────────────────────────────
-  localstack:
-    image: localstack/localstack:3
-    container_name: aijournalist-localstack
-    restart: unless-stopped
-    environment:
-      SERVICES: s3
-      DEFAULT_REGION: us-east-1
-      AWS_DEFAULT_REGION: us-east-1
-      LOCALSTACK_AUTH_TOKEN: ""
-    expose:
-      - "4566"
-    networks:
-      - internal
-    volumes:
-      - localstack_data:/var/lib/localstack
-      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh:ro
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q 's3'"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
-
   # ── FastAPI Backend ─────────────────────────────────────────────────────────
   backend:
     build:
@@ -59,10 +35,6 @@ services:
       # Local Docker should always use the bundled Postgres container.
       # This overrides DATABASE_URL from .env so Neon is not required locally.
       DATABASE_URL: postgresql://aijournalist:secret@db:5432/aijournalist
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
-      AWS_REGION: us-east-1
-      S3_ENDPOINT_URL: http://localstack:4566
     # No host port mapping — backend is only reachable within the internal network
     expose:
       - "8000"
@@ -71,8 +43,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      localstack:
-        condition: service_started
     volumes:
       - ./backend:/app/backend
       # Optional: mount YouTube cookies to bypass transcript rate limits in Docker.
@@ -104,7 +74,6 @@ services:
 
 volumes:
   postgres_data:
-  localstack_data:
 
 networks:
   internal:

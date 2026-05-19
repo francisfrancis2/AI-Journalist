@@ -110,9 +110,6 @@ class StoryORM(Base):
     word_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     estimated_duration_minutes: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
-    # S3 reference for the final script document
-    script_s3_key: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
-
     # Benchmark scores
     benchmark_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
@@ -195,7 +192,6 @@ class StoryRead(BaseModel):
     quality_score: Optional[float]
     word_count: Optional[int]
     estimated_duration_minutes: Optional[float]
-    script_s3_key: Optional[str]
     error_message: Optional[str]
     iteration_count: int
     evaluation_data: Optional[dict] = None

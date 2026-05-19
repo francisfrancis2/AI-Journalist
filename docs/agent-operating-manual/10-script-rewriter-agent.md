@@ -123,15 +123,6 @@ async def run(self, state: dict) -> dict:
             },
         )
 
-        s3_key: str | None = None
-        try:
-            s3_key = await upload_script_to_s3(
-                revised,
-                suffix=f"revision_{state.get('script_revision_cycle', 0) + 1}",
-            )
-        except Exception as exc:
-            log.warning("script_rewriter.s3_upload_failed", error=str(exc))
-
         log.info(
             "script_rewriter.complete",
             title=revised.title,
@@ -140,7 +131,6 @@ async def run(self, state: dict) -> dict:
 
         return {
             "final_script": revised,
-            "script_s3_key": s3_key or state.get("script_s3_key"),
             "script_revision_cycle": state.get("script_revision_cycle", 0) + 1,
         }
 ```
