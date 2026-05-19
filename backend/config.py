@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     enable_anthropic_search: bool = True
     anthropic_search_max_uses_per_query: int = 3   # caps cost per query call
     anthropic_search_max_queries: int = 4          # caps how many planned queries we send
+    anthropic_deep_research_max_uses: int = 12     # caps Research Workspace deep research searches
 
     # ── NewsAPI ───────────────────────────────────────────────────────────────
     news_api_key: str = Field(..., env="NEWS_API_KEY")

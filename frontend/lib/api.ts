@@ -342,6 +342,23 @@ export interface ChatResponse {
   youtube_results: YouTubeVideo[];
 }
 
+export interface DeepResearchCitation {
+  title: string;
+  url: string;
+  cited_text: string | null;
+}
+
+export interface DeepResearchReport {
+  story_id: string;
+  story_title: string;
+  prompt: string;
+  report_markdown: string;
+  citations: DeepResearchCitation[];
+  model: string;
+  web_search_requests: number;
+  generated_at: string;
+}
+
 // ── Client ────────────────────────────────────────────────────────────────────
 
 class AIJournalistAPIClient {
@@ -511,6 +528,18 @@ class AIJournalistAPIClient {
     const { data } = await this.http.post<ChatResponse>(
       `/api/v1/stories/${storyId}/chat`,
       { message, history }
+    );
+    return data;
+  }
+
+  async generateDeepResearchReport(
+    storyId: string,
+    prompt: string
+  ): Promise<DeepResearchReport> {
+    const { data } = await this.http.post<DeepResearchReport>(
+      `/api/v1/stories/${storyId}/deep-research`,
+      { prompt },
+      { timeout: 180_000 }
     );
     return data;
   }

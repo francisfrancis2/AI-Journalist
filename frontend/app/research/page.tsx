@@ -1,21 +1,25 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import {
+  Download,
   ExternalLink,
   Loader2,
+  Search,
 } from "lucide-react";
 import {
   apiClient,
+  type DeepResearchReport,
   type RawSource,
   type ResearchSource,
   type Story,
 } from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
+import { downloadDeepResearchReport } from "@/lib/research-report-export";
 
 function credibilityStyle(level: string) {
   if (level === "high") return { background: "var(--color-success-bg)", color: "var(--color-success)", borderColor: "#bbf7d0" };
@@ -100,6 +104,9 @@ function ResearchPageInner() {
   const isAdmin = currentUser?.is_admin ?? false;
   const searchParams = useSearchParams();
   const [selectedStoryId, setSelectedStoryId] = useState<string>("");
+  const [deepResearchPrompt, setDeepResearchPrompt] = useState("");
+  const [deepResearchReport, setDeepResearchReport] = useState<DeepResearchReport | null>(null);
+  const [deepResearchError, setDeepResearchError] = useState<string | null>(null);
   const storyParam = searchParams.get("story");
 
   const { data: stories, isLoading: storiesLoading } = useQuery<Story[]>({
@@ -119,11 +126,49 @@ function ResearchPageInner() {
     }
   }, [storyParam, selectedStoryId]);
 
+  useEffect(() => {
+    setDeepResearchPrompt("");
+    setDeepResearchReport(null);
+    setDeepResearchError(null);
+  }, [selectedStoryId]);
+
   const { data: storySources, isLoading: sourcesLoading } = useQuery<ResearchSource[]>({
     queryKey: ["story-sources", selectedStoryId],
     queryFn: () => apiClient.getResearchSources(selectedStoryId),
     enabled: !!selectedStoryId,
   });
+
+  const deepResearchMutation = useMutation({
+    mutationFn: ({
+      storyId,
+      prompt,
+    }: {
+      storyId: string;
+      prompt: string;
+    }) => apiClient.generateDeepResearchReport(storyId, prompt),
+    onMutate: () => {
+      setDeepResearchError(null);
+    },
+    onSuccess: (response, variables) => {
+      if (variables.storyId !== selectedStoryId) return;
+      setDeepResearchReport(response);
+      setDeepResearchPrompt("");
+    },
+    onError: (error: Error) => {
+      setDeepResearchError(error.message || "Anthropic deep research failed.");
+    },
+  });
+
+  const handleDeepResearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const prompt = deepResearchPrompt.trim();
+    if (!selectedStoryId || !prompt || deepResearchMutation.isPending) return;
+
+    deepResearchMutation.mutate({
+      storyId: selectedStoryId,
+      prompt,
+    });
+  };
 
   const highCredSources = (storySources ?? []).filter((source) => source.credibility === "high").length;
 
@@ -275,17 +320,180 @@ function ResearchPageInner() {
                 </div>
               </div>
 
-              <div
-                style={{
-                  border: "0.5px dashed var(--color-border-primary)",
-                  borderRadius: 12,
-                  padding: "28px 22px",
-                  textAlign: "center",
-                  color: "var(--color-text-secondary)",
-                }}
-              >
-                <p style={{ fontSize: 13, marginBottom: 4 }}>Research-only view.</p>
-                <p style={{ fontSize: 12 }}>This panel shows source pack details for the selected story.</p>
+              <div className="card" style={{ padding: "14px 16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Anthropic Deep Research</p>
+                    <p style={{ fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                      Produces a separate report from Anthropic web research. The script stays unchanged.
+                    </p>
+                  </div>
+                  {selectedStory.status === "completed" && (
+                    <span className="badge badge-success" style={{ fontSize: 10, border: "none", flexShrink: 0 }}>
+                      Script-aware
+                    </span>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    maxHeight: 360,
+                    overflow: "auto",
+                    paddingRight: 4,
+                    marginBottom: 12,
+                  }}
+                >
+                  {deepResearchMutation.isPending ? (
+                    <div
+                      style={{
+                        border: "0.5px solid var(--color-border-tertiary)",
+                        borderRadius: 8,
+                        padding: "18px 16px",
+                        display: "flex",
+                        gap: 10,
+                        alignItems: "flex-start",
+                        color: "var(--color-text-secondary)",
+                      }}
+                    >
+                      <Loader2 size={16} className="animate-spin" style={{ color: "var(--color-action)", flexShrink: 0, marginTop: 2 }} />
+                      <div>
+                        <p style={{ fontSize: 12, color: "var(--color-text-primary)", marginBottom: 4 }}>
+                          Running Anthropic Deep Research
+                        </p>
+                        <p style={{ fontSize: 12, lineHeight: 1.6 }}>
+                          Searching, cross-checking, and drafting a downloadable report.
+                        </p>
+                      </div>
+                    </div>
+                  ) : !deepResearchReport ? (
+                    <div
+                      style={{
+                        border: "0.5px dashed var(--color-border-primary)",
+                        borderRadius: 8,
+                        padding: "18px 16px",
+                        color: "var(--color-text-secondary)",
+                      }}
+                    >
+                      <p style={{ fontSize: 12, lineHeight: 1.6 }}>
+                        Ask for missing evidence, fresher numbers, experts, counter-evidence, or source leads.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          alignItems: "center",
+                          border: "0.5px solid var(--color-border-tertiary)",
+                          borderRadius: 8,
+                          padding: "10px 12px",
+                        }}
+                      >
+                        <div>
+                          <p style={{ fontSize: 12, fontWeight: 500 }}>Additional research report ready</p>
+                          <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 3 }}>
+                            {deepResearchReport.web_search_requests} Anthropic web searches · {deepResearchReport.citations.length} citations
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => downloadDeepResearchReport(deepResearchReport)}
+                        >
+                          <Download size={13} />
+                          Download
+                        </button>
+                      </div>
+
+                      <div
+                        style={{
+                          background: "var(--color-background-secondary)",
+                          border: "0.5px solid var(--color-border-tertiary)",
+                          borderRadius: 8,
+                          padding: "12px 14px",
+                        }}
+                      >
+                        <p
+                          style={{
+                            fontSize: 12,
+                            color: "var(--color-text-primary)",
+                            lineHeight: 1.7,
+                            whiteSpace: "pre-wrap",
+                          }}
+                        >
+                          {deepResearchReport.report_markdown}
+                        </p>
+                      </div>
+
+                      {deepResearchReport.citations.length > 0 && (
+                        <div
+                          style={{
+                            border: "0.5px solid var(--color-border-tertiary)",
+                            borderRadius: 8,
+                            padding: "10px 12px",
+                          }}
+                        >
+                          <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Citations</p>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                            {deepResearchReport.citations.map((citation, index) => (
+                              <a
+                                key={`${citation.url}-${index}`}
+                                href={citation.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  color: "var(--color-action)",
+                                  fontSize: 12,
+                                  lineHeight: 1.5,
+                                  overflowWrap: "anywhere",
+                                }}
+                              >
+                                {citation.title}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {deepResearchError && (
+                  <p role="alert" style={{ fontSize: 12, color: "var(--color-danger)", marginBottom: 10 }}>
+                    {deepResearchError}
+                  </p>
+                )}
+
+                <form onSubmit={handleDeepResearch} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <textarea
+                    value={deepResearchPrompt}
+                    onChange={(event) => setDeepResearchPrompt(event.target.value)}
+                    className="input"
+                    rows={4}
+                    placeholder="Ask Anthropic Deep Research for missing evidence, updated data, expert sources, or verification gaps."
+                    style={{ resize: "vertical", minHeight: 96, lineHeight: 1.5 }}
+                    disabled={deepResearchMutation.isPending}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button
+                      type="submit"
+                      className="btn-primary"
+                      disabled={!selectedStoryId || !deepResearchPrompt.trim() || deepResearchMutation.isPending}
+                    >
+                      {deepResearchMutation.isPending ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Search size={13} />
+                      )}
+                      Run Deep Research
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

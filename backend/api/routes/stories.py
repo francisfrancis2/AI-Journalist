@@ -5,6 +5,7 @@ Stories API routes — CRUD + pipeline trigger + research chat endpoints.
 import asyncio
 import json
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import structlog
@@ -33,6 +34,7 @@ from backend.models.benchmark import BenchmarkReport
 from backend.models.research import (
     AnalysisResult,
     EvaluationReport,
+    RawSource,
     ResearchPackage,
     StorylineProposal,
 )
@@ -47,6 +49,13 @@ from backend.models.story import (
     StoryStatus,
 )
 from backend.models.user import UserORM
+from backend.tools.anthropic_search import AnthropicSearchTool
+from backend.tools.anthropic_deep_research import (
+    AnthropicDeepResearchTool,
+    DeepResearchCitation,
+)
+from backend.tools.news_api import NewsAPITool
+from backend.tools.web_search import WebSearchTool
 
 log = structlog.get_logger(__name__)
 router = APIRouter()
@@ -69,7 +78,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    history: list[ChatMessage] = []
+    history: list[ChatMessage] = Field(default_factory=list)
 
 
 class YouTubeVideo(BaseModel):
@@ -81,20 +90,232 @@ class YouTubeVideo(BaseModel):
 
 class ChatResponse(BaseModel):
     content: str
-    youtube_results: list[YouTubeVideo] = []
+    youtube_results: list[YouTubeVideo] = Field(default_factory=list)
+
+
+class DeepResearchRequest(BaseModel):
+    prompt: str = Field(..., min_length=4, max_length=2000)
+
+
+class DeepResearchReport(BaseModel):
+    story_id: uuid.UUID
+    story_title: str
+    prompt: str
+    report_markdown: str
+    citations: list[DeepResearchCitation] = Field(default_factory=list)
+    model: str
+    web_search_requests: int = 0
+    generated_at: datetime
 
 
 # ── Chat helpers ──────────────────────────────────────────────────────────────
 
-def _build_chat_system_prompt(story: StoryORM) -> str:
+_FRESH_RESEARCH_KEYWORDS = {
+    "research",
+    "source",
+    "sources",
+    "data",
+    "stat",
+    "stats",
+    "evidence",
+    "expert",
+    "experts",
+    "latest",
+    "current",
+    "verify",
+    "fact",
+    "fact-check",
+    "gap",
+    "gaps",
+    "numbers",
+    "news",
+}
+
+
+def _should_fetch_fresh_research(message: str) -> bool:
+    lower = message.lower()
+    return any(keyword in lower for keyword in _FRESH_RESEARCH_KEYWORDS)
+
+
+async def _fresh_research_context(message: str, topic: str) -> str:
+    """Run lightweight live search for story chat research requests."""
+    query = f"{topic} {message}".strip()
+    fetches: list[tuple[str, Any]] = [
+        (
+            "tavily",
+            WebSearchTool().search(
+                query,
+                max_results=min(settings.tavily_max_results, 5),
+                search_depth=settings.tavily_search_depth,
+            ),
+        ),
+        (
+            "newsapi",
+            NewsAPITool().search_everything(
+                query,
+                page_size=min(settings.news_api_page_size, 5),
+            ),
+        ),
+    ]
+    if settings.enable_anthropic_search:
+        fetches.append(("anthropic_search", AnthropicSearchTool().search(query)))
+
+    results = await asyncio.gather(
+        *(fetch for _, fetch in fetches),
+        return_exceptions=True,
+    )
+    sources: list[RawSource] = []
+    for (provider, _), result in zip(fetches, results):
+        if isinstance(result, Exception):
+            log.warning("chat.fresh_research.failed", provider=provider, error=str(result))
+            continue
+        sources.extend(result if isinstance(result, list) else [result])
+
+    seen: set[str] = set()
+    lines: list[str] = []
+    for source in sources:
+        if not isinstance(source, RawSource):
+            continue
+        key = source.url or source.title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        source_type = getattr(source.source_type, "value", str(source.source_type))
+        credibility = getattr(source.credibility, "value", str(source.credibility))
+        provider = source.metadata.get("provider") or source_type
+        preview = source.content.strip()
+        preview = preview[:420] + ("..." if len(preview) > 420 else "")
+        lines.append(
+            "\n".join(
+                [
+                    f"  {len(lines) + 1}. {source.title}",
+                    f"     Provider: {provider} | Credibility: {credibility} | URL: {source.url or 'N/A'}",
+                    f"     Preview: {preview or 'No preview available'}",
+                ]
+            )
+        )
+        if len(lines) >= 12:
+            break
+
+    return "\n".join(lines)
+
+
+def _build_deep_research_story_context(story: StoryORM) -> str:
+    """Compact read-only context for Research Workspace deep research."""
+    lines = [
+        f"Title: {story.title}",
+        f"Topic: {story.topic}",
+        f"Tone: {story.tone}",
+        f"Target duration: {story.target_duration_minutes} minutes",
+    ]
+    if story.target_audience:
+        lines.append(f"Target audience: {story.target_audience}")
+    if story.selected_angle:
+        lines.append(f"Selected angle: {story.selected_angle}")
+
+    if story.script_data:
+        lines.append("\nCurrent script sections (read-only):")
+        for section in story.script_data.get("sections", []):
+            if not isinstance(section, dict):
+                continue
+            narration = str(section.get("narration") or "").strip()
+            excerpt = narration[:1000] + ("..." if len(narration) > 1000 else "")
+            source_ids = section.get("source_ids") or []
+            if not isinstance(source_ids, list):
+                source_ids = []
+            lines.append(
+                "\n".join(
+                    [
+                        f"- Act {section.get('section_number', '?')}: {section.get('title', 'Untitled')}",
+                        f"  Source IDs: {', '.join(str(source_id) for source_id in source_ids) or 'None'}",
+                        f"  Narration excerpt: {excerpt or 'Not available'}",
+                    ]
+                )
+            )
+    else:
+        lines.append("\nCurrent script sections: Script not yet available.")
+
+    if story.research_data:
+        raw_sources = story.research_data.get("sources", [])
+        if isinstance(raw_sources, list) and raw_sources:
+            lines.append("\nSaved source pack highlights:")
+            for source in raw_sources[:15]:
+                if not isinstance(source, dict):
+                    continue
+                content = str(source.get("content") or "").strip()
+                preview = content[:450] + ("..." if len(content) > 450 else "")
+                lines.append(
+                    "\n".join(
+                        [
+                            f"- {source.get('title', 'Untitled')}",
+                            f"  URL: {source.get('url') or 'N/A'}",
+                            f"  Source ID: {source.get('source_id') or 'N/A'}",
+                            f"  Preview: {preview or 'No preview available'}",
+                        ]
+                    )
+                )
+    return "\n".join(lines)
+
+
+def _build_chat_system_prompt(story: StoryORM, fresh_research_context: str = "") -> str:
     """Build a rich system prompt from the persisted story artefacts."""
-    script_outline = ""
+    script_context = ""
     if story.script_data:
         sections = story.script_data.get("sections", [])
-        script_outline = "\n".join(
-            f"  Act {s['section_number']}: {s['title']} (~{s.get('estimated_seconds', 120) // 60} min)"
-            for s in sections
-        )
+        script_lines: list[str] = []
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            estimated_seconds = section.get("estimated_seconds", 120)
+            try:
+                estimated_minutes = max(1, int(estimated_seconds) // 60)
+            except (TypeError, ValueError):
+                estimated_minutes = 2
+            source_ids = section.get("source_ids") or []
+            if not isinstance(source_ids, list):
+                source_ids = []
+            narration = str(section.get("narration") or "").strip()
+            narration_excerpt = narration[:900] + ("..." if len(narration) > 900 else "")
+            script_lines.append(
+                "\n".join(
+                    [
+                        f"  Act {section.get('section_number', '?')}: {section.get('title', 'Untitled')} (~{estimated_minutes} min)",
+                        f"    Source IDs: {', '.join(str(source_id) for source_id in source_ids) or 'None'}",
+                        f"    Narration excerpt: {narration_excerpt or 'Not available'}",
+                    ]
+                )
+            )
+        script_context = "\n".join(script_lines)
+
+    source_context = ""
+    if story.research_data:
+        raw_sources = story.research_data.get("sources", [])
+        if isinstance(raw_sources, list):
+            def relevance_score(source: dict[str, Any]) -> float:
+                try:
+                    return float(source.get("relevance_score") or 0.0)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            sorted_sources = sorted(
+                [source for source in raw_sources if isinstance(source, dict)],
+                key=relevance_score,
+                reverse=True,
+            )
+            source_lines = []
+            for source in sorted_sources[:12]:
+                content = str(source.get("content") or "").strip()
+                preview = content[:500] + ("..." if len(content) > 500 else "")
+                source_lines.append(
+                    "\n".join(
+                        [
+                            f"  {source.get('source_id') or source.get('url') or 'source'}: {source.get('title', 'Untitled')}",
+                            f"    Type: {source.get('source_type', 'source')} | Credibility: {source.get('credibility', 'medium')} | URL: {source.get('url') or 'N/A'}",
+                            f"    Preview: {preview or 'No preview available'}",
+                        ]
+                    )
+                )
+            source_context = "\n".join(source_lines)
 
     bench_context = ""
     if story.benchmark_data:
@@ -124,8 +345,14 @@ STORY:
 • Topic: {story.topic}
 • Tone: {story.tone}
 
-SCRIPT STRUCTURE:
-{script_outline or "  Script not yet available."}
+CURRENT SCRIPT:
+{script_context or "  Script not yet available."}
+
+SAVED RESEARCH SOURCES:
+{source_context or "  Saved source pack not yet available."}
+
+FRESH RESEARCH RESULTS FOR THIS REQUEST:
+{fresh_research_context or "  No fresh search results were fetched for this message."}
 
 BENCHMARK:
 {bench_context or "  Benchmark not yet available."}
@@ -135,6 +362,9 @@ You help with:
 2. Suggesting relevant YouTube videos — when the user asks for videos, search YouTube and list results.
 3. Proposing specific script revisions based on the visible script, research, benchmark gaps, or user ideas.
 
+When asked for additional research, identify the specific script section or claim it would strengthen, \
+name the missing evidence, and suggest concrete source targets, search queries, data points, or expert types.
+If fresh research results are present, prioritize them and cite their titles or URLs. Do not invent sources.
 Be specific and reference actual script sections when making suggestions. Keep responses focused and actionable."""
 
 
@@ -1278,6 +1508,52 @@ async def get_research_sources(
     ]
 
 
+@router.post("/{story_id}/deep-research", response_model=DeepResearchReport)
+async def run_deep_research_report(
+    story_id: uuid.UUID,
+    payload: DeepResearchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> DeepResearchReport:
+    """
+    Generate a read-only Anthropic deep research report for the selected story.
+
+    This endpoint intentionally does not update the story, regenerate analysis,
+    or rewrite the existing script.
+    """
+    validate_user_input(payload.prompt, field="prompt")
+    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user)
+
+    try:
+        result = await AnthropicDeepResearchTool().run(
+            prompt=payload.prompt,
+            story_context=_build_deep_research_story_context(story),
+        )
+    except Exception as exc:
+        log.error("deep_research.failed", story_id=str(story_id), error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Anthropic deep research could not complete. Please try again.",
+        ) from exc
+
+    log.info(
+        "deep_research.complete",
+        story_id=str(story_id),
+        citations=len(result.citations),
+        web_search_requests=result.web_search_requests,
+    )
+    return DeepResearchReport(
+        story_id=story.id,
+        story_title=story.title,
+        prompt=payload.prompt,
+        report_markdown=result.report_markdown,
+        citations=result.citations,
+        model=result.model,
+        web_search_requests=result.web_search_requests,
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
 @router.post("/{story_id}/chat", response_model=ChatResponse)
 async def chat_with_story(
     story_id: uuid.UUID,
@@ -1298,7 +1574,11 @@ async def chat_with_story(
 
     story = await _get_story_for_user(db, story_id=story_id, current_user=current_user)
 
-    system_prompt = _build_chat_system_prompt(story)
+    fresh_context = ""
+    if _should_fetch_fresh_research(payload.message):
+        fresh_context = await _fresh_research_context(payload.message, story.topic)
+
+    system_prompt = _build_chat_system_prompt(story, fresh_research_context=fresh_context)
 
     messages: list[Any] = [SystemMessage(content=system_prompt)]
     for msg in payload.history[-12:]:  # cap history at 12 messages to keep context manageable
@@ -1324,7 +1604,12 @@ async def chat_with_story(
     if any(kw in msg_lower for kw in ["youtube", "video", "watch", "footage", "documentary"]):
         youtube_results = await _search_youtube(payload.message, story.topic)
 
-    log.info("chat.response_sent", story_id=str(story_id), yt_results=len(youtube_results))
+    log.info(
+        "chat.response_sent",
+        story_id=str(story_id),
+        yt_results=len(youtube_results),
+        fresh_research=bool(fresh_context),
+    )
 
     return ChatResponse(
         content=content,
