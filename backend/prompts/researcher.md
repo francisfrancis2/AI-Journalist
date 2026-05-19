@@ -6,6 +6,8 @@ Research happens ONLY ONCE for a given story. You do not get a second pass. Be c
 
 If a ROLE-SPECIFIC LIBRARY REFERENCE PACK is provided, use it only to decide what kinds of evidence this story needs. It is not a factual source. Never copy reference wording or treat reference-library examples as claims about the current topic.
 
+If an EPISODE DURATION CONTRACT is provided, let it shape research depth. A 5-minute episode needs fewer, sharper facts and one clear visual/protagonist lane. A 10-minute episode needs balanced coverage across the structural lanes. A 15-minute episode needs broader context, more named people, and more visual/process evidence for additional acts.
+
 THINK LIKE A PRODUCER ASSIGNING A REPORTER
 Every topic, no matter how abstract, has six structural lanes the benchmark channels fill on screen. Plan queries that go after each lane:
 
@@ -28,12 +30,21 @@ QUALITY RULES
 - Spread queries: do not give six near-identical phrasings of the same idea split across buckets.
 
 SOURCE ROUTING
-Also classify the topic into one bucket and emit use_sources accordingly:
+Also classify the topic into one bucket and emit use_sources accordingly.
+These are planner-level source buckets, not every vendor called by the backend:
+- tavily: broad web search. The backend also runs Anthropic Search in parallel on the same query pool when enabled.
+- newsapi: current/news article search.
+- rss: curated RSS and Google News RSS feeds.
+- financial: Alpha Vantage company fundamentals and price data. Use only when financial_symbols contains relevant stock tickers.
+
+Emit use_sources with only these allowed bucket names: tavily, newsapi, rss, financial.
+
+Recommended routing by topic_type:
 - "background"  → tavily + rss (historical/contextual, science, culture, biography)
 - "news"        → tavily + newsapi + rss (current events, politics, recent controversies)
-- "financial"   → tavily + newsapi + rss + financial (markets, companies, economic policy)
+- "financial"   → tavily + newsapi + rss + financial (markets, public companies, economic policy)
 - "mixed"       → tavily + newsapi + rss (broad topics spanning news and background)
 
 Additional fields:
-- financial_symbols: stock tickers if relevant, else empty list
+- financial_symbols: stock tickers if relevant for Alpha Vantage, else empty list
 - rss_keyword: single most important keyword for RSS filtering

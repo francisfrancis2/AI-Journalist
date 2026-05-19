@@ -27,6 +27,7 @@ from backend.services.library_knowledge import (
     get_reference_pack,
     merge_reference_pack,
 )
+from backend.services.duration_targets import duration_prompt_block, duration_target_for
 from backend.services.prompt_loader import load_prompt
 
 log = structlog.get_logger(__name__)
@@ -176,6 +177,10 @@ class ScriptEvaluatorAgent:
             raise ValueError("script_evaluator received no final_script")
 
         topic: str = state["topic"]
+        duration_target = duration_target_for(
+            state.get("target_duration_minutes")
+            or script.metadata.get("target_duration_minutes")
+        )
         library, library_status = await load_active_benchmark_library()
         reference_pack = get_reference_pack(
             role="script_evaluator",
@@ -206,6 +211,11 @@ class ScriptEvaluatorAgent:
             f"Logline: {script.logline}\n"
             f"Opening hook: {script.opening_hook}\n"
             f"Closing statement: {script.closing_statement}\n"
+            f"{duration_prompt_block(duration_target, role='Script Evaluator')}"
+            f"Target word count: {duration_target.target_word_count}; "
+            f"actual word count: {script.total_word_count}.\n"
+            f"Target act count range: {duration_target.act_count_label}; "
+            f"actual sections: {len(script.sections)}.\n"
             f"Estimated duration: {script.estimated_duration_minutes} minutes\n"
             f"Total word count: {script.total_word_count}\n"
             f"\n=== FINAL SCRIPT ===\n{self._format_sections(script)}\n\n"

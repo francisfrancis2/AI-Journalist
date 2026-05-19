@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle, X } from "lucide-react";
@@ -9,10 +9,8 @@ import { apiClient, type Story, type FinalScript, type ResearchSource } from "@/
 import { getUserInfo } from "@/lib/auth";
 import { downloadScriptPdf, downloadSourceListPdf } from "@/lib/script-export";
 
-type Tab = "script" | "evaluation";
+type Tab = "script";
 
-const SCRIPT_GRADE_HELP =
-  "Measures final script quality across hook, flow, evidence, pacing, writing, and production readiness.";
 const BENCHMARK_GRADE_HELP =
   "Measures how closely the story matches the benchmark corpus in hook, structure, data density, human narrative, and closing pattern.";
 const GRADE_SCALE_HELP = "Letter scale: A 85%+, B 70-84%, C 55-69%, D below 55%.";
@@ -209,14 +207,6 @@ export default function ResultsPage() {
     );
   }, [id, queryClient]);
 
-  const rewriteMutation = useMutation({
-    mutationFn: () => apiClient.rewriteStory(id),
-    onSuccess: (nextStory) => {
-      queryClient.invalidateQueries({ queryKey: ["stories"] });
-      router.push(`/results/${nextStory.id}`);
-    },
-  });
-
   const handleDownload = async () => {
     if (!script) return;
     setDownloading(true);
@@ -256,7 +246,6 @@ export default function ResultsPage() {
 
   const TABS: { id: Tab; label: string; available: boolean }[] = [
     { id: "script",     label: revisionNumber ? `Script v${revisionNumber}` : "Script", available: isComplete },
-    { id: "evaluation", label: "Script Evaluation", available: isComplete },
   ];
 
   return (
@@ -298,16 +287,6 @@ export default function ResultsPage() {
               {/* Metrics */}
               {isComplete && (
                 <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
-                  {story.quality_score != null && (
-                    <Link
-                      href={`/results/${id}/evaluation`}
-                      title="Double-click for full breakdown"
-                      onDoubleClick={(e) => { e.preventDefault(); router.push(`/results/${id}/evaluation`); }}
-                      style={{ fontSize: 12, color: "var(--color-text-secondary)", textDecoration: "none", cursor: "pointer" }}
-                    >
-                      Quality <strong style={{ color: "var(--color-action)", textDecoration: "underline dotted" }}>{(story.quality_score * 100).toFixed(0)}%</strong>
-                    </Link>
-                  )}
                   {story.word_count && (
                     <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
                       Words <strong style={{ color: "var(--color-text-primary)" }}>{story.word_count.toLocaleString()}</strong>
@@ -323,27 +302,12 @@ export default function ResultsPage() {
                       Benchmark <strong style={{ color: "var(--color-text-primary)" }}>{story.benchmark_data.grade}</strong>
                     </span>
                   )}
-                  {story.script_audit_data && (
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }} title={SCRIPT_GRADE_HELP}>
-                      Script Grade <strong style={{ color: "var(--color-text-primary)" }}>{story.script_audit_data.grade}</strong>
-                    </span>
-                  )}
                 </div>
               )}
             </div>
 
             {isComplete && script && (
               <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 16 }}>
-                {story.script_audit_data && (
-                  <button
-                    onClick={() => rewriteMutation.mutate()}
-                    disabled={rewriteMutation.isPending}
-                    className="btn-secondary"
-                  >
-                    {rewriteMutation.isPending && <Loader2 size={13} className="animate-spin" />}
-                    Rewrite from audit
-                  </button>
-                )}
                 <button onClick={handleDownload} disabled={downloading} className="btn-secondary">
                   {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
                   Download PDF
@@ -371,18 +335,18 @@ export default function ResultsPage() {
               <AlertTriangle size={16} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 2 }} />
               <div style={{ minWidth: 0 }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--color-danger)", marginBottom: 4 }}>
-                  AI Journalist could not achieve a quality score above 70%
+                  AI Journalist could not complete the script cleanly
                 </p>
                 <p style={{ fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
                   {story.pipeline_failure_summary}
                 </p>
                 <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
-                  The best-scoring version of the script is shown below.
+                  The latest available script is shown below.
                 </p>
               </div>
               <button
                 type="button"
-                aria-label="Dismiss quality warning"
+                aria-label="Dismiss pipeline warning"
                 title="Dismiss"
                 onClick={() => setDismissedFailureBannerKey(failureBannerKey)}
                 style={{
@@ -447,7 +411,6 @@ export default function ResultsPage() {
             versionNumber={revisionNumber}
           />
         )}
-        {isComplete && tab === "evaluation" && <ScriptEvaluationPanel story={story} />}
       </div>
     </div>
   );
@@ -742,587 +705,6 @@ function ScriptPanel({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ── Evaluation panel ── */
-function EvaluationPanel({ data }: { data: NonNullable<Story["evaluation_data"]> }) {
-  const criteria = [
-    { key: "factual_accuracy",       label: "Factual Accuracy" },
-    { key: "narrative_coherence",    label: "Narrative Coherence" },
-    { key: "audience_engagement",    label: "Audience Engagement" },
-    { key: "source_diversity",       label: "Source Diversity" },
-    { key: "originality",            label: "Originality" },
-    { key: "production_feasibility", label: "Production Feasibility" },
-  ] as const;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Score header */}
-      <div className="card" style={{ padding: "18px 20px", display: "flex", alignItems: "center", gap: 20 }}>
-        <div style={{ textAlign: "center", flexShrink: 0 }}>
-          <p style={{ fontSize: 32, fontWeight: 500, lineHeight: 1 }}>{(data.overall_score * 100).toFixed(0)}<span style={{ fontSize: 16, color: "var(--color-text-tertiary)" }}>%</span></p>
-          <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Overall</p>
-        </div>
-        <div style={{ width: "0.5px", height: 48, background: "var(--color-border-tertiary)", flexShrink: 0 }} />
-        <div>
-          <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 8 }}>{data.evaluator_notes}</p>
-          <span className={data.approved_for_scripting ? "badge badge-success" : "badge badge-danger"} style={{ fontSize: 11 }}>
-            {data.approved_for_scripting ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
-            {data.approved_for_scripting ? "Approved for scripting" : "Not approved"}
-          </span>
-        </div>
-      </div>
-
-      {/* Criteria */}
-      <div className="card" style={{ padding: "18px 20px" }}>
-        <div className="section-rule"><span>Criteria breakdown</span></div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {criteria.map(({ key, label }) => {
-            const score = data.criteria[key] ?? 0;
-            return (
-              <div key={key}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-                  <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
-                </div>
-                <div className="progress-track">
-                  <div className="progress-fill" style={{ width: `${score * 100}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Strengths + weaknesses */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div className="card" style={{ padding: "16px 18px" }}>
-          <p className="section-label" style={{ color: "var(--color-success)" }}>Strengths</p>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-            {data.strengths.map((s, i) => (
-              <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
-                {s}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="card" style={{ padding: "16px 18px" }}>
-          <p className="section-label" style={{ color: "var(--color-danger)" }}>Areas to improve</p>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-            {data.weaknesses.map((w, i) => (
-              <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                <XCircle size={13} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 1 }} />
-                {w}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── Script audit panel ── */
-function ScriptAuditPanel({ data }: { data: NonNullable<Story["script_audit_data"]> }) {
-  const criteria = [
-    { key: "hook_strength", label: "Hook Strength" },
-    { key: "narrative_flow", label: "Narrative Flow" },
-    { key: "evidence_and_specificity", label: "Evidence & Specificity" },
-    { key: "pacing", label: "Pacing" },
-    { key: "writing_quality", label: "Writing Quality" },
-    { key: "production_readiness", label: "Production Readiness" },
-  ] as const;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div className="card" style={{ padding: "18px 20px", display: "flex", alignItems: "center", gap: 20 }}>
-        <div
-          style={{
-            width: 64,
-            height: 64,
-            background: "var(--color-action)",
-            color: "#fff",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: 12,
-            fontSize: 26,
-            fontWeight: 600,
-            flexShrink: 0,
-          }}
-        >
-          {data.grade}
-        </div>
-        <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
-            Script score: {(data.overall_score * 100).toFixed(0)}%
-          </p>
-          <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-            {SCRIPT_GRADE_HELP}
-          </p>
-          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
-            {GRADE_SCALE_HELP}
-          </p>
-          <span className={data.ready_for_production ? "badge badge-success" : "badge badge-danger"} style={{ fontSize: 11, marginBottom: 8 }}>
-            {data.ready_for_production ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
-            {data.ready_for_production ? "Ready for production" : "Needs another script pass"}
-          </span>
-          {data.audit_summary && (
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, marginTop: 8 }}>
-              {data.audit_summary}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="card" style={{ padding: "18px 20px" }}>
-        <div className="section-rule"><span>Criteria breakdown</span></div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {criteria.map(({ key, label }) => {
-            const score = data.criteria[key] ?? 0;
-            return (
-              <div key={key}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-                  <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
-                </div>
-                <div className="progress-track">
-                  <div className="progress-fill" style={{ width: `${score * 100}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div className="card" style={{ padding: "16px 18px" }}>
-          <p className="section-label" style={{ color: "var(--color-success)" }}>Strengths</p>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-            {data.strengths.map((item, i) => (
-              <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="card" style={{ padding: "16px 18px" }}>
-          <p className="section-label" style={{ color: "var(--color-danger)" }}>Weaknesses</p>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-            {data.weaknesses.map((item, i) => (
-              <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                <XCircle size={13} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 1 }} />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      {data.rewrite_priorities.length > 0 && (
-        <div className="card" style={{ padding: "16px 18px" }}>
-          <p className="section-label" style={{ marginBottom: 10 }}>Rewrite priorities</p>
-          <ol style={{ margin: 0, padding: "0 0 0 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-            {data.rewrite_priorities.map((item, i) => (
-              <li key={i} style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                {item}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-
-      {data.benchmark_comparison && (
-        <div className="card" style={{ padding: "18px 20px" }}>
-          <div className="section-rule"><span>Best-in-class comparison</span></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-              {sanitizeBenchmarkText(data.benchmark_comparison.alignment_summary)}
-            </p>
-            {[
-              ["Hook", data.benchmark_comparison.hook_comparison],
-              ["Structure", data.benchmark_comparison.structure_comparison],
-              ["Data Density", data.benchmark_comparison.data_density_comparison],
-              ["Closing", data.benchmark_comparison.closing_comparison],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-tertiary)", marginBottom: 3 }}>
-                  {label}
-                </p>
-                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                  {sanitizeBenchmarkText(value)}
-                </p>
-              </div>
-            ))}
-            {data.benchmark_comparison.best_in_class_takeaways.length > 0 && (
-              <div>
-                <p className="section-label" style={{ marginBottom: 8 }}>Takeaways</p>
-                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-                  {data.benchmark_comparison.best_in_class_takeaways.map((item, i) => (
-                    <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                      <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
-                      {sanitizeBenchmarkText(item)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {data.section_audits.map((section) => (
-          <div key={section.section_number} className="card" style={{ padding: "16px 18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-              <div>
-                <p style={{ fontSize: 13, fontWeight: 500 }}>
-                  Section {section.section_number}: {section.title}
-                </p>
-                <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 4 }}>
-                  {section.summary}
-                </p>
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", flexShrink: 0 }}>
-                {(section.score * 100).toFixed(0)}%
-              </div>
-            </div>
-
-            {(section.strengths.length > 0 || section.weaknesses.length > 0) && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 10 }}>
-                <div>
-                  <p className="section-label" style={{ color: "var(--color-success)", marginBottom: 6 }}>Strengths</p>
-                  <ul style={{ margin: 0, paddingLeft: 16 }}>
-                    {section.strengths.map((item, i) => (
-                      <li key={i} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="section-label" style={{ color: "var(--color-danger)", marginBottom: 6 }}>Weaknesses</p>
-                  <ul style={{ margin: 0, paddingLeft: 16 }}>
-                    {section.weaknesses.map((item, i) => (
-                      <li key={i} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            {section.benchmark_notes.length > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <p className="section-label" style={{ marginBottom: 6 }}>Benchmark notes</p>
-                <ul style={{ margin: 0, paddingLeft: 16 }}>
-                  {section.benchmark_notes.map((item, i) => (
-                    <li key={i} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                      {sanitizeBenchmarkText(item)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div
-              style={{
-                borderTop: "0.5px solid var(--color-border-tertiary)",
-                paddingTop: 10,
-                fontSize: 12,
-                color: "var(--color-text-secondary)",
-                lineHeight: 1.6,
-              }}
-            >
-              <strong style={{ color: "var(--color-text-primary)" }}>Rewrite recommendation:</strong>{" "}
-              {section.rewrite_recommendation}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ── Combined Script Evaluation panel ── */
-function ScriptEvaluationPanel({ story }: { story: Story }) {
-  const eval_data = story.evaluation_data;
-  const audit_data = story.script_audit_data;
-  const bm_data = story.benchmark_data;
-
-  const evalCriteria = [
-    { key: "factual_accuracy",       label: "Factual Accuracy" },
-    { key: "narrative_coherence",    label: "Narrative Coherence" },
-    { key: "audience_engagement",    label: "Audience Engagement" },
-    { key: "source_diversity",       label: "Source Diversity" },
-    { key: "originality",            label: "Originality" },
-    { key: "production_feasibility", label: "Production Feasibility" },
-  ] as const;
-
-  const auditCriteria = [
-    { key: "hook_strength",              label: "Hook Strength" },
-    { key: "narrative_flow",             label: "Narrative Flow" },
-    { key: "evidence_and_specificity",   label: "Evidence & Specificity" },
-    { key: "pacing",                     label: "Pacing" },
-    { key: "writing_quality",            label: "Writing Quality" },
-    { key: "production_readiness",       label: "Production Readiness" },
-  ] as const;
-
-  const bmMetrics = [
-    { key: "hook_potency",              label: "Hook Potency" },
-    { key: "title_formula_fit",         label: "Title Formula Fit" },
-    { key: "act_architecture",          label: "Act Architecture" },
-    { key: "data_density",              label: "Data Density" },
-    { key: "human_narrative_placement", label: "Human Narrative" },
-    { key: "tension_release_rhythm",    label: "Tension / Release" },
-    { key: "closing_device",            label: "Closing Device" },
-  ] as const;
-
-  const allStrengths = [
-    ...(eval_data?.strengths ?? []),
-    ...(audit_data?.strengths ?? []),
-    ...(bm_data?.strengths ?? []),
-  ];
-  const allWeaknesses = [
-    ...(eval_data?.weaknesses ?? []),
-    ...(audit_data?.weaknesses ?? []),
-    ...(bm_data?.gaps ?? []),
-  ];
-
-  const bc = audit_data?.benchmark_comparison ?? null;
-
-  if (!eval_data && !audit_data && !bm_data) {
-    return (
-      <div className="card" style={{ padding: "32px", textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>No evaluation data available for this story.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Score summary */}
-      <div className="card" style={{ padding: "18px 24px", display: "flex", gap: 32, flexWrap: "wrap", alignItems: "center" }}>
-        {eval_data && (
-          <div style={{ textAlign: "center" }}>
-            <p style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, color: "var(--color-action)" }}>
-              {(eval_data.overall_score * 100).toFixed(0)}<span style={{ fontSize: 16, color: "var(--color-text-tertiary)" }}>%</span>
-            </p>
-            <p style={{ fontSize: 11, fontWeight: 500, marginTop: 4, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Content Quality</p>
-          </div>
-        )}
-        {eval_data && (audit_data || bm_data) && (
-          <div style={{ width: "0.5px", height: 40, background: "var(--color-border-tertiary)", flexShrink: 0 }} />
-        )}
-        {audit_data && (
-          <div style={{ textAlign: "center", maxWidth: 190 }}>
-            <p style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, color: "var(--color-action)" }}>{audit_data.grade}</p>
-            <p style={{ fontSize: 11, fontWeight: 500, marginTop: 4, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Script Grade</p>
-            <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>{(audit_data.overall_score * 100).toFixed(0)}% audit score</p>
-            <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, lineHeight: 1.5 }}>
-              Final script quality.
-            </p>
-          </div>
-        )}
-        {audit_data && bm_data && (
-          <div style={{ width: "0.5px", height: 40, background: "var(--color-border-tertiary)", flexShrink: 0 }} />
-        )}
-        {bm_data && (
-          <div style={{ textAlign: "center", maxWidth: 190 }}>
-            <p style={{ fontSize: 30, fontWeight: 600, lineHeight: 1, color: "var(--color-action)" }}>{bm_data.grade}</p>
-            <p style={{ fontSize: 11, fontWeight: 500, marginTop: 4, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Benchmark Grade</p>
-            <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 }}>{Math.round(bm_data.bi_similarity_score * 100)}% similarity</p>
-            <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 4, lineHeight: 1.5 }}>
-              Match to benchmark corpus.
-            </p>
-          </div>
-        )}
-        {audit_data && (
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <span className={audit_data.ready_for_production ? "badge badge-success" : "badge badge-danger"} style={{ fontSize: 11 }}>
-              {audit_data.ready_for_production ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
-              {audit_data.ready_for_production ? "Ready for production" : "Needs another pass"}
-            </span>
-            {audit_data.audit_summary && (
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, marginTop: 8 }}>
-                {audit_data.audit_summary}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Evaluator notes */}
-      {eval_data?.evaluator_notes && (
-        <div className="card" style={{ padding: "14px 20px" }}>
-          <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.7 }}>{eval_data.evaluator_notes}</p>
-          <span className={eval_data.approved_for_scripting ? "badge badge-success" : "badge badge-danger"} style={{ fontSize: 11, marginTop: 8, display: "inline-flex" }}>
-            {eval_data.approved_for_scripting ? <CheckCircle2 size={10} /> : <XCircle size={10} />}
-            {eval_data.approved_for_scripting ? "Approved for scripting" : "Not approved"}
-          </span>
-        </div>
-      )}
-
-      {/* Grade breakdown */}
-      <div className="card" style={{ padding: "18px 20px" }}>
-        <div className="section-rule"><span>Grade breakdown</span></div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: eval_data || audit_data
-              ? bm_data
-                ? "repeat(auto-fit, minmax(260px, 1fr))"
-                : "minmax(0, 1fr)"
-              : "minmax(0, 1fr)",
-            gap: 20,
-            alignItems: "start",
-          }}
-        >
-          {(eval_data || audit_data) && (
-            <div style={{ minWidth: 0 }}>
-              <p className="section-label" style={{ marginTop: 8, marginBottom: 6 }}>Script Grade</p>
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
-                {SCRIPT_GRADE_HELP}
-              </p>
-
-              {eval_data && (
-                <div style={{ marginBottom: audit_data ? 18 : 0 }}>
-                  <p className="section-label" style={{ marginBottom: 10 }}>Content quality</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {evalCriteria.map(({ key, label }) => {
-                      const score = eval_data.criteria[key] ?? 0;
-                      return (
-                        <div key={key}>
-                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-                            <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
-                          </div>
-                          <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {audit_data && (
-                <div>
-                  <p className="section-label" style={{ marginBottom: 10 }}>Final script audit</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {auditCriteria.map(({ key, label }) => {
-                      const score = audit_data.criteria[key] ?? 0;
-                      return (
-                        <div key={key}>
-                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-                            <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
-                          </div>
-                          <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {bm_data && (
-            <div style={{ minWidth: 0 }}>
-              <p className="section-label" style={{ marginTop: 8, marginBottom: 6 }}>Benchmark Grade</p>
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, marginBottom: 12 }}>
-                {BENCHMARK_GRADE_HELP}
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {bmMetrics.map(({ key, label }) => {
-                  const score = (bm_data[key] as number) ?? 0;
-                  return (
-                    <div key={key}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                        <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-                        <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
-                      </div>
-                      <div className="progress-track"><div className="progress-fill" style={{ width: `${score * 100}%` }} /></div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Strengths + weaknesses */}
-      {(allStrengths.length > 0 || allWeaknesses.length > 0) && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          {allStrengths.length > 0 && (
-            <div className="card" style={{ padding: "16px 18px" }}>
-              <p className="section-label" style={{ color: "var(--color-success)" }}>Strengths</p>
-              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-                {allStrengths.map((s, i) => (
-                  <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                    <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
-                    {sanitizeBenchmarkText(s)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {allWeaknesses.length > 0 && (
-            <div className="card" style={{ padding: "16px 18px" }}>
-              <p className="section-label" style={{ color: "var(--color-danger)" }}>Areas to improve</p>
-              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-                {allWeaknesses.map((w, i) => (
-                  <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                    <XCircle size={13} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 1 }} />
-                    {sanitizeBenchmarkText(w)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Best-in-class comparison */}
-      {bc && (
-        <div className="card" style={{ padding: "18px 20px" }}>
-          <div className="section-rule"><span>Best-in-class comparison</span></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {bc.alignment_summary && (
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-                {sanitizeBenchmarkText(bc.alignment_summary)}
-              </p>
-            )}
-            {([
-              ["Hook", bc.hook_comparison],
-              ["Structure", bc.structure_comparison],
-              ["Data Density", bc.data_density_comparison],
-              ["Closing", bc.closing_comparison],
-            ] as [string, string][]).filter(([, v]) => v).map(([label, value]) => (
-              <div key={label}>
-                <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--color-text-tertiary)", marginBottom: 3 }}>{label}</p>
-                <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{sanitizeBenchmarkText(value)}</p>
-              </div>
-            ))}
-            {bc.best_in_class_takeaways.length > 0 && (
-              <div>
-                <p className="section-label" style={{ marginBottom: 8 }}>Takeaways</p>
-                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-                  {bc.best_in_class_takeaways.map((item, i) => (
-                    <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                      <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
-                      {sanitizeBenchmarkText(item)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

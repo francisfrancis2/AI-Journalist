@@ -16,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from backend.api.security import validate_topic
 from backend.config import settings
 from backend.db.database import Base
+from backend.services.duration_targets import DEFAULT_DURATION_MINUTES, SUPPORTED_DURATION_MINUTES
 
 
 _BENCHMARK_SOURCE_RE = re.compile(
@@ -85,7 +86,9 @@ class StoryORM(Base):
     topic: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(64), default=StoryStatus.PENDING)
     tone: Mapped[str] = mapped_column(String(64), default=StoryTone.EXPLANATORY)
-    target_duration_minutes: Mapped[int] = mapped_column(Integer, default=12, nullable=False)
+    target_duration_minutes: Mapped[int] = mapped_column(
+        Integer, default=DEFAULT_DURATION_MINUTES, nullable=False
+    )
     target_audience: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     owner_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
@@ -153,7 +156,7 @@ class StoryCreate(BaseModel):
     )
     title: Optional[str] = Field(None, max_length=512, description="Optional working title")
     tone: StoryTone = StoryTone.EXPLANATORY
-    target_duration_minutes: int = Field(10, ge=5, le=15)
+    target_duration_minutes: int = Field(DEFAULT_DURATION_MINUTES, ge=5, le=15)
     target_audience: Optional[str] = Field(
         None,
         max_length=256,
@@ -169,6 +172,13 @@ class StoryCreate(BaseModel):
         if len(_TOPIC_WORD_RE.findall(v)) > _MAX_TOPIC_WORDS:
             raise ValueError("Topic cannot exceed 200 words.")
         return validate_topic(v)
+
+    @field_validator("target_duration_minutes")
+    @classmethod
+    def supported_duration(cls, v: int) -> int:
+        if v not in SUPPORTED_DURATION_MINUTES:
+            raise ValueError("target_duration_minutes must be one of: 5, 10, 15.")
+        return v
 
 
 class StoryRead(BaseModel):
@@ -276,7 +286,7 @@ class ScriptSectionAudit(BaseModel):
 
     section_number: int
     title: str
-    score: float = Field(0.0, ge=0.0, le=1.0)
+    score: Optional[float] = Field(None, ge=0.0, le=1.0)
     summary: str
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
@@ -317,12 +327,12 @@ class BenchmarkComparison(BaseModel):
 
 
 class ScriptAuditReport(BaseModel):
-    """Full post-script audit report with rewrite guidance."""
+    """Full post-script recommendation report with rewrite guidance."""
 
-    criteria: ScriptAuditCriteria
-    overall_score: float = 0.0
-    grade: str = "C"
-    ready_for_production: bool = False
+    criteria: Optional[ScriptAuditCriteria] = None
+    overall_score: Optional[float] = None
+    grade: Optional[str] = None
+    ready_for_production: Optional[bool] = None
     audit_summary: str = ""
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
@@ -339,6 +349,12 @@ class ScriptAuditReport(BaseModel):
         return self
 
     def compute_overall(self) -> None:
+        """Legacy helper retained for older scored audit payloads."""
+        if self.criteria is None:
+            self.overall_score = None
+            self.ready_for_production = None
+            self.grade = None
+            return
         self.overall_score = self.criteria.overall_score
         self.ready_for_production = self.overall_score >= settings.script_audit_score_threshold
         self.grade = (

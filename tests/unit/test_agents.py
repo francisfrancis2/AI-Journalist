@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.models.research import (
     AnalysisResult,
-    EvaluationCriteria,
     EvaluationReport,
     KeyFinding,
     RawSource,
@@ -141,6 +140,31 @@ class TestResearchRouting:
         assert "newsapi" in selected
         assert "rss" in selected
 
+    def test_researcher_balanced_query_cap_preserves_evidence_lanes(self):
+        from backend.agents.researcher import ResearchPlan, ResearcherAgent
+
+        plan = ResearchPlan(
+            topic_type="mixed",
+            use_sources=["tavily"],
+            economics_queries=["cost 1", "cost 2", "cost 3"],
+            operations_queries=["operations 1", "operations 2"],
+            human_story_queries=["human 1", "human 2"],
+            origin_queries=["origin 1"],
+            counterintuitive_queries=["surprise 1"],
+            visual_queries=["visual 1"],
+        )
+
+        selected = ResearcherAgent._select_balanced_queries(plan, cap=6)
+
+        assert selected == [
+            "cost 1",
+            "operations 1",
+            "human 1",
+            "origin 1",
+            "surprise 1",
+            "visual 1",
+        ]
+
 # ── AnalystAgent ──────────────────────────────────────────────────────────────
 
 class TestAnalystAgent:
@@ -243,25 +267,19 @@ class TestAnalystAgent:
 
 class TestEvaluatorAgent:
     @pytest.mark.asyncio
-    async def test_run_approves_high_scoring_storyline(self, sample_topic):
-        from backend.agents.evaluator import CriteriaOutput, EvaluatorAgent, EvaluatorOutput
+    async def test_run_returns_scriptwriter_recommendations(self, sample_topic):
+        from backend.agents.evaluator import EvaluatorAgent, EvaluatorOutput
 
         with patch("backend.agents.evaluator.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.return_value = EvaluatorOutput(
-                criteria=CriteriaOutput(
-                    factual_accuracy=0.9,
-                    narrative_coherence=0.9,
-                    audience_engagement=0.9,
-                    source_diversity=0.9,
-                    originality=0.9,
-                    production_feasibility=0.9,
-                ),
                 strengths=["Well sourced"],
                 weaknesses=[],
-                improvement_suggestions=[],
+                improvement_suggestions=["Clarify the Act 2 turn"],
+                scriptwriter_recommendations=["Open with the strongest verified number"],
+                research_recommendations=["Avoid naming a company unless source support is explicit"],
                 requires_additional_research=False,
-                evaluator_notes="Ready to produce.",
+                evaluator_notes="Promising direction.",
             )
 
             mock_base = MagicMock()
@@ -277,25 +295,24 @@ class TestEvaluatorAgent:
             }
             result = await agent.run(state)
 
-        assert result["approved_for_scripting"] is True
         assert result["needs_more_research"] is False
-        assert result["evaluation_report"].overall_score >= 0.75
+        assert "approved_for_scripting" not in result
+        assert result["evaluation_report"].overall_score is None
+        assert result["scriptwriter_recommendations"] == [
+            "Open with the strongest verified number",
+            "Evidence caution: Avoid naming a company unless source support is explicit",
+        ]
+        prompt = mock_structured.ainvoke.call_args.args[0][1].content
+        assert "RECOMMENDATION CALIBRATION" in prompt
+        assert "best-practice patterns" in prompt
 
     @pytest.mark.asyncio
-    async def test_run_rejects_low_scoring_storyline(self, sample_topic):
-        from backend.agents.evaluator import CriteriaOutput, EvaluatorAgent, EvaluatorOutput
+    async def test_run_falls_back_to_improvement_suggestions(self, sample_topic):
+        from backend.agents.evaluator import EvaluatorAgent, EvaluatorOutput
 
         with patch("backend.agents.evaluator.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.return_value = EvaluatorOutput(
-                criteria=CriteriaOutput(
-                    factual_accuracy=0.4,
-                    narrative_coherence=0.4,
-                    audience_engagement=0.4,
-                    source_diversity=0.4,
-                    originality=0.4,
-                    production_feasibility=0.4,
-                ),
                 strengths=[],
                 weaknesses=["Weak sourcing"],
                 improvement_suggestions=["Add more data"],
@@ -316,8 +333,8 @@ class TestEvaluatorAgent:
             }
             result = await agent.run(state)
 
-        assert result["approved_for_scripting"] is False
         assert result["needs_more_research"] is True
+        assert result["scriptwriter_recommendations"] == ["Add more data"]
 
 
 # ── StorylineCreatorAgent ─────────────────────────────────────────────────────
@@ -378,6 +395,65 @@ class TestStorylineCreatorAgent:
         assert "selected_storyline" in result
         assert len(result["storyline_proposals"]) == 1
         assert result["selected_storyline"].title == "The Chip Wars"
+
+    @pytest.mark.asyncio
+    async def test_run_enforces_short_duration_act_shape(self, sample_topic):
+        from backend.agents.storyline_creator import (
+            StoryActOutput,
+            StorylineCreatorAgent,
+            StorylineCreatorOutput,
+            StorylineProposalOutput,
+        )
+
+        mock_response = StorylineCreatorOutput(
+            proposals=[
+                StorylineProposalOutput(
+                    title="The Short Cut",
+                    logline="A compact story.",
+                    opening_hook="The hook.",
+                    unique_angle="Compressed angle",
+                    target_audience="Business viewers",
+                    tone="explanatory",
+                    acts=[
+                        StoryActOutput(
+                            act_number=i,
+                            act_title=f"Act {i}",
+                            purpose=f"Purpose {i}",
+                            key_points=[f"Point {i}"],
+                            estimated_duration_seconds=120,
+                            required_visuals=[f"Visual {i}"],
+                        )
+                        for i in range(1, 7)
+                    ],
+                    closing_statement="The payoff.",
+                )
+            ],
+            recommended_proposal_index=0,
+        )
+
+        with patch("backend.agents.storyline_creator.ChatAnthropic") as MockLLM:
+            mock_structured = AsyncMock()
+            mock_structured.ainvoke.return_value = mock_response
+
+            mock_base = MagicMock()
+            mock_base.with_structured_output.return_value = mock_structured
+            MockLLM.return_value = mock_base
+
+            result = await StorylineCreatorAgent().run({
+                "topic": sample_topic,
+                "tone": "explanatory",
+                "target_duration_minutes": 5,
+                "refinement_cycle": 0,
+                "analysis_result": _make_analysis_result(sample_topic),
+            })
+
+        selected = result["selected_storyline"]
+        assert len(selected.acts) == 3
+        assert selected.total_estimated_duration_seconds == 300
+        assert [act.estimated_duration_seconds for act in selected.acts] == [60, 174, 66]
+        prompt = mock_structured.ainvoke.call_args.args[0][1].content
+        assert "Requested duration: 5 minutes" in prompt
+        assert "never exceed 3 acts" in prompt
 
     @pytest.mark.asyncio
     async def test_run_uses_deterministic_fallback_after_empty_structured_responses(self, sample_topic):
@@ -449,6 +525,9 @@ class TestScriptwriterAgent:
                     "analysis_result": analysis,
                     "research_package": package,
                     "evaluation_report": None,
+                    "scriptwriter_recommendations": [
+                        "Open with the evaluator's strongest verified number."
+                    ],
                     "target_duration_minutes": 15,
                     "target_audience": "Business viewers",
                 })
@@ -457,8 +536,16 @@ class TestScriptwriterAgent:
         assert result["script_s3_key"] == "scripts/test.md"
         assert script.metadata["target_duration_minutes"] == 15
         assert script.metadata["target_audience"] == "Business viewers"
+        assert script.metadata["scriptwriter_recommendations"] == [
+            "Open with the evaluator's strongest verified number."
+        ]
         assert all(section.source_ids == [source_id] for section in script.sections)
         assert script.sources[0]["source_id"] == source_id
+        prompt = mock_structured.ainvoke.call_args_list[0].args[0][1].content
+        assert "EVALUATOR AGENT RECOMMENDATIONS TO APPLY WHILE WRITING" in prompt
+        assert "mandatory editorial direction" in prompt
+        assert "Requested duration: 15 minutes" in prompt
+        assert "Target total word count for the complete script: 2220" in prompt
 
 
 # ── ScriptEvaluatorAgent ─────────────────────────────────────────────────────
@@ -469,21 +556,12 @@ class TestScriptEvaluatorAgent:
         from backend.agents.script_evaluator import ScriptAuditOutput, ScriptEvaluatorAgent
         from backend.models.story import (
             BenchmarkComparison,
-            ScriptAuditCriteria,
             ScriptSectionAudit,
         )
 
         with patch("backend.agents.script_evaluator.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.return_value = ScriptAuditOutput(
-                criteria=ScriptAuditCriteria(
-                    hook_strength=0.9,
-                    narrative_flow=0.85,
-                    evidence_and_specificity=0.8,
-                    pacing=0.86,
-                    writing_quality=0.88,
-                    production_readiness=0.9,
-                ),
                 audit_summary="Strong script with a slightly thin middle section.",
                 strengths=["Sharp opening narration"],
                 weaknesses=["Act 2 needs more concrete evidence"],
@@ -492,7 +570,6 @@ class TestScriptEvaluatorAgent:
                     ScriptSectionAudit(
                         section_number=1,
                         title="The Hook",
-                        score=0.92,
                         summary="Opens with clear stakes.",
                         strengths=["Immediate tension"],
                         weaknesses=[],
@@ -502,7 +579,6 @@ class TestScriptEvaluatorAgent:
                     ScriptSectionAudit(
                         section_number=2,
                         title="The Buildout",
-                        score=0.74,
                         summary="Useful context, but not enough specifics.",
                         strengths=["Clear bridge from the opening"],
                         weaknesses=["Needs more numbers"],
@@ -530,17 +606,10 @@ class TestScriptEvaluatorAgent:
                 "topic": sample_topic,
                 "final_script": _make_final_script(),
                 "evaluation_report": EvaluationReport(
-                    criteria=EvaluationCriteria(
-                        factual_accuracy=0.8,
-                        narrative_coherence=0.8,
-                        audience_engagement=0.8,
-                        source_diversity=0.8,
-                        originality=0.8,
-                        production_feasibility=0.8,
-                    ),
                     strengths=["Good structure"],
                     weaknesses=["Could use more sourcing"],
                     improvement_suggestions=["Add more specifics"],
+                    scriptwriter_recommendations=["Add one visual proof point to Act 2"],
                     evaluator_notes="Promising storyline.",
                 ),
                 "benchmark_report": BenchmarkReport(
@@ -578,7 +647,73 @@ class TestScriptEvaluatorAgent:
 
         assert "script_audit_report" in result
         report = result["script_audit_report"]
-        assert report.grade == "A"
-        assert report.ready_for_production is True
+        assert report.grade is None
+        assert report.ready_for_production is None
+        assert report.overall_score is None
+        assert result["script_rewriter_recommendations"] == ["Add one specific data point to Act 2"]
         assert len(report.section_audits) == 2
         assert report.benchmark_comparison is None
+        prompt = mock_structured.ainvoke.call_args.args[0][1].content
+        assert "REWRITE RECOMMENDATION CALIBRATION" in prompt
+        assert "best-practice patterns" in prompt
+
+
+# ── ScriptRewriterAgent ──────────────────────────────────────────────────────
+
+class TestScriptRewriterAgent:
+    @pytest.mark.asyncio
+    async def test_run_passes_script_evaluator_recommendations_to_rewrite_prompt(self, sample_topic):
+        from backend.agents.script_rewriter import RevisedSectionOutput, ScriptRewriterAgent
+        from backend.models.story import ScriptAuditReport, ScriptSectionAudit
+
+        with patch("backend.agents.script_rewriter.ChatAnthropic") as MockLLM:
+            mock_structured = AsyncMock()
+            mock_structured.ainvoke.return_value = RevisedSectionOutput(
+                narration="Rewritten narration with a sharper supported detail.",
+                source_ids=["source-1"],
+            )
+
+            mock_base = MagicMock()
+            mock_base.with_structured_output.return_value = mock_structured
+            MockLLM.return_value = mock_base
+
+            with patch(
+                "backend.agents.script_rewriter.upload_script_to_s3",
+                new=AsyncMock(return_value="scripts/revision.md"),
+            ):
+                result = await ScriptRewriterAgent().run({
+                    "story_id": str(uuid.uuid4()),
+                    "topic": sample_topic,
+                    "final_script": _make_final_script(),
+                    "script_audit_report": ScriptAuditReport(
+                        rewrite_priorities=["Add one concrete source-backed number."],
+                        section_audits=[
+                            ScriptSectionAudit(
+                                section_number=1,
+                                title="The Hook",
+                                summary="Needs sharper specificity.",
+                                weaknesses=["Too generic"],
+                                rewrite_recommendation="Add a supported number.",
+                            ),
+                            ScriptSectionAudit(
+                                section_number=2,
+                                title="The Buildout",
+                                summary="Needs a cleaner transition.",
+                                weaknesses=["Transition is soft"],
+                                rewrite_recommendation="Clarify the cause-effect handoff.",
+                            ),
+                        ],
+                    ),
+                    "analysis_result": _make_analysis_result(sample_topic),
+                    "research_package": _make_research_package(sample_topic),
+                    "script_rewriter_recommendations": [
+                        "Add one concrete source-backed number."
+                    ],
+                    "script_revision_cycle": 0,
+                    "target_audience": "Business viewers",
+                })
+
+        assert result["script_s3_key"] == "scripts/revision.md"
+        prompt = mock_structured.ainvoke.call_args_list[0].args[0][1].content
+        assert "SCRIPT EVALUATOR AGENT RECOMMENDATIONS TO APPLY IN THIS REWRITE" in prompt
+        assert "mandatory rewrite direction" in prompt

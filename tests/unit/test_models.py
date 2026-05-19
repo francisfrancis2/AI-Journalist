@@ -300,6 +300,13 @@ class TestStoryCreate:
                 target_duration_minutes=20,
             )
 
+    def test_duration_must_be_supported_option(self):
+        with pytest.raises(Exception):
+            StoryCreate(
+                topic="This is a valid topic of sufficient length.",
+                target_duration_minutes=12,
+            )
+
     def test_topic_too_short(self):
         with pytest.raises(Exception):
             StoryCreate(topic="Short")  # < 10 chars

@@ -27,6 +27,7 @@ from backend.services.library_knowledge import (
     get_reference_pack,
     merge_reference_pack,
 )
+from backend.services.duration_targets import duration_prompt_block, duration_target_for
 from backend.services.prompt_loader import load_prompt
 
 log = structlog.get_logger(__name__)
@@ -189,6 +190,7 @@ class AnalystAgent:
         package: ResearchPackage = state["research_package"]
         topic: str = state["topic"]
         tone: str = state.get("tone", "explanatory")
+        duration_target = duration_target_for(state.get("target_duration_minutes"))
 
         log.info("analyst.start", topic=topic, source_count=package.total_sources)
 
@@ -215,6 +217,12 @@ class AnalystAgent:
         prompt = (
             f"Topic: {topic}\n"
             f"Target tone: {tone}\n"
+            f"{duration_prompt_block(duration_target, role='Analyst')}"
+            f"Extract about {duration_target.analysis_findings_min}-"
+            f"{duration_target.analysis_findings_max} key findings and aim for "
+            f"{duration_target.selectable_angle_count} selectable angles. "
+            f"Shorter episodes need fewer, stronger claims; longer episodes need "
+            f"more context, protagonists, and visual evidence.\n"
             f"Total sources collected: {package.total_sources}\n"
             f"{gap_section}{focus_section}{inspiration_section}"
             f"\n=== RESEARCH SOURCES ===\n{_build_source_digest(package)}"

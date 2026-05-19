@@ -76,8 +76,8 @@ export default function HistoryPage() {
 
   const completed = stories?.filter(s => s.status === "completed") ?? [];
   const tableColumns = isAdmin
-    ? "1fr 170px 110px 120px 70px 70px 80px"
-    : "1fr 110px 120px 70px 70px 80px";
+    ? "1fr 170px 110px 120px 70px 80px"
+    : "1fr 110px 120px 70px 80px";
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
@@ -245,7 +245,6 @@ export default function HistoryPage() {
               {isAdmin && <span>User</span>}
               <span>Tone</span>
               <span>Status</span>
-              <span style={{ textAlign: "right" }}>Quality</span>
               <span style={{ textAlign: "right" }}>Grade</span>
               <span style={{ textAlign: "right" }}>Actions</span>
             </div>
@@ -319,14 +318,6 @@ export default function HistoryPage() {
 
                   {/* Status */}
                   <div><StatusBadge status={story.status} /></div>
-
-                  {/* Quality */}
-                  <div style={{ textAlign: "right" }}>
-                    {story.quality_score != null
-                      ? <span style={{ fontSize: 13, color: "var(--color-text-primary)" }}>{(story.quality_score * 100).toFixed(0)}%</span>
-                      : <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>—</span>
-                    }
-                  </div>
 
                   {/* Grade */}
                   <div style={{ textAlign: "right" }}>

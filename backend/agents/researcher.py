@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.models.research import ResearchPackage, ResearchQuery, SourceType
 from backend.services.prompt_loader import load_prompt
+from backend.services.duration_targets import duration_prompt_block, duration_target_for
 from backend.services.library_knowledge import (
     format_reference_pack,
     get_reference_pack,
@@ -89,7 +90,8 @@ class ResearchPlan(BaseModel):
 
 class ResearcherAgent:
     """
-    Multi-source research agent powered by Claude + Tavily + NewsAPI + RSS.
+    Multi-source research agent powered by Tavily, optional Anthropic Search,
+    NewsAPI, RSS, and Alpha Vantage financial data.
 
     Example::
 
@@ -127,7 +129,15 @@ class ResearcherAgent:
             token_budget=1000,
         )
         reference_context = format_reference_pack(pack)
-        user_prompt = f"Topic: {topic}"
+        duration_target = duration_target_for(state.get("target_duration_minutes") if state else None)
+        user_prompt = (
+            f"Topic: {topic}\n\n"
+            f"{duration_prompt_block(duration_target, role='Researcher')}"
+            f"For this duration, plan roughly {duration_target.analysis_findings_min}-"
+            f"{duration_target.analysis_findings_max} usable findings for downstream agents. "
+            f"Favor query precision over volume for shorter episodes, and broader evidence "
+            f"coverage for longer episodes."
+        )
         if reference_context:
             user_prompt += f"\n\n{reference_context}"
         messages = [
@@ -153,6 +163,36 @@ class ResearcherAgent:
             selected.add("financial")
         return selected
 
+    @staticmethod
+    def _select_balanced_queries(plan: ResearchPlan, cap: int) -> list[str]:
+        """Pick a capped query set while preserving the six evidence lanes."""
+        buckets = [
+            plan.economics_queries,
+            plan.operations_queries,
+            plan.human_story_queries,
+            plan.origin_queries,
+            plan.counterintuitive_queries,
+            plan.visual_queries,
+        ]
+        selected: list[str] = []
+        seen: set[str] = set()
+
+        max_depth = max((len(bucket) for bucket in buckets), default=0)
+        for depth in range(max_depth):
+            for bucket in buckets:
+                if depth >= len(bucket):
+                    continue
+                query = bucket[depth].strip()
+                key = query.lower()
+                if not query or key in seen:
+                    continue
+                selected.append(query)
+                seen.add(key)
+                if len(selected) >= cap:
+                    return selected
+
+        return selected
+
     async def run(self, state: dict) -> dict:
         """
         Execute the research phase.
@@ -164,6 +204,7 @@ class ResearcherAgent:
             Partial state update dict with ``research_package`` populated.
         """
         topic: str = state["topic"]
+        duration_target = duration_target_for(state.get("target_duration_minutes"))
         start = time.monotonic()
 
         log.info("researcher.start", topic=topic)
@@ -224,8 +265,8 @@ class ResearcherAgent:
         fetch_tasks: dict[str, Any] = {}
 
         if "tavily" in use_sources:
-            # Cap Tavily at 8 to bound cost while giving every archetype a chance.
-            base_queries = all_archetype_queries[:8]
+            # Bound cost while letting longer episodes collect broader evidence.
+            base_queries = self._select_balanced_queries(plan, duration_target.web_query_cap)
             fetch_tasks["web"] = self._search.multi_search(
                 base_queries,
                 max_results_per_query=settings.tavily_max_results,
@@ -239,21 +280,26 @@ class ResearcherAgent:
                 )
 
         # Human-story queries → NewsAPI for named-person / case-study coverage
-        for i, q in enumerate(plan.human_story_queries[:2]):
+        for i, q in enumerate(plan.human_story_queries[: duration_target.human_story_query_cap]):
             fetch_tasks[f"news_human_{i}"] = self._news.search_everything(
                 q, page_size=settings.news_api_page_size
             )
 
         if "rss" in use_sources:
             fetch_tasks["rss"] = self._rss.fetch_all_default_feeds(
-                max_entries_per_feed=8, keyword_filter=plan.rss_keyword
+                max_entries_per_feed=duration_target.rss_entries_per_feed,
+                keyword_filter=plan.rss_keyword,
             )
 
         if "newsapi" in use_sources:
             # NewsAPI sees economics + counterintuitive queries because those
             # are the archetypes most likely to surface fresh news angles.
-            extra_news = (plan.economics_queries[:1] + plan.counterintuitive_queries[:1])
-            for i, q in enumerate(extra_news):
+            extra_news = (
+                plan.economics_queries[:2]
+                + plan.counterintuitive_queries[:2]
+                + plan.origin_queries[:1]
+            )
+            for i, q in enumerate(extra_news[: duration_target.news_query_cap]):
                 fetch_tasks[f"news_{i}"] = self._news.search_everything(
                     q, page_size=settings.news_api_page_size
                 )
@@ -285,9 +331,9 @@ class ResearcherAgent:
 
         # Step 6: Scrape top web results for full article text
         top_urls = [
-            src.url for src in package.top_sources(3)
+            src.url for src in package.top_sources(duration_target.scrape_url_cap)
             if src.url and src.source_type.value == SourceType.WEB_SEARCH.value
-        ]
+        ][: duration_target.scrape_url_cap]
         if top_urls:
             async with WebScraperTool() as scraper:
                 scraped = await scraper.scrape_many(top_urls, concurrency=3)

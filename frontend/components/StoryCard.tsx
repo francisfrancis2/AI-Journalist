@@ -76,14 +76,9 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
       )}
 
       {/* Metrics */}
-      {(story.estimated_duration_minutes || story.quality_score != null) && (
+      {story.estimated_duration_minutes && (
         <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--color-text-tertiary)" }}>
-          {story.estimated_duration_minutes && (
-            <span>{story.estimated_duration_minutes} min</span>
-          )}
-          {story.quality_score != null && (
-            <span>Quality {(story.quality_score * 100).toFixed(0)}%</span>
-          )}
+          <span>{story.estimated_duration_minutes} min</span>
         </div>
       )}
 

@@ -29,11 +29,6 @@ const CREDIBILITY_TOOLTIP: Record<string, string> = {
   low:    "Uncertain reliability — verify before citing in the script",
 };
 
-function scorePercent(value?: number | null) {
-  if (value == null) return "N/A";
-  return `${(value * 100).toFixed(0)}%`;
-}
-
 function SourceCard({
   source,
 }: {
@@ -131,8 +126,6 @@ function ResearchPageInner() {
   });
 
   const highCredSources = (storySources ?? []).filter((source) => source.credibility === "high").length;
-  const evaluation = selectedStory?.evaluation_data;
-  const scriptAudit = selectedStory?.script_audit_data;
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
@@ -210,22 +203,11 @@ function ResearchPageInner() {
                         <p style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>High cred.</p>
                         <p style={{ fontSize: 18, fontWeight: 500 }}>{highCredSources}</p>
                       </div>
-                      <div className="card" style={{ padding: "10px 12px" }}>
-                        <p style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Evaluation</p>
-                        <p style={{ fontSize: 18, fontWeight: 500 }}>{scorePercent(evaluation?.overall_score)}</p>
-                      </div>
-                      <div className="card" style={{ padding: "10px 12px" }}>
-                        <p style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Script grade</p>
-                        <p style={{ fontSize: 18, fontWeight: 500 }}>{scriptAudit?.grade ?? "N/A"}</p>
-                        <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4, lineHeight: 1.4 }}>
-                          Final script quality
-                        </p>
-                      </div>
                     </div>
                   </div>
                 ) : (
                   <p style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                    Pick a story to inspect its source pack and editorial quality signals.
+                    Pick a story to inspect its source pack and research details.
                   </p>
                 )}
               </>
@@ -268,7 +250,7 @@ function ResearchPageInner() {
               }}
             >
               <p style={{ fontSize: 13, marginBottom: 4 }}>No story selected.</p>
-              <p style={{ fontSize: 12 }}>Choose a story to review its research and quality feedback.</p>
+              <p style={{ fontSize: 12 }}>Choose a story to review its research details.</p>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -293,55 +275,18 @@ function ResearchPageInner() {
                 </div>
               </div>
 
-              {evaluation && (
-                <div className="card" style={{ padding: "14px 16px" }}>
-                  <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Storyline evaluation</p>
-                  <p style={{ fontSize: 24, fontWeight: 500, marginBottom: 8 }}>
-                    {scorePercent(evaluation.overall_score)}
-                  </p>
-                  {(evaluation.weaknesses ?? []).length > 0 && (
-                    <ul style={{ margin: 0, paddingLeft: 18, color: "var(--color-text-secondary)", fontSize: 12, lineHeight: 1.7 }}>
-                      {evaluation.weaknesses.slice(0, 4).map((weakness, index) => (
-                        <li key={index}>{weakness}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-
-              {scriptAudit && (
-                <div className="card" style={{ padding: "14px 16px" }}>
-                  <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Script audit</p>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
-                    <span style={{ fontSize: 24, fontWeight: 500 }}>{scriptAudit.grade ?? "N/A"}</span>
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                      {scorePercent(scriptAudit.overall_score)}
-                    </span>
-                  </div>
-                  {(scriptAudit.rewrite_priorities ?? []).length > 0 && (
-                    <ul style={{ margin: 0, paddingLeft: 18, color: "var(--color-text-secondary)", fontSize: 12, lineHeight: 1.7 }}>
-                      {scriptAudit.rewrite_priorities.slice(0, 4).map((priority, index) => (
-                        <li key={index}>{priority}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-
-              {!evaluation && !scriptAudit && (
-                <div
-                  style={{
-                    border: "0.5px dashed var(--color-border-primary)",
-                    borderRadius: 12,
-                    padding: "28px 22px",
-                    textAlign: "center",
-                    color: "var(--color-text-secondary)",
-                  }}
-                >
-                  <p style={{ fontSize: 13, marginBottom: 4 }}>No evaluation yet.</p>
-                  <p style={{ fontSize: 12 }}>This panel will populate after the story reaches evaluation or scripting.</p>
-                </div>
-              )}
+              <div
+                style={{
+                  border: "0.5px dashed var(--color-border-primary)",
+                  borderRadius: 12,
+                  padding: "28px 22px",
+                  textAlign: "center",
+                  color: "var(--color-text-secondary)",
+                }}
+              >
+                <p style={{ fontSize: 13, marginBottom: 4 }}>Research-only view.</p>
+                <p style={{ fontSize: 12 }}>This panel shows source pack details for the selected story.</p>
+              </div>
             </div>
           )}
         </div>

@@ -5,7 +5,7 @@ Responsibilities:
   1. Receive structured AnalysisResult from the Analyst.
   2. Generate 2 distinct documentary storyline proposals.
   3. Select the strongest proposal as the primary candidate.
-  4. Structure each storyline into timed acts that fit a 10–15 minute film.
+  4. Structure each storyline into timed acts that fit the requested episode length.
 """
 
 import json
@@ -18,6 +18,12 @@ from pydantic import BaseModel, Field, ValidationError
 
 from backend.config import settings
 from backend.models.research import AnalysisResult, StoryAct, StorylineProposal
+from backend.services.duration_targets import (
+    DurationTarget,
+    act_timings_for_count,
+    duration_prompt_block,
+    duration_target_for,
+)
 from backend.services.library_knowledge import (
     format_reference_pack,
     get_reference_pack,
@@ -77,6 +83,71 @@ class StorylineCreatorAgent:
             temperature=0.5,
         )
         self._structured_llm = self._llm.with_structured_output(StorylineCreatorOutput)
+
+    @staticmethod
+    def _squash_acts_to_limit(acts: list[StoryAct], max_count: int) -> list[StoryAct]:
+        if len(acts) <= max_count:
+            return acts
+
+        grouped: list[StoryAct] = []
+        total = len(acts)
+        for index in range(max_count):
+            start = round(index * total / max_count)
+            end = round((index + 1) * total / max_count)
+            chunk = acts[start:end] or [acts[min(start, total - 1)]]
+            title = chunk[0].act_title
+            if len(chunk) > 1:
+                title = f"{chunk[0].act_title} / {chunk[-1].act_title}"
+
+            purposes: list[str] = []
+            key_points: list[str] = []
+            visuals: list[str] = []
+            for act in chunk:
+                if act.purpose and act.purpose not in purposes:
+                    purposes.append(act.purpose)
+                for point in act.key_points:
+                    if point not in key_points:
+                        key_points.append(point)
+                for visual in act.required_visuals:
+                    if visual not in visuals:
+                        visuals.append(visual)
+
+            grouped.append(
+                StoryAct(
+                    act_number=index + 1,
+                    act_title=title,
+                    purpose="; ".join(purposes)[:320] or chunk[0].purpose,
+                    key_points=key_points[:8],
+                    estimated_duration_seconds=chunk[0].estimated_duration_seconds,
+                    required_visuals=visuals[:6],
+                )
+            )
+
+        return grouped
+
+    @classmethod
+    def _adapt_acts_to_duration(
+        cls,
+        acts: list[StoryAct],
+        target: DurationTarget,
+    ) -> list[StoryAct]:
+        """Enforce act-count and timing differences across 5/10/15 minute scripts."""
+        if not acts:
+            return acts
+
+        duration_acts = cls._squash_acts_to_limit(acts, target.act_count_max)
+        timings = act_timings_for_count(target, len(duration_acts))
+        return [
+            StoryAct(
+                act_number=index + 1,
+                act_title=act.act_title,
+                purpose=act.purpose,
+                key_points=act.key_points,
+                estimated_duration_seconds=timings[index],
+                required_visuals=act.required_visuals,
+            )
+            for index, act in enumerate(duration_acts)
+        ]
 
     @staticmethod
     def _extract_text_content(response: object) -> str:
@@ -235,7 +306,8 @@ class StorylineCreatorAgent:
             raise ValueError("storyline_creator received no analysis_result")
         topic: str = state["topic"]
         tone: str = state.get("tone") or analysis.recommended_tone
-        target_duration_minutes: int = state.get("target_duration_minutes") or settings.target_script_duration_min
+        duration_target = duration_target_for(state.get("target_duration_minutes"))
+        target_duration_minutes = duration_target.minutes
         target_audience: str | None = state.get("target_audience")
         refinement_cycle: int = state.get("refinement_cycle", 0)
         rewrite_recommendations: list[str] = state.get("user_rewrite_recommendations") or []
@@ -244,12 +316,16 @@ class StorylineCreatorAgent:
         evaluation_feedback = ""
         if refinement_cycle > 0 and state.get("evaluation_report"):
             ev = state["evaluation_report"]
+            recommendations = (
+                ev.scriptwriter_recommendations
+                or ev.improvement_suggestions
+                or ev.weaknesses
+            )
             evaluation_feedback = (
                 f"\n\nPREVIOUS EVALUATION FEEDBACK (cycle {refinement_cycle}):\n"
-                f"Overall score: {ev.overall_score:.2f}\n"
                 f"Weaknesses: {chr(10).join(ev.weaknesses)}\n"
-                f"Suggestions: {chr(10).join(ev.improvement_suggestions)}\n"
-                f"Address these issues in the new proposals."
+                f"Recommendations: {chr(10).join(recommendations)}\n"
+                f"Address these recommendations in the new proposals."
             )
 
         recommendation_feedback = ""
@@ -287,12 +363,26 @@ class StorylineCreatorAgent:
                 "Use the pack to shape act architecture, escalation, human-story placement, "
                 "and closing payoff. Do not copy example wording.\n"
             )
+        timing_plan = act_timings_for_count(duration_target)
+        duration_contract = (
+            f"{duration_prompt_block(duration_target, role='Storyline Creator')}"
+            "Mandatory structure: each proposal must fit this duration contract. "
+            f"Use {duration_target.recommended_act_count} acts when possible, and never "
+            f"exceed {duration_target.act_count_max} acts for this target.\n"
+            "Recommended act timing plan: "
+            + ", ".join(
+                f"Act {index + 1}: {seconds}s"
+                for index, seconds in enumerate(timing_plan)
+            )
+            + "\n"
+        )
 
         prompt = (
             f"Topic: {topic}\n"
             f"Target tone: {tone}\n"
             f"Target duration: {target_duration_minutes} minutes\n"
             f"Target audience: {target_audience or 'General documentary audience'}\n"
+            f"{duration_contract}"
             f"{angle_directive}{reference_section}\n"
             f"=== EDITORIAL ANALYSIS ===\n"
             f"Executive Summary: {analysis.executive_summary}\n\n"
@@ -360,6 +450,7 @@ class StorylineCreatorAgent:
                 )
                 for a in p.acts
             ]
+            acts = self._adapt_acts_to_duration(acts, duration_target)
             proposal = StorylineProposal(
                 title=p.title,
                 logline=p.logline,

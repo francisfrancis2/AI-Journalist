@@ -20,6 +20,11 @@ from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.models.research import AnalysisResult, StorylineProposal
 from backend.models.story import FinalScript, ScriptSection
+from backend.services.duration_targets import (
+    WORDS_PER_MINUTE,
+    duration_prompt_block,
+    duration_target_for,
+)
 from backend.services.library_knowledge import (
     format_reference_pack,
     get_reference_pack,
@@ -30,7 +35,7 @@ from backend.services.script_storage import upload_script_to_s3
 
 log = structlog.get_logger(__name__)
 
-_WORDS_PER_MINUTE = 150
+_WORDS_PER_MINUTE = WORDS_PER_MINUTE
 
 
 # ── Structured output schema ──────────────────────────────────────────────────
@@ -77,6 +82,7 @@ class ScriptwriterAgent:
         next_act: dict | None = None,
         selected_angle: str | None = None,
         library_reference: str = "",
+        duration_contract: str = "",
     ) -> ScriptSection:
         """Write narration for a single act."""
         relevant_quotes = "\n".join(
@@ -102,7 +108,9 @@ class ScriptwriterAgent:
         revision_goals = ""
         if rewrite_recommendations:
             revision_goals = (
-                "Evaluator recommendations to apply while writing:\n"
+                "=== EVALUATOR AGENT RECOMMENDATIONS TO APPLY WHILE WRITING ===\n"
+                "These recommendations were passed from the Evaluator Agent. Treat them as "
+                "mandatory editorial direction for this act unless they conflict with verified source facts.\n"
                 + "\n".join(f"  - {item}" for item in rewrite_recommendations)
                 + "\n\n"
             )
@@ -131,6 +139,7 @@ class ScriptwriterAgent:
             f"Logline: {storyline.logline}\n"
             f"Overall tone: {storyline.tone}\n\n"
             f"Target audience: {target_audience or storyline.target_audience}\n\n"
+            f"{duration_contract}"
             f"{angle_directive}"
             f"{revision_goals}"
             f"=== FULL STORY ARC ===\n{act_arc}\n\n"
@@ -169,14 +178,15 @@ class ScriptwriterAgent:
         analysis: AnalysisResult = state["analysis_result"]
         topic: str = state["topic"]
         story_id: str = state["story_id"]
-        target_duration_minutes = state.get("target_duration_minutes") or settings.target_script_duration_min
+        duration_target = duration_target_for(state.get("target_duration_minutes"))
+        target_duration_minutes = duration_target.minutes
         target_audience = state.get("target_audience")
         rewrite_recommendations: list[str] = state.get("user_rewrite_recommendations") or []
         evaluator_recommendations: list[str] = state.get("scriptwriter_recommendations") or []
         if evaluator_recommendations:
             rewrite_recommendations = evaluator_recommendations + rewrite_recommendations
-        duration_scale = target_duration_minutes / max(
-            storyline.total_estimated_duration_seconds / 60,
+        duration_scale = duration_target.seconds / max(
+            storyline.total_estimated_duration_seconds,
             1,
         )
 
@@ -201,6 +211,12 @@ class ScriptwriterAgent:
             }
             for act in storyline.acts
         ]
+        duration_contract = (
+            f"{duration_prompt_block(duration_target, role='Scriptwriter')}"
+            f"Target total word count for the complete script: {duration_target.target_word_count}.\n"
+            "Each act must stay close to its target word count; do not write a generic "
+            "10-minute act when this is a 5-minute or 15-minute request.\n\n"
+        )
         act_arc = "\n".join(
             (
                 f"Act {act['act_number']}: {act['act_title']} "
@@ -243,6 +259,7 @@ class ScriptwriterAgent:
                 next_act=act_plans[index + 1] if index + 1 < len(act_plans) else None,
                 selected_angle=selected_angle,
                 library_reference=library_reference,
+                duration_contract=duration_contract,
             )
             for index, act_data in enumerate(act_plans)
         ]
@@ -276,6 +293,10 @@ class ScriptwriterAgent:
                 "topic": topic,
                 "tone": storyline.tone,
                 "target_duration_minutes": target_duration_minutes,
+                "target_duration_seconds": duration_target.seconds,
+                "target_word_count": duration_target.target_word_count,
+                "duration_profile": duration_target.label,
+                "target_act_count": duration_target.recommended_act_count,
                 "target_audience": target_audience or storyline.target_audience,
                 "unique_angle": storyline.unique_angle,
                 "scriptwriter_recommendations": rewrite_recommendations[:10],

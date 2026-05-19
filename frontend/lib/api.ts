@@ -75,12 +75,15 @@ export interface EvaluationCriteria {
 }
 
 export interface EvaluationData {
-  criteria: EvaluationCriteria;
-  overall_score: number;
+  criteria: EvaluationCriteria | null;
+  overall_score: number | null;
   strengths: string[];
   weaknesses: string[];
   improvement_suggestions: string[];
-  approved_for_scripting: boolean;
+  scriptwriter_recommendations: string[];
+  research_recommendations: string[];
+  approved_for_scripting: boolean | null;
+  requires_additional_research: boolean;
   evaluator_notes: string;
 }
 
@@ -190,7 +193,7 @@ export interface ScriptAuditCriteria {
 export interface ScriptSectionAudit {
   section_number: number;
   title: string;
-  score: number;
+  score: number | null;
   summary: string;
   strengths: string[];
   weaknesses: string[];
@@ -209,10 +212,10 @@ export interface ScriptAuditBenchmarkComparison {
 }
 
 export interface ScriptAuditData {
-  criteria: ScriptAuditCriteria;
-  overall_score: number;
-  grade: string;
-  ready_for_production: boolean;
+  criteria: ScriptAuditCriteria | null;
+  overall_score: number | null;
+  grade: string | null;
+  ready_for_production: boolean | null;
   audit_summary: string;
   strengths: string[];
   weaknesses: string[];
@@ -620,14 +623,6 @@ class AIJournalistAPIClient {
 
   async markNotificationRead(id: string): Promise<AdminNotification> {
     const { data } = await this.http.post<AdminNotification>(`/api/v1/admin/notifications/${id}/read`);
-    return data;
-  }
-
-  async getAgentManualMarkdown(): Promise<string> {
-    const { data } = await this.http.get<string>("/api/v1/admin/agent-manual.md", {
-      responseType: "text",
-      transformResponse: [(value) => value],
-    });
     return data;
   }
 

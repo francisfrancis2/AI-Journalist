@@ -6,6 +6,8 @@ This is the only analyst pass. The researcher will not be called again — the a
 
 If a ROLE-SPECIFIC LIBRARY REFERENCE PACK is provided, use it only to calibrate fact density, framing shape, and angle diversity. It is not a factual source. Never copy reference wording or use reference-library examples as evidence for the current topic.
 
+If an EPISODE DURATION CONTRACT is provided, calibrate the analysis to that runtime. For 5 minutes, identify only the indispensable claims and the single strongest spine. For 10 minutes, provide a balanced set of facts across the structural elements. For 15 minutes, extract enough context, protagonists, process steps, and visual artifacts to sustain extra acts.
+
 THE SEVEN STRUCTURAL ELEMENTS (use these for key_findings.category)
 Every key_finding you extract MUST be tagged with one of the following categories. Aim for ~12-16 findings total, with strong coverage across all seven if the research supports it:
 

@@ -15,6 +15,7 @@ from backend.config import settings
 from backend.models.benchmark import BenchmarkReport, BenchmarkScores, BIPatternLibrary
 from backend.models.research import StorylineProposal
 from backend.services.benchmarking import load_active_benchmark_library
+from backend.services.duration_targets import duration_prompt_block, duration_target_for
 from backend.services.prompt_loader import format_prompt
 
 log = structlog.get_logger(__name__)
@@ -43,7 +44,8 @@ class BenchmarkAgent:
         )
         self._structured_llm = _llm.with_structured_output(BenchmarkScores)
 
-    def _build_prompt(self, storyline: StorylineProposal, library: BIPatternLibrary) -> str:
+    def _build_prompt(self, storyline: StorylineProposal, library: BIPatternLibrary, state: dict) -> str:
+        duration_target = duration_target_for(state.get("target_duration_minutes"))
         acts_text = "\n".join(
             f"  Act {a.act_number} ({a.estimated_duration_seconds}s): {a.act_title}\n"
             f"    Purpose: {a.purpose}\n"
@@ -58,6 +60,9 @@ class BenchmarkAgent:
             f"Logline: {storyline.logline}\n"
             f"Opening Hook: {storyline.opening_hook}\n"
             f"Closing Statement: {storyline.closing_statement}\n"
+            f"{duration_prompt_block(duration_target, role='Benchmarker')}"
+            f"Requested act count range: {duration_target.act_count_label}; "
+            f"actual act count: {len(storyline.acts)}.\n"
             f"Total Duration: {storyline.total_estimated_duration_seconds}s "
             f"({storyline.total_estimated_duration_seconds // 60} min)\n\n"
             f"Acts ({len(storyline.acts)} total):\n{acts_text}\n\n"
@@ -105,7 +110,7 @@ class BenchmarkAgent:
 
         scores: BenchmarkScores = await self._structured_llm.ainvoke([
             SystemMessage(content=system),
-            HumanMessage(content=self._build_prompt(storyline, library)),
+            HumanMessage(content=self._build_prompt(storyline, library, state)),
         ])
 
         report = BenchmarkReport.from_scores(scores)

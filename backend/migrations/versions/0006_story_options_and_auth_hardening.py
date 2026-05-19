@@ -29,7 +29,7 @@ def upgrade() -> None:
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE"
         )
         op.execute(
-            "ALTER TABLE stories ADD COLUMN IF NOT EXISTS target_duration_minutes INTEGER NOT NULL DEFAULT 12"
+            "ALTER TABLE stories ADD COLUMN IF NOT EXISTS target_duration_minutes INTEGER NOT NULL DEFAULT 10"
         )
         op.execute(
             "ALTER TABLE stories ADD COLUMN IF NOT EXISTS target_audience VARCHAR(256)"
@@ -45,7 +45,7 @@ def upgrade() -> None:
         )
         op.add_column(
             "stories",
-            sa.Column("target_duration_minutes", sa.Integer(), nullable=False, server_default="12"),
+            sa.Column("target_duration_minutes", sa.Integer(), nullable=False, server_default="10"),
         )
         op.add_column("stories", sa.Column("target_audience", sa.String(256), nullable=True))
 

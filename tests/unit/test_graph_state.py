@@ -15,15 +15,16 @@ class TestCreateInitialState:
         state = create_initial_state(topic=sample_topic)
         assert state["topic"] == sample_topic
         assert state["tone"] == StoryTone.EXPLANATORY
-        assert state["target_duration_minutes"] == 12
+        assert state["target_duration_minutes"] == 10
         assert state["target_audience"] is None
         assert state["research_iteration"] == 0
         assert state["reference_packs"] == {}
         assert state["refinement_cycle"] == 0
         assert state["script_revision_cycle"] == 0
         assert state["needs_more_research"] is False
-        assert state["approved_for_scripting"] is False
         assert state["pipeline_complete"] is False
+        assert state["scriptwriter_recommendations"] == []
+        assert state["script_rewriter_recommendations"] == []
         assert state["research_package"] is None
         assert state["analysis_result"] is None
         assert state["selected_storyline"] is None

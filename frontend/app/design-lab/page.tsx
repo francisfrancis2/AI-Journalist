@@ -266,11 +266,7 @@ export default async function DesignLabPage({
                 </div>
                 <StatusBadge status={designFixtureStoryDetail.status} />
               </div>
-              <div className="mt-6 grid gap-6 border-t border-gray-800 pt-6 sm:grid-cols-3">
-                <Metric
-                  label="Quality score"
-                  value={`${(designFixtureStoryDetail.quality_score! * 100).toFixed(0)}%`}
-                />
+              <div className="mt-6 grid gap-6 border-t border-gray-800 pt-6 sm:grid-cols-2">
                 <Metric
                   label="Duration"
                   value={`${designFixtureStoryDetail.estimated_duration_minutes} min`}

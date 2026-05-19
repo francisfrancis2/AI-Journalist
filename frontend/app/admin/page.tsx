@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { Activity, Bell, BookOpen, Download, FileText, Loader2, RefreshCw, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { Activity, Bell, Loader2, RefreshCw, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { apiClient, type AdminNotification, type HealthReport, type ServiceHealth } from "@/lib/api";
-import { downloadAgentManualMarkdown, downloadAgentManualPdf } from "@/lib/agent-manual-export";
 import { getUserInfo } from "@/lib/auth";
 
 type AdminUser = {
@@ -17,7 +16,7 @@ type AdminUser = {
   created_at: string;
 };
 
-type Tab = "users" | "manual" | "health" | "notifications";
+type Tab = "users" | "health" | "notifications";
 
 // ── API Health Panel ──────────────────────────────────────────────────────────
 
@@ -67,67 +66,6 @@ function APIHealthPanel() {
       </div>
       {isLoading && <div style={{ padding: 24, textAlign: "center" }}><Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} /></div>}
       {data && data.services.map(svc => <ServiceRow key={svc.name} svc={svc} />)}
-    </div>
-  );
-}
-
-// ── Agent Manual Panel ───────────────────────────────────────────────────────
-
-function AgentManualPanel() {
-  const [busy, setBusy] = useState<"markdown" | "pdf" | null>(null);
-  const [error, setError] = useState("");
-
-  const fetchManual = async (): Promise<string> => {
-    setError("");
-    return apiClient.getAgentManualMarkdown();
-  };
-
-  const handleMarkdown = async () => {
-    setBusy("markdown");
-    try {
-      downloadAgentManualMarkdown(await fetchManual());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to download the agent manual.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handlePdf = async () => {
-    setBusy("pdf");
-    try {
-      const opened = downloadAgentManualPdf(await fetchManual());
-      if (!opened) setError("The browser blocked the PDF preview window. Allow popups and try again.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to prepare the PDF export.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <div className="card" style={{ padding: 20, maxWidth: 640 }}>
-      <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-        <BookOpen size={14} /> Agent Operating Manual
-      </h2>
-      <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.7, marginTop: 6, marginBottom: 16 }}>
-        Export each agent&apos;s role, system prompt, model settings, structured output schema, and core run logic. Secrets and environment values are not included.
-      </p>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button onClick={handleMarkdown} disabled={busy !== null} className="btn-secondary">
-          {busy === "markdown" ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
-          Download Markdown
-        </button>
-        <button onClick={handlePdf} disabled={busy !== null} className="btn-secondary">
-          {busy === "pdf" ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-          Download PDF
-        </button>
-      </div>
-      {error && (
-        <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--color-danger-bg)", border: "0.5px solid #fecaca", borderRadius: "var(--border-radius-md)", fontSize: 12, color: "var(--color-danger)" }}>
-          {error}
-        </div>
-      )}
     </div>
   );
 }
@@ -295,7 +233,6 @@ export default function AdminConsolePage() {
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, padding: 3, background: "var(--color-background-secondary)", borderRadius: 10, marginBottom: 24, width: "fit-content" }}>
         <button style={TAB_STYLE(tab === "users")}         onClick={() => setTab("users")}>User Management</button>
-        <button style={TAB_STYLE(tab === "manual")}        onClick={() => setTab("manual")}>Agent Manual</button>
         <button style={TAB_STYLE(tab === "health")}        onClick={() => setTab("health")}>API Health</button>
         <button style={TAB_STYLE(tab === "notifications")} onClick={() => setTab("notifications")}>Notifications</button>
       </div>
@@ -385,9 +322,6 @@ export default function AdminConsolePage() {
           </div>
         </>
       )}
-
-      {/* ── AGENT MANUAL TAB ─────────────────────────────────────────────────── */}
-      {tab === "manual" && <AgentManualPanel />}
 
       {/* ── API HEALTH TAB ────────────────────────────────────────────────────── */}
       {tab === "health" && <APIHealthPanel />}

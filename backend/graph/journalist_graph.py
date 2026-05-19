@@ -257,8 +257,6 @@ def build_journalist_graph() -> StateGraph:
         route_after_evaluator,
         {
             "scriptwriter": "scriptwriter",
-            "storyline_creator": "storyline_creator",
-            "researcher": "researcher",
             END: END,
         },
     )

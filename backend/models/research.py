@@ -152,16 +152,23 @@ class EvaluationCriteria(BaseModel):
 
 
 class EvaluationReport(BaseModel):
-    """Full evaluation output from the Evaluator agent."""
-    criteria: EvaluationCriteria
-    overall_score: float = 0.0
+    """Recommendation package from the Evaluator agent."""
+    criteria: Optional[EvaluationCriteria] = None
+    overall_score: Optional[float] = None
     strengths: list[str] = Field(default_factory=list)
     weaknesses: list[str] = Field(default_factory=list)
     improvement_suggestions: list[str] = Field(default_factory=list)
-    approved_for_scripting: bool = False
+    scriptwriter_recommendations: list[str] = Field(default_factory=list)
+    research_recommendations: list[str] = Field(default_factory=list)
+    approved_for_scripting: Optional[bool] = None
     requires_additional_research: bool = False
     evaluator_notes: str = ""
 
     def compute_overall(self) -> None:
+        """Legacy helper retained for older callers that still provide criteria."""
+        if self.criteria is None:
+            self.overall_score = None
+            self.approved_for_scripting = None
+            return
         self.overall_score = self.criteria.overall_score
         self.approved_for_scripting = self.overall_score >= settings.quality_score_threshold

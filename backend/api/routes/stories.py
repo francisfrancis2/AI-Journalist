@@ -96,28 +96,6 @@ def _build_chat_system_prompt(story: StoryORM) -> str:
             for s in sections
         )
 
-    eval_context = ""
-    if story.evaluation_data:
-        ev = story.evaluation_data
-        criteria = ev.get("criteria", {})
-
-        def pct(k: str) -> str:
-            return f"{criteria.get(k, 0) * 100:.0f}%"
-
-        approval = "✓ Approved" if ev.get("approved_for_scripting") else "✗ Below threshold"
-        weaknesses = "; ".join(ev.get("weaknesses", [])) or "None noted"
-        eval_context = (
-            f"  Overall: {ev.get('overall_score', 0) * 100:.0f}% ({approval})\n"
-            f"  Factual Accuracy: {pct('factual_accuracy')} | "
-            f"Narrative Coherence: {pct('narrative_coherence')}\n"
-            f"  Audience Engagement: {pct('audience_engagement')} | "
-            f"Source Diversity: {pct('source_diversity')}\n"
-            f"  Originality: {pct('originality')} | "
-            f"Production Feasibility: {pct('production_feasibility')}\n"
-            f"  Weaknesses: {weaknesses}\n"
-            f"  Notes: {ev.get('evaluator_notes', '')}"
-        )
-
     bench_context = ""
     if story.benchmark_data:
         bd = story.benchmark_data
@@ -133,19 +111,6 @@ def _build_chat_system_prompt(story: StoryORM) -> str:
             f"  Gaps: {gaps}"
         )
 
-    script_audit_context = ""
-    if story.script_audit_data:
-        audit = story.script_audit_data
-        priorities = "; ".join(audit.get("rewrite_priorities", [])) or "None"
-        script_audit_context = (
-            f"  Grade: {audit.get('grade', '?')} | Script Score: {audit.get('overall_score', 0) * 100:.0f}%\n"
-            f"  Ready For Production: {'Yes' if audit.get('ready_for_production') else 'No'}\n"
-            f"  Priorities: {priorities}\n"
-            f"  Summary: {audit.get('audit_summary', '')}"
-        )
-
-    quality = f"{story.quality_score * 100:.0f}%" if story.quality_score else "N/A"
-
     return f"""ROLE BOUNDARY: You are an editorial research assistant for a specific documentary project. \
 You only help with documentary research, script improvement, source finding, and editorial advice \
 for the story described below. You must decline any request that is outside this scope — including \
@@ -158,25 +123,17 @@ You are an editorial research assistant for the documentary: "{story.title}".
 STORY:
 • Topic: {story.topic}
 • Tone: {story.tone}
-• Quality Score: {quality}
 
 SCRIPT STRUCTURE:
 {script_outline or "  Script not yet available."}
 
-EDITORIAL EVALUATION:
-{eval_context or "  Evaluation not yet available."}
-
 BENCHMARK:
 {bench_context or "  Benchmark not yet available."}
-
-SCRIPT AUDIT:
-{script_audit_context or "  Script audit not yet available."}
 
 You help with:
 1. Finding additional data points, statistics, or expert sources to strengthen specific claims.
 2. Suggesting relevant YouTube videos — when the user asks for videos, search YouTube and list results.
-3. Proposing specific script revisions based on evaluation feedback or user ideas.
-4. Explaining how to improve specific evaluation/benchmark scores with concrete, actionable edits.
+3. Proposing specific script revisions based on the visible script, research, benchmark gaps, or user ideas.
 
 Be specific and reference actual script sections when making suggestions. Keep responses focused and actionable."""
 
@@ -232,6 +189,16 @@ def _normalise_chat_content(raw: object) -> str:
                 parts.append(str(getattr(block, "text")))
         return "\n".join(part for part in parts if part).strip()
     return str(raw)
+
+
+def _evaluation_quality_score(
+    evaluation: Optional[EvaluationReport],
+    fallback: Optional[float] = None,
+) -> Optional[float]:
+    """Return a legacy persisted score only when the evaluator actually produced one."""
+    if evaluation is None:
+        return fallback
+    return evaluation.overall_score
 
 
 # ── Background pipeline runner ────────────────────────────────────────────────
@@ -365,7 +332,7 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
             "status": StoryStatus.COMPLETED if script else StoryStatus.FAILED,
             "script_data": script.model_dump(mode="json") if script else None,
             "script_s3_key": final_state.get("script_s3_key"),
-            "quality_score": evaluation.overall_score if evaluation else None,
+            "quality_score": _evaluation_quality_score(evaluation),
             "word_count": script.total_word_count if script else None,
             "estimated_duration_minutes": script.estimated_duration_minutes if script else None,
             "research_data": (
@@ -807,7 +774,7 @@ async def _run_implement_recommendations(story_id: str, source_story_id: str, re
                         audit.model_dump(mode="json")
                         if audit else source_story.script_audit_data
                     ),
-                    quality_score=evaluation.overall_score if evaluation else source_story.quality_score,
+                    quality_score=_evaluation_quality_score(evaluation, source_story.quality_score),
                     error_message=None,
                 )
             )
@@ -907,7 +874,7 @@ async def _run_script_regeneration(story_id: str) -> None:
                     script_audit_data=audit.model_dump(mode="json") if audit else story.script_audit_data,
                     word_count=script.total_word_count,
                     estimated_duration_minutes=script.estimated_duration_minutes,
-                    quality_score=evaluation.overall_score if evaluation else story.quality_score,
+                    quality_score=_evaluation_quality_score(evaluation, story.quality_score),
                     error_message=None,
                 )
             )
@@ -1330,7 +1297,7 @@ async def chat_with_story(
     - Additional research questions and data-point suggestions
     - Script revision ideas
     - YouTube video recommendations (triggered by keywords: youtube, video, watch, footage)
-    - Score improvement advice
+    - Recommendation-based improvement advice
     """
     validate_user_input(payload.message, field="message")
 

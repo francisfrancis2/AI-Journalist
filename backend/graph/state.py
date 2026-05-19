@@ -20,6 +20,7 @@ from backend.models.research import (
     StorylineProposal,
 )
 from backend.models.story import FinalScript, ImprovementPlan, ScriptAuditReport, StoryTone
+from backend.services.duration_targets import DEFAULT_DURATION_MINUTES
 
 
 class JournalistState(TypedDict):
@@ -62,27 +63,28 @@ class JournalistState(TypedDict):
 
     # ── Evaluation phase ──────────────────────────────────────────────────────
     evaluation_report: Optional[EvaluationReport]
-    benchmark_report: Optional[BenchmarkReport]  # Benchmark scores (runs parallel to evaluator)
+    benchmark_report: Optional[BenchmarkReport]  # Benchmark report (runs parallel to evaluator)
+    scriptwriter_recommendations: list[str]       # Evaluator guidance passed to Scriptwriter
     refinement_cycle: int                   # How many times evaluation→refinement has run
 
     # ── Script phase ──────────────────────────────────────────────────────────
     final_script: Optional[FinalScript]
     script_audit_report: Optional[ScriptAuditReport]
+    script_rewriter_recommendations: list[str]    # Script audit guidance passed to ScriptRewriter
     script_s3_key: Optional[str]            # S3 key of the uploaded script document
     script_revision_cycle: int              # How many audit-triggered rewrites have run
 
-    # ── Quality gate ──────────────────────────────────────────────────────────
+    # ── Legacy pipeline tracking ──────────────────────────────────────────────
     pipeline_cycle: int                     # Full research→script cycles completed
     best_script: Optional[FinalScript]      # Best script seen across all cycles
-    best_script_score: float                # Score of best_script
-    quality_improvement_plan: Optional[ImprovementPlan]  # Guidance for next cycle
+    best_script_score: float                # Legacy score of best_script
+    quality_improvement_plan: Optional[ImprovementPlan]  # Legacy guidance for next cycle
     pipeline_failure_summary: Optional[str] # Human-readable failure reason (shown to user)
     is_technical_failure: bool              # True → also create admin notification
-    _quality_gate_route: Optional[str]      # Transient: "restart" | "done" (set by quality gate)
+    _quality_gate_route: Optional[str]      # Legacy transient route flag
 
     # ── Control flow flags ────────────────────────────────────────────────────
     needs_more_research: bool
-    approved_for_scripting: bool
     pipeline_complete: bool
 
     # ── Error handling ────────────────────────────────────────────────────────
@@ -94,7 +96,7 @@ def create_initial_state(
     topic: str,
     story_id: Optional[str] = None,
     tone: StoryTone = StoryTone.EXPLANATORY,
-    target_duration_minutes: int = 12,
+    target_duration_minutes: int = DEFAULT_DURATION_MINUTES,
     target_audience: Optional[str] = None,
 ) -> JournalistState:
     """
@@ -126,9 +128,11 @@ def create_initial_state(
         user_rewrite_recommendations=[],
         evaluation_report=None,
         benchmark_report=None,
+        scriptwriter_recommendations=[],
         refinement_cycle=0,
         final_script=None,
         script_audit_report=None,
+        script_rewriter_recommendations=[],
         script_s3_key=None,
         script_revision_cycle=0,
         pipeline_cycle=0,
@@ -139,7 +143,6 @@ def create_initial_state(
         is_technical_failure=False,
         _quality_gate_route=None,
         needs_more_research=False,
-        approved_for_scripting=False,
         pipeline_complete=False,
         error=None,
         failed_node=None,

@@ -77,15 +77,15 @@ class Settings(BaseSettings):
     # ── Agent / Graph ─────────────────────────────────────────────────────────
     max_research_iterations: int = 3
     max_refinement_cycles: int = 1
-    target_script_duration_min: int = 10
+    target_script_duration_min: int = 5
     target_script_duration_max: int = 15
     min_sources_required: int = 5
-    quality_score_threshold: float = 0.70   # pre-script evaluation gate (70%)
+    quality_score_threshold: float = 0.70   # legacy scored evaluation payloads only
 
     # ── Script revision ───────────────────────────────────────────────────────
     max_script_revision_cycles: int = 1     # post-script audit revision passes
-    script_audit_score_threshold: float = 0.70  # below this → trigger revision
-    max_pipeline_cycles: int = 2            # full research→script cycles only when evidence is missing
+    script_audit_score_threshold: float = 0.70  # legacy scored audit payloads only
+    max_pipeline_cycles: int = 2            # legacy full research→script restart limit
 
     # ── LangGraph runtime ─────────────────────────────────────────────────────
     # Worst-case path: ~12 nodes/cycle × max_pipeline_cycles (2) plus rewrite

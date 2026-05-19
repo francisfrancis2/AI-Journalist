@@ -17,6 +17,11 @@ from pydantic import BaseModel, Field
 from backend.config import settings
 from backend.models.research import AnalysisResult, ResearchPackage
 from backend.models.story import FinalScript, ScriptAuditReport, ScriptSection
+from backend.services.duration_targets import (
+    WORDS_PER_MINUTE,
+    duration_prompt_block,
+    duration_target_for,
+)
 from backend.services.library_knowledge import (
     format_reference_pack,
     get_reference_pack,
@@ -27,7 +32,7 @@ from backend.services.script_storage import upload_script_to_s3
 
 log = structlog.get_logger(__name__)
 
-_WORDS_PER_MINUTE = 150
+_WORDS_PER_MINUTE = WORDS_PER_MINUTE
 
 
 class RevisedSectionOutput(BaseModel):
@@ -102,26 +107,39 @@ class ScriptRewriterAgent:
         source_lookup: dict[str, dict],
         target_audience: str | None,
         library_reference: str = "",
+        global_recommendations: list[str] | None = None,
+        duration_contract: str = "",
     ) -> ScriptSection:
         audit_summary = "No section-specific audit was provided."
         if audit:
             audit_summary = (
-                f"Score: {audit.get('score', 0):.2f}\n"
                 f"Summary: {audit.get('summary', '')}\n"
                 f"Strengths: {'; '.join(audit.get('strengths', [])) or 'None listed'}\n"
                 f"Weaknesses: {'; '.join(audit.get('weaknesses', [])) or 'None listed'}\n"
                 f"Rewrite recommendation: {audit.get('rewrite_recommendation', '')}"
+            )
+        global_directives = ""
+        if global_recommendations:
+            global_directives = (
+                "=== SCRIPT EVALUATOR AGENT RECOMMENDATIONS TO APPLY IN THIS REWRITE ===\n"
+                "These recommendations were passed from the Script Evaluator Agent. Treat them as "
+                "mandatory rewrite direction across all sections unless they conflict with verified source facts.\n"
+                + "\n".join(f"- {item}" for item in global_recommendations)
+                + "\n\n"
             )
 
         prompt = (
             f"Script title: {script.title}\n"
             f"Logline: {script.logline}\n"
             f"Target audience: {target_audience or script.metadata.get('target_audience') or 'General documentary audience'}\n\n"
+            f"{duration_contract}"
             f"=== SECTION TO REVISE ===\n"
             f"Section {section.section_number}: {section.title}\n"
             f"Estimated seconds: {section.estimated_seconds}\n"
+            f"Target section word count: {round(section.estimated_seconds / 60 * _WORDS_PER_MINUTE)}\n"
             f"Existing source IDs: {', '.join(section.source_ids) or 'None'}\n"
             f"Current narration:\n{section.narration}\n\n"
+            f"{global_directives}"
             f"=== AUDIT FEEDBACK ===\n{audit_summary}\n\n"
             f"{library_reference}"
             f"=== VERIFIED FINDINGS ===\n{self._format_findings(analysis)}\n\n"
@@ -158,6 +176,11 @@ class ScriptRewriterAgent:
             raise ValueError("script_rewriter requires analysis_result and research_package")
 
         source_lookup = self._source_lookup(package, script)
+        duration_target = duration_target_for(
+            state.get("target_duration_minutes")
+            or script.metadata.get("target_duration_minutes")
+        )
+        rewrite_recommendations: list[str] = state.get("script_rewriter_recommendations") or []
         audit_by_section = {
             audit.section_number: audit.model_dump()
             for audit in audit_report.section_audits
@@ -176,12 +199,18 @@ class ScriptRewriterAgent:
                 f"=== REVISION LIBRARY REFERENCE ===\n{reference_context}\n"
                 "Use this to tighten shape, specificity, and transitions without adding unsupported facts.\n\n"
             )
+        duration_contract = (
+            f"{duration_prompt_block(duration_target, role='Script Rewriter')}"
+            f"Target total word count: {duration_target.target_word_count}. "
+            "Preserve or adjust each section so the rewritten script stays aligned "
+            "with the requested runtime.\n\n"
+        )
 
         log.info(
             "script_rewriter.start",
             title=script.title,
             sections=len(script.sections),
-            prior_score=f"{audit_report.overall_score:.2f}",
+            rewrite_recommendations=len(rewrite_recommendations),
         )
 
         revised_sections = await asyncio.gather(*[
@@ -193,6 +222,8 @@ class ScriptRewriterAgent:
                 source_lookup=source_lookup,
                 target_audience=state.get("target_audience"),
                 library_reference=library_reference,
+                global_recommendations=rewrite_recommendations,
+                duration_contract=duration_contract,
             )
             for section in script.sections
         ])

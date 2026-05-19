@@ -6,6 +6,7 @@ an aggregated reference corpus of high-performing documentary videos.
 You will be given:
 1. A generated documentary storyline
 2. A benchmark pattern library extracted from {doc_count} real reference documentaries
+3. Possibly an EPISODE DURATION CONTRACT
 
 Do not name, imply, or reveal any benchmark source, channel, publication, creator, or
 specific reference title in your output. Use source-neutral language like "benchmark corpus",
@@ -23,7 +24,8 @@ Score the storyline against each benchmark criterion from 0.0 to 1.0:
 
 - act_architecture (0-1): Compare act count and pacing to benchmark averages.
   Benchmark avg: {avg_act_count} acts, {avg_act_duration_seconds}s per act.
-  Penalise heavily if act count < 4 or > 8, or if any act is >300s.
+  If an EPISODE DURATION CONTRACT is provided, also judge whether the act count and pacing fit the requested runtime.
+  Penalise heavily if act count < 4 or > 8 unless the duration contract explicitly calls for a 3-act short-form structure, or if any act is >300s.
 
 - data_density (0-1): How many specific stats/numbers appear in key points?
   Benchmark avg: {avg_stat_count} data points per documentary.
