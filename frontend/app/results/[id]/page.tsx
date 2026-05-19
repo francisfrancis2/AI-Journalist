@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, ChevronUp, AlertTriangle, X } from "lucide-react";
 import { apiClient, type Story, type FinalScript, type ResearchSource } from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
@@ -13,7 +12,6 @@ type Tab = "script";
 
 const BENCHMARK_GRADE_HELP =
   "Measures how closely the story matches the benchmark corpus in hook, structure, data density, human narrative, and closing pattern.";
-const GRADE_SCALE_HELP = "Letter scale: A 85%+, B 70-84%, C 55-69%, D below 55%.";
 const TOP_RESEARCH_SOURCES_LIMIT = 10;
 
 type DisplaySource = {
@@ -705,158 +703,6 @@ function ScriptPanel({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function BenchmarkUnavailablePanel() {
-  return (
-    <div className="card" style={{ padding: "24px 26px", maxWidth: 560 }}>
-      <div className="section-rule"><span>Benchmark unavailable</span></div>
-      <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: 14 }}>
-        This story finished without a benchmark score. That usually means the benchmark corpus
-        has not been built yet, the cache is missing, or the library needs a refresh.
-      </p>
-      <Link href="/benchmarking" className="btn-secondary" style={{ textDecoration: "none" }}>
-        Open Benchmarking Admin
-      </Link>
-    </div>
-  );
-}
-
-const BENCHMARK_SOURCE_NAMES = /\b(Business Insider|CNBC Make It|CNBC Making It|Vox|Johnny Harris|BI)\b/gi;
-
-function sanitizeBenchmarkText(value: string) {
-  return value.replace(BENCHMARK_SOURCE_NAMES, "benchmark corpus");
-}
-
-/* ── Benchmark panel ── */
-function BenchmarkPanel({ data }: { data: NonNullable<Story["benchmark_data"]> }) {
-  const metrics = [
-    { key: "hook_potency",              label: "Hook Potency" },
-    { key: "title_formula_fit",         label: "Title Formula Fit" },
-    { key: "act_architecture",          label: "Act Architecture" },
-    { key: "data_density",              label: "Data Density" },
-    { key: "human_narrative_placement", label: "Human Narrative" },
-    { key: "tension_release_rhythm",    label: "Tension / Release" },
-    { key: "closing_device",            label: "Closing Device" },
-  ] as const;
-  const detailByCriterion = new Map(
-    (data.criterion_details ?? []).map((detail) => [detail.criterion, detail])
-  );
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Grade header */}
-      <div className="card" style={{ padding: "18px 20px", display: "flex", alignItems: "center", gap: 20 }}>
-        <div
-          style={{
-            width: 56,
-            height: 56,
-            background: "var(--color-action)",
-            color: "#fff",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: 10,
-            fontSize: 24,
-            fontWeight: 500,
-            flexShrink: 0,
-          }}
-        >
-          {data.grade}
-        </div>
-        <div>
-          <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
-            Benchmark score: {(data.bi_similarity_score * 100).toFixed(0)}%
-          </p>
-          <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-            {BENCHMARK_GRADE_HELP}
-          </p>
-          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
-            {GRADE_SCALE_HELP}
-          </p>
-          {data.stale && (
-            <p style={{ fontSize: 12, color: "var(--color-warning)", marginTop: 4 }}>
-              Benchmark corpus is stale. Scores may be directionally useful but should be refreshed.
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Metrics */}
-      <div className="card" style={{ padding: "18px 20px" }}>
-        <div className="section-rule"><span>Evaluation criteria</span></div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {metrics.map(({ key, label }) => {
-            const score = (data[key] as number) ?? 0;
-            const detail = detailByCriterion.get(key);
-            return (
-              <div key={key}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{label}</span>
-                  <span style={{ fontSize: 12, fontWeight: 500 }}>{(score * 100).toFixed(0)}%</span>
-                </div>
-                <div className="progress-track">
-                  <div className="progress-fill" style={{ width: `${score * 100}%` }} />
-                </div>
-                {detail && (
-                  <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
-                    <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                      {sanitizeBenchmarkText(detail.assessment)}
-                    </p>
-                    {detail.improvement && (
-                      <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
-                        <strong style={{ color: "var(--color-text-secondary)" }}>Improve:</strong>{" "}
-                        {sanitizeBenchmarkText(detail.improvement)}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Strengths + gaps */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div className="card" style={{ padding: "16px 18px" }}>
-          <p className="section-label" style={{ color: "var(--color-success)" }}>Strengths</p>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-            {data.strengths.map((s, i) => (
-              <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                <CheckCircle2 size={13} style={{ color: "var(--color-success)", flexShrink: 0, marginTop: 1 }} />
-                {sanitizeBenchmarkText(s)}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="card" style={{ padding: "16px 18px" }}>
-          <p className="section-label" style={{ color: "var(--color-danger)" }}>Gaps</p>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
-            {data.gaps.map((g, i) => (
-              <li key={i} style={{ display: "flex", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
-                <XCircle size={13} style={{ color: "var(--color-danger)", flexShrink: 0, marginTop: 1 }} />
-                {sanitizeBenchmarkText(g)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      {data.status_notes && data.status_notes.length > 0 && (
-        <div className="card" style={{ padding: "16px 18px" }}>
-          <p className="section-label" style={{ marginBottom: 8 }}>Corpus notes</p>
-          <ul style={{ margin: 0, paddingLeft: 16 }}>
-            {data.status_notes.map((note, i) => (
-              <li key={i} style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                {sanitizeBenchmarkText(note)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
