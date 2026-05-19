@@ -45,7 +45,7 @@ function formatReportMarkdown(report: DeepResearchReport): string {
     "",
     `Generated: ${generatedAt}`,
     `Model: ${report.model}`,
-    `Anthropic web searches: ${report.web_search_requests}`,
+    `Web searches: ${report.web_search_requests}`,
     "",
     `Research request: ${report.prompt}`,
     "",

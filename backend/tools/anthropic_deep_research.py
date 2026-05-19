@@ -122,10 +122,11 @@ Rules:
 - Do not provide rewritten script text.
 - Do not recommend or trigger script regeneration."""
 
+        # Claude Opus 4.7 is a reasoning model and rejects the `temperature`
+        # argument at the API layer; omit it (matches analyst + script_evaluator).
         response = await self._client.messages.create(
             model=self._model,
             max_tokens=settings.claude_max_tokens,
-            temperature=0.2,
             tools=[
                 {
                     "type": "web_search_20250305",

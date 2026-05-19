@@ -155,7 +155,7 @@ function ResearchPageInner() {
       setDeepResearchPrompt("");
     },
     onError: (error: Error) => {
-      setDeepResearchError(error.message || "Anthropic deep research failed.");
+      setDeepResearchError(error.message || "Additional research failed.");
     },
   });
 
@@ -323,9 +323,9 @@ function ResearchPageInner() {
               <div className="card" style={{ padding: "14px 16px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
                   <div>
-                    <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Anthropic Deep Research</p>
+                    <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Additional Research</p>
                     <p style={{ fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                      Produces a separate report from Anthropic web research. The script stays unchanged.
+                      Run extra research for this script. Produces a separate downloadable report; the script itself stays unchanged.
                     </p>
                   </div>
                   {selectedStory.status === "completed" && (
@@ -361,7 +361,7 @@ function ResearchPageInner() {
                       <Loader2 size={16} className="animate-spin" style={{ color: "var(--color-action)", flexShrink: 0, marginTop: 2 }} />
                       <div>
                         <p style={{ fontSize: 12, color: "var(--color-text-primary)", marginBottom: 4 }}>
-                          Running Anthropic Deep Research
+                          Running additional research
                         </p>
                         <p style={{ fontSize: 12, lineHeight: 1.6 }}>
                           Searching, cross-checking, and drafting a downloadable report.
@@ -397,7 +397,7 @@ function ResearchPageInner() {
                         <div>
                           <p style={{ fontSize: 12, fontWeight: 500 }}>Additional research report ready</p>
                           <p style={{ fontSize: 11, color: "var(--color-text-secondary)", marginTop: 3 }}>
-                            {deepResearchReport.web_search_requests} Anthropic web searches · {deepResearchReport.citations.length} citations
+                            {deepResearchReport.web_search_requests} web searches · {deepResearchReport.citations.length} citations
                           </p>
                         </div>
                         <button
@@ -475,7 +475,7 @@ function ResearchPageInner() {
                     onChange={(event) => setDeepResearchPrompt(event.target.value)}
                     className="input"
                     rows={4}
-                    placeholder="Ask Anthropic Deep Research for missing evidence, updated data, expert sources, or verification gaps."
+                    placeholder="Describe what additional research you'd like for this script — missing evidence, updated data, expert sources, verification gaps, or any angle you want explored further."
                     style={{ resize: "vertical", minHeight: 96, lineHeight: 1.5 }}
                     disabled={deepResearchMutation.isPending}
                   />
@@ -490,7 +490,7 @@ function ResearchPageInner() {
                       ) : (
                         <Search size={13} />
                       )}
-                      Run Deep Research
+                      Run Research
                     </button>
                   </div>
                 </form>
