@@ -135,7 +135,9 @@ class WebScraperTool:
                 content=content[:8000],  # cap at ~8k chars
                 author=author,
                 credibility=SourceCredibility.MEDIUM,
-                relevance_score=0.7,
+                # Neutral 0.5 — same baseline as every other provider. The
+                # analyst and scriptwriter judge usefulness from content.
+                relevance_score=0.5,
                 metadata={"word_count": len(content.split())},
             )
         finally:

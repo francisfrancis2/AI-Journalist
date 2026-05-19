@@ -174,7 +174,9 @@ class NewsAPITool:
             author=article.get("author"),
             published_at=_parse_published_at(article.get("publishedAt")),
             credibility=_map_credibility(source_id),
-            relevance_score=0.7,
+            # Neutral 0.5 — same baseline as every other provider. The
+            # analyst and scriptwriter judge usefulness from content.
+            relevance_score=0.5,
             metadata={
                 "source_id": source_id,
                 "source_name": source_name,

@@ -235,7 +235,10 @@ class AnthropicSearchTool:
                     url=url,
                     title=r.get("title") or "(untitled)",
                     content=r.get("snippet") or "",
-                    relevance_score=0.55,  # neutral — analyst will re-rank
+                    # Neutral 0.5 — same baseline as every other provider.
+                    # The analyst and scriptwriter judge usefulness from
+                    # content; no apriori weighting on the fetcher side.
+                    relevance_score=0.5,
                     credibility=_infer_credibility(url),
                     metadata={
                         "provider": "anthropic_search",

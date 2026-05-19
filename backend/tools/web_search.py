@@ -110,7 +110,11 @@ class WebSearchTool:
                     url=result.get("url"),
                     title=result.get("title", "Untitled"),
                     content=result.get("content", ""),
-                    relevance_score=result.get("score", 0.5),
+                    # Neutral 0.5 across every provider — apriori relevance
+                    # is intentionally not assigned here. The analyst and
+                    # scriptwriter judge usefulness from each source's
+                    # content based on what the final script needs.
+                    relevance_score=0.5,
                     credibility=_infer_credibility(result.get("url")),
                     metadata={
                         "published_date": result.get("published_date"),
