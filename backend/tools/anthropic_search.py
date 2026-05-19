@@ -63,36 +63,70 @@ def _strip_code_fence(text: str) -> str:
         return stripped
     # Drop first line (```) and trailing closing fence
     parts = stripped.split("\n", 1)
-    if len(parts) == 2:
-        body = parts[1]
-    else:
-        body = ""
+    body = parts[1] if len(parts) == 2 else ""
     if body.rstrip().endswith("```"):
         body = body.rstrip()[:-3]
     return body.strip()
 
 
+def _extract_json_object(text: str) -> Optional[dict]:
+    """
+    Pull the first top-level JSON object out of `text`, even when the model
+    wraps it in prose ("Here are the results: { ... }. Hope this helps!").
+    Returns None if no parseable object is found.
+    """
+    if not text:
+        return None
+    candidate = _strip_code_fence(text)
+    # Fast path: the whole stripped string is valid JSON.
+    try:
+        obj = json.loads(candidate)
+        return obj if isinstance(obj, dict) else None
+    except (json.JSONDecodeError, TypeError):
+        pass
+    # Slow path: scan for the first '{' that begins a parseable object.
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(candidate):
+        if ch != "{":
+            continue
+        try:
+            obj, _ = decoder.raw_decode(candidate, i)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return None
+
+
+def _attr(obj: Any, key: str, default: Any = None) -> Any:
+    """Read `key` from `obj` whether it's a Pydantic-style object or a dict."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 def _extract_search_results_from_blocks(content_blocks: list[Any]) -> list[dict]:
     """
     Fallback parser: when the model didn't return JSON, harvest URLs/titles
-    straight from web_search_tool_result content blocks.
+    straight from web_search_tool_result content blocks. Tolerates both
+    attribute-style access (typed SDK objects) and dict-style (raw payloads).
     """
     out: list[dict] = []
     for block in content_blocks:
-        if getattr(block, "type", None) != "web_search_tool_result":
+        if _attr(block, "type") != "web_search_tool_result":
             continue
-        inner = getattr(block, "content", []) or []
+        inner = _attr(block, "content", []) or []
         for r in inner:
-            if getattr(r, "type", None) != "web_search_result":
+            if _attr(r, "type") != "web_search_result":
                 continue
-            url = getattr(r, "url", None)
+            url = _attr(r, "url")
             if not url:
                 continue
             out.append({
-                "title": getattr(r, "title", None) or "(untitled)",
+                "title": _attr(r, "title") or "(untitled)",
                 "url": url,
                 "snippet": "",
-                "page_age": getattr(r, "page_age", None),
+                "page_age": _attr(r, "page_age"),
             })
     return out
 
@@ -101,10 +135,12 @@ _QUERY_PROMPT = (
     "Search the web for: {query}\n\n"
     "Use up to {max_uses} search calls. Chain follow-up searches if early "
     "results surface a more specific term worth pursuing.\n\n"
-    "After you have searched, respond with a JSON block in EXACTLY this shape:\n"
+    "After searching, your FINAL message must be a single JSON object and "
+    "nothing else — no preamble, no explanation, no trailing comments, no "
+    "markdown code fence. The object must have this exact shape:\n"
     "{{\"results\": [{{\"title\": \"...\", \"url\": \"...\", \"snippet\": \"1-2 sentence summary\"}}]}}\n\n"
-    "List up to 10 of the most relevant sources you found. Do not include any "
-    "text outside the JSON block."
+    "Include up to 10 of the most relevant sources you found. The URL must be "
+    "the canonical source URL from the search results."
 )
 
 
@@ -153,18 +189,33 @@ class AnthropicSearchTool:
                 text_parts.append(getattr(block, "text", "") or "")
         text = "\n".join(text_parts).strip()
 
-        if text:
-            try:
-                payload = json.loads(_strip_code_fence(text))
-                results = payload.get("results") if isinstance(payload, dict) else None
-                if isinstance(results, list):
-                    return [r for r in results if isinstance(r, dict) and r.get("url")]
-            except (json.JSONDecodeError, TypeError):
-                log.debug("anthropic_search.json_parse_failed", query=query)
+        payload = _extract_json_object(text)
+        if payload is not None:
+            results = payload.get("results")
+            if isinstance(results, list):
+                cleaned = [r for r in results if isinstance(r, dict) and r.get("url")]
+                if cleaned:
+                    return cleaned
+        elif text:
+            # Diagnostic: model returned text we couldn't parse. Logged at debug
+            # so it isn't noisy; raise to info if you're actively investigating.
+            log.debug("anthropic_search.json_parse_failed", query=query)
 
-        # JSON path failed — fall back to harvesting URLs from the raw
+        # JSON path failed or empty — harvest URLs from the raw
         # web_search_tool_result blocks so we still get something useful.
-        return _extract_search_results_from_blocks(response.content)
+        block_results = _extract_search_results_from_blocks(response.content)
+        if not block_results:
+            # Both paths empty — log a structural sample so we can diagnose.
+            block_summary = [
+                _attr(b, "type", type(b).__name__) for b in response.content
+            ]
+            log.info(
+                "anthropic_search.empty_response",
+                query=query,
+                block_types=block_summary,
+                text_preview=(text[:200] if text else None),
+            )
+        return block_results
 
     async def search(self, query: str) -> list[RawSource]:
         try:
