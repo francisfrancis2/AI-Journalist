@@ -12,18 +12,20 @@ const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
 
   async rewrites() {
-    return [
-      // Proxy all API calls through Next.js → backend (internal network only)
-      {
-        source: "/api/:path*",
-        destination: `${BACKEND}/api/:path*`,
-      },
-      // Proxy health check
-      {
-        source: "/health",
-        destination: `${BACKEND}/health`,
-      },
-    ];
+    return {
+      fallback: [
+        // Proxy API calls through Next.js → backend after real Next routes run.
+        {
+          source: "/api/:path*",
+          destination: `${BACKEND}/api/:path*`,
+        },
+        // Proxy health check
+        {
+          source: "/health",
+          destination: `${BACKEND}/health`,
+        },
+      ],
+    };
   },
 };
 

@@ -33,6 +33,30 @@ const CREDIBILITY_TOOLTIP: Record<string, string> = {
   low:    "Uncertain reliability — verify before citing in the script",
 };
 
+const DEEP_RESEARCH_ESTIMATE_SECONDS = 150;
+const DEEP_RESEARCH_STAGES = [
+  { at: 0, label: "Preparing story and script context" },
+  { at: 12, label: "Launching focused web research" },
+  { at: 34, label: "Collecting source leads and citations" },
+  { at: 58, label: "Cross-checking evidence against the script" },
+  { at: 78, label: "Drafting the additional research report" },
+  { at: 91, label: "Finalizing report and citation index" },
+];
+
+function formatResearchDuration(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.round(totalSeconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function getDeepResearchStage(percent: number): string {
+  return DEEP_RESEARCH_STAGES
+    .filter((stage) => percent >= stage.at)
+    .at(-1)?.label ?? DEEP_RESEARCH_STAGES[0].label;
+}
+
 function SourceCard({
   source,
 }: {
@@ -107,6 +131,8 @@ function ResearchPageInner() {
   const [deepResearchPrompt, setDeepResearchPrompt] = useState("");
   const [deepResearchReport, setDeepResearchReport] = useState<DeepResearchReport | null>(null);
   const [deepResearchError, setDeepResearchError] = useState<string | null>(null);
+  const [deepResearchStartedAt, setDeepResearchStartedAt] = useState<number | null>(null);
+  const [deepResearchTick, setDeepResearchTick] = useState(0);
   const storyParam = searchParams.get("story");
 
   const { data: stories, isLoading: storiesLoading } = useQuery<Story[]>({
@@ -130,6 +156,8 @@ function ResearchPageInner() {
     setDeepResearchPrompt("");
     setDeepResearchReport(null);
     setDeepResearchError(null);
+    setDeepResearchStartedAt(null);
+    setDeepResearchTick(0);
   }, [selectedStoryId]);
 
   const { data: storySources, isLoading: sourcesLoading } = useQuery<ResearchSource[]>({
@@ -148,6 +176,9 @@ function ResearchPageInner() {
     }) => apiClient.generateDeepResearchReport(storyId, prompt),
     onMutate: () => {
       setDeepResearchError(null);
+      setDeepResearchReport(null);
+      setDeepResearchStartedAt(Date.now());
+      setDeepResearchTick(0);
     },
     onSuccess: (response, variables) => {
       if (variables.storyId !== selectedStoryId) return;
@@ -157,7 +188,18 @@ function ResearchPageInner() {
     onError: (error: Error) => {
       setDeepResearchError(error.message || "Additional research failed.");
     },
+    onSettled: () => {
+      setDeepResearchStartedAt(null);
+    },
   });
+
+  useEffect(() => {
+    if (!deepResearchMutation.isPending) return;
+    const timer = window.setInterval(() => {
+      setDeepResearchTick((tick) => tick + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [deepResearchMutation.isPending]);
 
   const handleDeepResearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -171,6 +213,26 @@ function ResearchPageInner() {
   };
 
   const highCredSources = (storySources ?? []).filter((source) => source.credibility === "high").length;
+  const deepResearchProgress = (() => {
+    void deepResearchTick;
+    if (!deepResearchStartedAt) {
+      return {
+        elapsedSeconds: 0,
+        remainingSeconds: DEEP_RESEARCH_ESTIMATE_SECONDS,
+        percent: 0,
+        stage: DEEP_RESEARCH_STAGES[0].label,
+      };
+    }
+    const elapsedSeconds = Math.max(0, Math.round((Date.now() - deepResearchStartedAt) / 1000));
+    const progressRatio = Math.min(elapsedSeconds / DEEP_RESEARCH_ESTIMATE_SECONDS, 1);
+    const percent = Math.min(94, Math.max(7, Math.round(progressRatio * 90)));
+    return {
+      elapsedSeconds,
+      remainingSeconds: Math.max(0, DEEP_RESEARCH_ESTIMATE_SECONDS - elapsedSeconds),
+      percent,
+      stage: getDeepResearchStage(percent),
+    };
+  })();
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
@@ -359,13 +421,54 @@ function ResearchPageInner() {
                       }}
                     >
                       <Loader2 size={16} className="animate-spin" style={{ color: "var(--color-action)", flexShrink: 0, marginTop: 2 }} />
-                      <div>
-                        <p style={{ fontSize: 12, color: "var(--color-text-primary)", marginBottom: 4 }}>
-                          Running additional research
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", marginBottom: 6 }}>
+                          <p style={{ fontSize: 12, color: "var(--color-text-primary)", fontWeight: 500 }}>
+                            Running additional research
+                          </p>
+                          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+                            {deepResearchProgress.percent}%
+                          </p>
+                        </div>
+                        <div
+                          role="progressbar"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={deepResearchProgress.percent}
+                          style={{
+                            height: 6,
+                            borderRadius: 999,
+                            background: "var(--color-background-tertiary)",
+                            overflow: "hidden",
+                            border: "0.5px solid var(--color-border-tertiary)",
+                            marginBottom: 8,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${deepResearchProgress.percent}%`,
+                              height: "100%",
+                              background: "var(--color-action)",
+                              transition: "width 0.5s ease",
+                            }}
+                          />
+                        </div>
+                        <p style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 6 }}>
+                          {deepResearchProgress.stage}
                         </p>
-                        <p style={{ fontSize: 12, lineHeight: 1.6 }}>
-                          Searching, cross-checking, and drafting a downloadable report.
-                        </p>
+                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                            Estimated total {formatResearchDuration(DEEP_RESEARCH_ESTIMATE_SECONDS)}
+                          </span>
+                          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                            Elapsed {formatResearchDuration(deepResearchProgress.elapsedSeconds)}
+                          </span>
+                          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                            {deepResearchProgress.remainingSeconds > 0
+                              ? `About ${formatResearchDuration(deepResearchProgress.remainingSeconds)} remaining`
+                              : "Finalizing now"}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ) : !deepResearchReport ? (
