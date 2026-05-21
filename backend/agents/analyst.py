@@ -214,6 +214,30 @@ class AnalystAgent:
                   "Do not copy examples or treat them as source material.\n"
             )
 
+        voice_section = ""
+        if settings.enable_team_voice_profile:
+            voice_section = (
+                "\n=== TEAM VOICE PROFILE (wording polish only) ===\n"
+                "You are about to generate key_findings and selectable_angles. Use the "
+                "TEAM VOICE PROFILE below to shape HOW you phrase angle text and finding "
+                "claims — the contrast pairs, definitional reframes, signature pivots, "
+                "and specific-named-referents-over-generics rules apply to wording.\n\n"
+                "CRITICAL — voice does NOT override substance:\n"
+                "- Library knowledge and corpus inspiration (above) tell you WHAT makes a "
+                "strong angle for this topic. The voice profile only tells you HOW to "
+                "phrase the angle once you've identified it. If the two conflict, the "
+                "library and the actual research win.\n"
+                "- Do NOT invent angles that aren't supported by the research package in "
+                "order to fit a voice device. A clever contrast pair with no supporting "
+                "source is a worse angle than a plain one that does.\n"
+                "- recommended_tone and framing_axis classifications are unchanged by "
+                "voice — those are categorical, not stylistic.\n\n"
+                "Apply voice to: the prose of each angle's `angle` field and `rationale`, "
+                "and the claim wording of each `key_finding`.\n\n"
+                + load_prompt("team_voice_profile")
+                + "\n=== END TEAM VOICE PROFILE ===\n"
+            )
+
         prompt = (
             f"Topic: {topic}\n"
             f"Target tone: {tone}\n"
@@ -224,7 +248,7 @@ class AnalystAgent:
             f"Shorter episodes need fewer, stronger claims; longer episodes need "
             f"more context, protagonists, and visual evidence.\n"
             f"Total sources collected: {package.total_sources}\n"
-            f"{gap_section}{focus_section}{inspiration_section}"
+            f"{gap_section}{focus_section}{inspiration_section}{voice_section}"
             f"\n=== RESEARCH SOURCES ===\n{_build_source_digest(package)}"
         )
 

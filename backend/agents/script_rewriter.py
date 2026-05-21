@@ -106,6 +106,7 @@ class ScriptRewriterAgent:
         source_lookup: dict[str, dict],
         target_audience: str | None,
         library_reference: str = "",
+        voice_section: str = "",
         global_recommendations: list[str] | None = None,
         duration_contract: str = "",
     ) -> ScriptSection:
@@ -141,6 +142,7 @@ class ScriptRewriterAgent:
             f"{global_directives}"
             f"=== AUDIT FEEDBACK ===\n{audit_summary}\n\n"
             f"{library_reference}"
+            f"{voice_section}"
             f"=== VERIFIED FINDINGS ===\n{self._format_findings(analysis)}\n\n"
             f"=== SOURCE LOOKUP ===\n{self._format_sources(source_lookup)}\n\n"
             "Return source_ids containing only IDs from the source lookup."
@@ -198,6 +200,45 @@ class ScriptRewriterAgent:
                 f"=== REVISION LIBRARY REFERENCE ===\n{reference_context}\n"
                 "Use this to tighten shape, specificity, and transitions without adding unsupported facts.\n\n"
             )
+
+        voice_section = ""
+        if settings.enable_team_voice_profile:
+            voice_section = (
+                "=== TEAM VOICE PROFILE (wording polish only) ===\n"
+                "You are rewriting a section of an existing script based on the audit "
+                "report above.\n\n"
+                "Your rewrite decisions follow a clear hierarchy:\n"
+                "1. PRIMARY — The library corpus reference pack (above), the existing "
+                "storyline, and the audit report are the source of truth for what this "
+                "section is, what role it plays in the larger script, and what the "
+                "audit says needs to be fixed. The corpus tells you which craft patterns "
+                "belong in this kind of section at this point in the documentary; the "
+                "storyline tells you what this section must accomplish; the audit tells "
+                "you which specific weaknesses to address. Solve the audit issues using "
+                "craft patterns the corpus supports.\n\n"
+                "2. SECONDARY — Voice is the final polish on top of (1). Once your "
+                "rewrite resolves the audit issues using corpus-supported craft, use the "
+                "TEAM VOICE PROFILE below to ensure the rewritten prose still sounds "
+                "like the team. Preserve voice devices already present in the section "
+                "(pivots, contrast pairs, definitional reframes); where you add new "
+                "prose, write it in the same voice the original scriptwriter used.\n\n"
+                "Voice preservation rules:\n"
+                "- Do not strip signature voice devices while fixing other issues. If "
+                "you must remove one, replace it with another device from the profile.\n"
+                "- When tightening for length, prefer cutting redundant sentences over "
+                "cutting voice devices.\n"
+                "- When fixing factual issues, change the factual claim only — keep the "
+                "surrounding voice intact.\n"
+                "- Anti-patterns apply to your rewrites the same as to original writes. "
+                "Never introduce one while fixing something else.\n\n"
+                "Conflict resolution:\n"
+                "- If an audit recommendation can ONLY be addressed by violating a voice "
+                "rule (rare), the audit fix wins. Note the trade-off in your output.\n"
+                "- If solving the audit would require contradicting a corpus craft "
+                "pattern, prefer the corpus pattern and revise the audit-fix approach.\n\n"
+                + load_prompt("team_voice_profile")
+                + "\n=== END TEAM VOICE PROFILE ===\n\n"
+            )
         duration_contract = (
             f"{duration_prompt_block(duration_target, role='Script Rewriter')}"
             f"Target total word count: {duration_target.target_word_count}. "
@@ -221,6 +262,7 @@ class ScriptRewriterAgent:
                 source_lookup=source_lookup,
                 target_audience=state.get("target_audience"),
                 library_reference=library_reference,
+                voice_section=voice_section,
                 global_recommendations=rewrite_recommendations,
                 duration_contract=duration_contract,
             )

@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     anthropic_search_max_queries: int = 4          # caps how many planned queries we send
     anthropic_deep_research_max_uses: int = 12     # caps Research Workspace deep research searches
 
+    # ── Team voice profile ────────────────────────────────────────────────────
+    # When True, analyst / storyline_creator / scriptwriter / script_rewriter
+    # prepend backend/prompts/team_voice_profile.md to their LLM prompts so the
+    # team's house style shapes the wording of angles, titles, and narration.
+    # Voice never overrides the library corpus or research — it is only the
+    # final polish layer on top of substance.
+    enable_team_voice_profile: bool = True
+
     # ── NewsAPI ───────────────────────────────────────────────────────────────
     news_api_key: str = Field(..., env="NEWS_API_KEY")
     news_api_base_url: str = "https://newsapi.org/v2"

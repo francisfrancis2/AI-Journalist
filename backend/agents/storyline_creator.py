@@ -363,6 +363,34 @@ class StorylineCreatorAgent:
                 "Use the pack to shape act architecture, escalation, human-story placement, "
                 "and closing payoff. Do not copy example wording.\n"
             )
+
+        voice_section = ""
+        if settings.enable_team_voice_profile:
+            voice_section = (
+                "\n=== TEAM VOICE PROFILE (wording polish only) ===\n"
+                "You are about to generate a StorylineProposal: a documentary title, "
+                "logline, and act_titles.\n\n"
+                "Your writing decisions follow a clear hierarchy:\n"
+                "1. PRIMARY — The library corpus (above) and the EPISODE DURATION "
+                "CONTRACT are the source of truth for craft and structure. The reference "
+                "pack cards show you the structural patterns successful documentaries use: "
+                "how hooks work, how acts are titled, what a strong logline does, how the "
+                "corpus distributes attention across acts. Base every structural decision "
+                "on these patterns and on the duration contract's act count and per-act "
+                "seconds.\n\n"
+                "2. SECONDARY — Voice is the final polish on top of (1). Once you have "
+                "decided WHAT the title, logline, and act_titles should communicate "
+                "(informed by the library), use the TEAM VOICE PROFILE below ONLY to "
+                "refine HOW those strings are worded. Voice never changes the structural "
+                "decision; it only sharpens the wording.\n\n"
+                "Apply voice to: the prose of `title`, `logline`, and each `act_title` "
+                "string. Do not let voice rules push you to change act count, act "
+                "ordering, duration distribution, or which subject each act covers — "
+                "those are library-and-duration decisions, already settled before voice "
+                "runs.\n\n"
+                + load_prompt("team_voice_profile")
+                + "\n=== END TEAM VOICE PROFILE ===\n"
+            )
         timing_plan = act_timings_for_count(duration_target)
         duration_contract = (
             f"{duration_prompt_block(duration_target, role='Storyline Creator')}"
@@ -383,7 +411,7 @@ class StorylineCreatorAgent:
             f"Target duration: {target_duration_minutes} minutes\n"
             f"Target audience: {target_audience or 'General documentary audience'}\n"
             f"{duration_contract}"
-            f"{angle_directive}{reference_section}\n"
+            f"{angle_directive}{reference_section}{voice_section}\n"
             f"=== EDITORIAL ANALYSIS ===\n"
             f"Executive Summary: {analysis.executive_summary}\n\n"
             f"Key Findings:\n"

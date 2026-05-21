@@ -80,6 +80,7 @@ class ScriptwriterAgent:
         next_act: dict | None = None,
         selected_angle: str | None = None,
         library_reference: str = "",
+        voice_section: str = "",
         duration_contract: str = "",
     ) -> ScriptSection:
         """Write narration for a single act."""
@@ -143,6 +144,7 @@ class ScriptwriterAgent:
             f"=== FULL STORY ARC ===\n{act_arc}\n\n"
             f"=== CONTINUITY CONTEXT ===\n{previous_context}{next_context}\n"
             f"{library_reference}"
+            f"{voice_section}"
             f"=== ACT TO WRITE ===\n"
             f"Act {act_data['act_number']}: {act_data['act_title']}\n"
             f"Purpose: {act_data['purpose']}\n"
@@ -242,6 +244,39 @@ class ScriptwriterAgent:
                 "Facts must come from the research package below.\n\n"
             )
 
+        voice_section = ""
+        if settings.enable_team_voice_profile:
+            voice_section = (
+                "=== TEAM VOICE PROFILE (wording polish only) ===\n"
+                "You are writing the NARRATION for one act of the final script.\n\n"
+                "Your writing decisions follow a clear hierarchy:\n"
+                "1. PRIMARY — The library corpus reference pack (above), the research "
+                "sources, the act plan, and the EPISODE DURATION CONTRACT are the source "
+                "of truth for craft, content, and length. The reference pack teaches you "
+                "how this genre of documentary writes acts at this duration: opening "
+                "moves, evidence placement, transition style, closing devices. Base your "
+                "craft decisions on these corpus-derived patterns. Base your factual "
+                "claims strictly on the research sources and key findings provided. Hit "
+                "the word-count target in the duration contract.\n\n"
+                "2. SECONDARY — Voice is the final polish on top of (1). Once you have "
+                "written narration that follows the corpus's craft patterns and stays "
+                "within the research and word budget, use the TEAM VOICE PROFILE below "
+                "to refine HOW each sentence sounds: sentence cadence, signature pivots, "
+                "rhetorical devices, concreteness, cultural anchoring, punctuation, and "
+                "the close pattern (for the final act). Voice never changes WHAT facts "
+                "you assert, which sources you cite, what the act covers, or how long "
+                "it is.\n\n"
+                "Hard rules from voice (anti-patterns): no item from the anti-patterns "
+                "list ever appears in the narration, even if voice has otherwise "
+                "finished its job. Treat it as a final check before you commit output.\n\n"
+                "Conflict resolution:\n"
+                "- If a voice device would require inventing a fact, drop the device.\n"
+                "- If a voice device would push the act over its word budget, drop it.\n"
+                "- If a corpus pattern conflicts with a voice device, corpus wins.\n\n"
+                + load_prompt("team_voice_profile")
+                + "\n=== END TEAM VOICE PROFILE ===\n\n"
+            )
+
         # Write acts in parallel while giving each one the full arc for continuity.
         act_tasks = [
             self._write_act(
@@ -257,6 +292,7 @@ class ScriptwriterAgent:
                 next_act=act_plans[index + 1] if index + 1 < len(act_plans) else None,
                 selected_angle=selected_angle,
                 library_reference=library_reference,
+                voice_section=voice_section,
                 duration_contract=duration_contract,
             )
             for index, act_data in enumerate(act_plans)
