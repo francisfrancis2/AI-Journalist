@@ -31,6 +31,7 @@ from backend.models.benchmark import (  # noqa: F401 — registers benchmark tab
 )
 from backend.models.user import UserORM
 from backend.models.story import StoryORM  # noqa: F401 — registers table with metadata
+from backend.models.research_session import ResearchSessionORM  # noqa: F401 — registers table with metadata
 
 
 # ── In-memory async SQLite engine ─────────────────────────────────────────────

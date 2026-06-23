@@ -21,10 +21,12 @@ from backend.api.routes import admin as admin_router
 from backend.api.routes import auth as auth_router
 from backend.api.routes import benchmarks as benchmarks_router
 from backend.api.routes import research as research_router
+from backend.api.routes import research_sessions as research_sessions_router
 from backend.api.routes import stories as stories_router
 from backend.config import settings
 from backend.db.database import AsyncSessionLocal, create_tables
 from backend.models import benchmark as _benchmark_models  # noqa: F401 — registers BIReferenceDocORM, BIPatternLibraryORM
+from backend.models import research_session as _research_session_models  # noqa: F401 — registers ResearchSessionORM
 from backend.models import user as _user_models  # noqa: F401 — ensures UserORM is registered with Base
 from backend.models.benchmark import BIReferenceDocORM
 from backend.models.user import UserORM
@@ -252,6 +254,12 @@ def create_app() -> FastAPI:
         research_router.router,
         prefix="/api/v1/research",
         tags=["Research"],
+        dependencies=[Depends(get_current_user)],
+    )
+    app.include_router(
+        research_sessions_router.router,
+        prefix="/api/v1/research",
+        tags=["Research Sessions"],
         dependencies=[Depends(get_current_user)],
     )
     app.include_router(

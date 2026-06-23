@@ -1,6 +1,6 @@
 """
 Tavily-powered web search tool.
-Returns structured search results that the Researcher agent can consume directly.
+Returns structured search results that the Research Agent can consume directly.
 """
 
 import asyncio
@@ -111,7 +111,7 @@ class WebSearchTool:
                     title=result.get("title", "Untitled"),
                     content=result.get("content", ""),
                     # Neutral 0.5 across every provider — apriori relevance
-                    # is intentionally not assigned here. The analyst and
+                    # is intentionally not assigned here. Angles & Hooks and
                     # scriptwriter judge usefulness from each source's
                     # content based on what the final script needs.
                     relevance_score=0.5,

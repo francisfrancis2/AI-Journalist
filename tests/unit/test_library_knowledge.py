@@ -4,12 +4,12 @@ from backend.services.library_knowledge import format_reference_pack, get_refere
 
 
 def test_reference_pack_returns_role_specific_cards(sample_topic):
-    pack = get_reference_pack(role="analyst", topic=sample_topic, max_cards=3)
+    pack = get_reference_pack(role="angles_and_hooks", topic=sample_topic, max_cards=3)
 
-    assert pack.role == "analyst"
+    assert pack.role == "angles_and_hooks"
     assert pack.corpus_doc_count > 0
     assert 1 <= len(pack.cards) <= 3
-    assert all(card.role == "analyst" for card in pack.cards)
+    assert all(card.role == "angles_and_hooks" for card in pack.cards)
     assert {card.artifact_type for card in pack.cards}.intersection(
         {"opening_hook", "angle_frame"}
     )

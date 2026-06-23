@@ -20,9 +20,9 @@ class Settings(BaseSettings):
 
     # ── Anthropic ─────────────────────────────────────────────────────────────
     anthropic_api_key: str = Field(..., env="ANTHROPIC_API_KEY")
-    claude_opus_model: str = "claude-opus-4-7"              # high-stakes: analyst, scriptwriter, script_evaluator
-    claude_model: str = "claude-sonnet-4-6"                # default: storyline_creator, script_rewriter, corpus_builder
-    claude_haiku_model: str = "claude-haiku-4-5-20251001"  # fast: researcher, evaluator, benchmarker (plus admin health + script chat)
+    claude_opus_model: str = "claude-opus-4-7"              # high-stakes: Angles & Hooks synthesis, Scriptwriter, Chief Editor audit
+    claude_model: str = "claude-sonnet-4-6"                # default: Chapter Writer, Chief Editor rewrite, corpus builder
+    claude_haiku_model: str = "claude-haiku-4-5-20251001"  # fast: Research, Chief Editor plan/benchmark, admin health + script chat
     claude_max_tokens: int = 8192
     claude_temperature: float = 0.3
 
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # ── Anthropic server-side web search (parallel to Tavily) ─────────────────
     # When True, the researcher runs Anthropic's web_search tool on the same
     # planned queries Tavily receives. Both sets of URLs merge into the same
-    # ResearchPackage; the analyst gets the union. Set False to fall back to
+    # ResearchPackage; Angles & Hooks gets the union. Set False to fall back to
     # Tavily-only if cost becomes a concern.
     enable_anthropic_search: bool = True
     anthropic_search_max_uses_per_query: int = 3   # caps cost per query call
@@ -42,12 +42,21 @@ class Settings(BaseSettings):
     anthropic_deep_research_max_uses: int = 12     # caps Research Workspace deep research searches
 
     # ── Team voice profile ────────────────────────────────────────────────────
-    # When True, analyst / storyline_creator / scriptwriter / script_rewriter
+    # When True, Angles & Hooks / Chapter Writer / Scriptwriter / Chief Editor rewrite
     # prepend backend/prompts/team_voice_profile.md to their LLM prompts so the
     # team's house style shapes the wording of angles, titles, and narration.
     # Voice never overrides the library corpus or research — it is only the
     # final polish layer on top of substance.
     enable_team_voice_profile: bool = True
+
+    # ── Corpus angle inspiration ──────────────────────────────────────────────
+    # When True, the Angles & Hooks synthesis skill samples real benchmark
+    # documentaries from the corpus (title + description + opening hook) and
+    # injects them as approach exemplars, so each generated angle is shaped by a
+    # different real-world way of applying data to a story. Like the library
+    # reference pack, this is craft guidance only — never a factual source.
+    enable_corpus_angle_inspiration: bool = True
+    corpus_angle_inspiration_sample_size: int = 6   # docs sampled per generation
 
     # ── NewsAPI ───────────────────────────────────────────────────────────────
     news_api_key: str = Field(..., env="NEWS_API_KEY")

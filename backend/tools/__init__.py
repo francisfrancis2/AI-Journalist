@@ -1,4 +1,4 @@
-"""Data-source tool modules used by the Researcher agent."""
+"""Data-source tool modules used by the Research Agent."""
 
 from backend.tools.financial_data import FinancialDataTool
 from backend.tools.news_api import NewsAPITool

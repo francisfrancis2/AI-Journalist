@@ -1,4 +1,4 @@
-import type { DeepResearchReport } from "@/lib/api";
+import type { ResearchSession } from "@/lib/api";
 
 type PdfLine = {
   text: string;
@@ -13,7 +13,7 @@ function safeFilePart(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return cleaned || "additional-research";
+  return cleaned || "research-report";
 }
 
 function normalisePdfText(value: string): string {
@@ -34,27 +34,32 @@ function escapePdfString(value: string): string {
     .replace(/\)/g, "\\)");
 }
 
-function formatReportMarkdown(report: DeepResearchReport): string {
-  const generatedAt = new Date(report.generated_at).toISOString();
-  const citationList = report.citations
+function formatSessionMarkdown(session: ResearchSession): string {
+  const updatedAt = new Date(session.updated_at).toISOString();
+  const citationList = session.citations
     .map((citation, index) => `${index + 1}. ${citation.title}\n   ${citation.url}`)
     .join("\n\n");
+  const promptHistory = session.turns
+    .map((turn, index) => `${index + 1}. ${turn.prompt}`)
+    .join("\n");
 
   return [
-    `# Additional Research Report: ${report.story_title}`,
+    `# ${session.title}`,
     "",
-    `Generated: ${generatedAt}`,
-    `Model: ${report.model}`,
-    `Web searches: ${report.web_search_requests}`,
+    `Last updated: ${updatedAt}`,
+    session.model ? `Model: ${session.model}` : "",
+    `Web searches: ${session.web_search_requests}`,
     "",
-    `Research request: ${report.prompt}`,
+    promptHistory ? "## Prompt history\n\n" + promptHistory : "",
     "",
     "---",
     "",
-    report.report_markdown.trim(),
+    session.report_markdown.trim(),
     citationList ? "\n---\n\n## Citation Index\n\n" + citationList : "",
     "",
-  ].join("\n");
+  ]
+    .filter((line) => line !== undefined)
+    .join("\n");
 }
 
 function wrapText(text: string, size: number, maxWidth: number): string[] {
@@ -179,13 +184,13 @@ function buildPdf(markdown: string): string {
   return body;
 }
 
-export function downloadDeepResearchReport(report: DeepResearchReport): void {
-  const pdf = buildPdf(formatReportMarkdown(report));
+export function downloadResearchSessionReport(session: ResearchSession): void {
+  const pdf = buildPdf(formatSessionMarkdown(session));
   const blob = new Blob([pdf], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `${safeFilePart(report.story_title)}-additional-research.pdf`;
+  anchor.download = `${safeFilePart(session.title)}-research.pdf`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();

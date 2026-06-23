@@ -134,7 +134,7 @@
       In practical terms, the product currently has the machinery for BI-style benchmarking, but it is not yet using actual BI video titles, descriptions, transcripts, extracted hooks, act structures, or title formulas as a reliable benchmark base. Until the corpus is rebuilt with real reference documentaries, BI similarity scores should be considered unavailable or untrusted.
     </p>
     <p>
-      The editorial evaluator is separate from the BI corpus and remains meaningful because it scores the generated storyline against general editorial standards. The BI benchmarker and the post-script audit can use BI context, but today that context is empty.
+      The Chief Editor plan review skill is separate from the BI corpus and remains meaningful because it scores the generated storyline against general editorial standards. The Chief Editor benchmark skill and the post-script audit can use BI context, but today that context is empty.
     </p>
   </section>
 
@@ -239,15 +239,15 @@
     <h3>5.1 Pipeline order</h3>
     <p>The LangGraph pipeline runs in this order:</p>
     <div class="callout">
-      <p><code>researcher -> analyst -> storyline_creator -> evaluator + benchmarker -> scriptwriter -> script_evaluator</code></p>
+      <p><code>research_agent -> angles_and_hooks -> chapter_writer -> chief_editor_evaluator -> scriptwriter -> chief_editor_script_audit</code></p>
     </div>
     <p>
-      The editorial evaluator and BI benchmarker run in parallel inside the evaluator graph node. The script evaluator runs after the final script has been written.
+      The Chief Editor plan review skill and Chief Editor benchmark skill run in parallel inside the Chief Editor graph node. The Chief Editor script audit skill runs after the final script has been written.
     </p>
 
     <h3>5.2 Editorial Evaluator</h3>
     <p>
-      The editorial evaluator does not depend on the Business Insider corpus. It evaluates the selected storyline against professional editorial standards and decides whether the storyline is ready for scripting.
+      The Chief Editor plan review skill does not depend on the Business Insider corpus. It evaluates the selected storyline against professional editorial standards and decides whether the storyline is ready for scripting.
     </p>
     <table>
       <tr><th>Criterion</th><th>Weight</th><th>Question being answered</th></tr>
@@ -262,9 +262,9 @@
       A combined score of <code>0.75</code> or higher approves the storyline for scripting. Below that threshold, the graph can refine the storyline or request more research, depending on the state and configured cycle limits.
     </p>
 
-    <h3>5.3 BI Benchmark Agent</h3>
+    <h3>5.3 BI Chief Editor benchmark skill</h3>
     <p>
-      The BI benchmarker compares the selected storyline against the active BI pattern library. It currently scores the storyline before the final script is generated. It does not gate the pipeline by itself; it adds benchmark metadata, strengths, gaps, grade, and similarity score for product feedback and later analysis.
+      The Chief Editor benchmark skill compares the selected storyline against the active BI pattern library. It currently scores the storyline before the final script is generated. It does not gate the pipeline by itself; it adds benchmark metadata, strengths, gaps, grade, and similarity score for product feedback and later analysis.
     </p>
     <table>
       <tr><th>BI benchmark criterion</th><th>Weight</th><th>What it checks</th></tr>
@@ -282,7 +282,7 @@
 
     <h3>5.4 Post-script Script Evaluator</h3>
     <p>
-      The post-script evaluator audits the final generated script. It uses the final narration, section structure, source references, prior editorial evaluation, prior benchmark report, and BI benchmark context when available.
+      The post-Chief Editor script audit skill audits the final generated script. It uses the final narration, section structure, source references, prior editorial evaluation, prior benchmark report, and BI benchmark context when available.
     </p>
     <p>
       Its output includes an overall grade, production-readiness flag, strengths, weaknesses, rewrite priorities, section-by-section audit notes, and a best-in-class comparison block when a valid benchmark context exists.
@@ -296,7 +296,7 @@
       <p>The active library object exists, but its <code>doc_count</code> is zero and every pattern field is empty or zero. Any BI similarity score generated from this state would be based on an empty benchmark context rather than actual BI reference material.</p>
     </div>
     <p>
-      A useful detail from the code review: <code>load_active_benchmark_library</code> can return a library object even when <code>doc_count = 0</code>. The service adds a note saying the corpus is below the recommended minimum of 20 documents, but the benchmarker currently only checks whether a library object exists. That means an empty library can still reach the LLM benchmark prompt.
+      A useful detail from the code review: <code>load_active_benchmark_library</code> can return a library object even when <code>doc_count = 0</code>. The service adds a note saying the corpus is below the recommended minimum of 20 documents, but the Chief Editor benchmark skill currently only checks whether a library object exists. That means an empty library can still reach the LLM benchmark prompt.
     </p>
     <p>
       Recommended product behavior is stricter: treat <code>doc_count &lt; bi_corpus_min_docs</code> as not ready for scoring, skip BI benchmark generation, and show an explicit admin action to rebuild the BI corpus.
@@ -343,11 +343,11 @@
       <tr><td>Corpus cache</td><td><code>backend/data/bi_patterns.json</code></td><td>Local BI pattern library cache.</td></tr>
       <tr><td>Corpus builder</td><td><code>backend/agents/corpus_builder.py</code></td><td>Fetches BI videos, extracts structures, synthesizes pattern library.</td></tr>
       <tr><td>YouTube fetcher</td><td><code>backend/tools/youtube_fetcher.py</code></td><td>Fetches BI channel metadata and transcripts.</td></tr>
-      <tr><td>Benchmark agent</td><td><code>backend/agents/benchmarker.py</code></td><td>Scores selected storyline against BI patterns.</td></tr>
-      <tr><td>Editorial evaluator</td><td><code>backend/agents/evaluator.py</code></td><td>Scores selected storyline against editorial criteria.</td></tr>
-      <tr><td>Script evaluator</td><td><code>backend/agents/script_evaluator.py</code></td><td>Audits final script and uses BI context when available.</td></tr>
+      <tr><td>Chief Editor benchmark skill</td><td><code>backend/agents/Chief Editor benchmark skill.py</code></td><td>Scores selected storyline against BI patterns.</td></tr>
+      <tr><td>Chief Editor plan review skill</td><td><code>backend/agents/chief_editor_evaluator.py</code></td><td>Scores selected storyline against editorial criteria.</td></tr>
+      <tr><td>Chief Editor script audit skill</td><td><code>backend/agents/Chief Editor audit.py</code></td><td>Audits final script and uses BI context when available.</td></tr>
       <tr><td>Benchmark models</td><td><code>backend/models/benchmark.py</code></td><td>Defines BI reference docs, pattern library, scores, and report models.</td></tr>
-      <tr><td>Graph orchestration</td><td><code>backend/graph/journalist_graph.py</code></td><td>Shows where evaluator, benchmarker, scriptwriter, and script evaluator run.</td></tr>
+      <tr><td>Graph orchestration</td><td><code>backend/graph/journalist_graph.py</code></td><td>Shows where Chief Editor, Scriptwriter, and Chief Editor script audit skill run.</td></tr>
       <tr><td>Benchmark service</td><td><code>backend/services/benchmarking.py</code></td><td>Loads cache/DB library, reports freshness, and manages rebuild state.</td></tr>
       <tr><td>Database tables</td><td><code>bi_reference_docs</code>, <code>bi_pattern_library</code></td><td>Current local corpus inventory.</td></tr>
     </table>

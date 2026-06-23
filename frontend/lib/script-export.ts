@@ -1,12 +1,13 @@
 import type { FinalScript } from "@/lib/api";
 
-type ExportSource = {
+export type ExportSource = {
   title: string;
   url: string | null;
   credibility?: string | null;
   type?: string | null;
   author?: string | null;
   published_at?: string | null;
+  preview?: string | null;
 };
 
 function escapeHtml(value: unknown): string {
@@ -119,16 +120,19 @@ ${actsHtml}
 }
 
 export function downloadSourceListPdf(title: string, sources: ExportSource[]): boolean {
+  const hasSnippets = sources.some((source) => Boolean(source.preview?.trim()));
   const rowsHtml = sources
     .map((source, index) => {
       const sourceTitle = escapeHtml(source.title);
       const sourceUrl = source.url ? escapeHtml(source.url) : "";
       const sourceType = source.type ? escapeHtml(source.type.replace(/_/g, " ")) : "";
+      const sourcePreview = source.preview ? escapeHtml(source.preview) : "";
       return `<tr>
         <td>${index + 1}</td>
         <td>${sourceTitle}</td>
         <td>${sourceUrl ? `<a href="${sourceUrl}">${sourceUrl}</a>` : "&mdash;"}</td>
         <td>${sourceType || "&mdash;"}</td>
+        ${hasSnippets ? `<td>${sourcePreview || "&mdash;"}</td>` : ""}
       </tr>`;
     })
     .join("");
@@ -146,8 +150,9 @@ export function downloadSourceListPdf(title: string, sources: ExportSource[]): b
   th{background:#f4f6fb;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#4b5563}
   td{font-size:11px;word-break:break-word}
   th:nth-child(1),td:nth-child(1){width:42px;text-align:center}
-  th:nth-child(2),td:nth-child(2){width:32%}
-  th:nth-child(4),td:nth-child(4){width:18%}
+  th:nth-child(2),td:nth-child(2){width:${hasSnippets ? "24%" : "32%"}}
+  th:nth-child(4),td:nth-child(4){width:${hasSnippets ? "14%" : "18%"}}
+  ${hasSnippets ? "th:nth-child(5),td:nth-child(5){width:28%}" : ""}
   a{color:#1c26a8;text-decoration:none}
   a:hover{text-decoration:underline}
   @media print{body{margin:0;max-width:none}}
@@ -161,6 +166,7 @@ export function downloadSourceListPdf(title: string, sources: ExportSource[]): b
       <th>Source</th>
       <th>Link</th>
       <th>Type</th>
+      ${hasSnippets ? "<th>Snippet</th>" : ""}
     </tr>
   </thead>
   <tbody>${rowsHtml}</tbody>

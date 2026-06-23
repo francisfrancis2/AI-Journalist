@@ -5,8 +5,8 @@ Uses Claude's built-in `web_search_20250305` server tool to run agentic
 search. Claude can chain multiple searches in a single call (e.g. follow
 up on a term it spotted in the first results), which Tavily can't do.
 
-This tool runs **in parallel** with TavilySearchTool inside the Researcher.
-Both feed the same ResearchPackage, so the analyst gets the union of URLs
+This tool runs **in parallel** with TavilySearchTool inside the Research Agent.
+Both feed the same ResearchPackage, so Angles & Hooks gets the union of URLs
 from two different search engines (Tavily uses Bing/Google, Anthropic
 uses Brave).
 
@@ -149,7 +149,7 @@ class AnthropicSearchTool:
     Anthropic server-side web search wrapper.
 
     Mirrors the WebSearchTool interface (`search` + `multi_search`) so it
-    can be dropped into the Researcher's parallel gather block as a peer.
+    can be dropped into the Research Agent's parallel gather block as a peer.
     """
 
     def __init__(self) -> None:
@@ -236,7 +236,7 @@ class AnthropicSearchTool:
                     title=r.get("title") or "(untitled)",
                     content=r.get("snippet") or "",
                     # Neutral 0.5 — same baseline as every other provider.
-                    # The analyst and scriptwriter judge usefulness from
+                    # The Angles & Hooks and Scriptwriter judge usefulness from
                     # content; no apriori weighting on the fetcher side.
                     relevance_score=0.5,
                     credibility=_infer_credibility(url),

@@ -87,7 +87,7 @@ export function Sidebar() {
             Workspace
           </p>
           {NAV.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+            const active = pathname === href || (href === "/" && pathname.startsWith("/ideation")) || (href !== "/" && pathname.startsWith(href));
             return (
               <Link key={href} href={href} className={`nav-item ${active ? "active" : ""}`}>
                 <Icon size={15} />

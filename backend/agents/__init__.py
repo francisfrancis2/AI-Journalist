@@ -1,19 +1,15 @@
 """Agent modules for the AI Journalist pipeline."""
 
-from backend.agents.analyst import AnalystAgent
-from backend.agents.evaluator import EvaluatorAgent
-from backend.agents.researcher import ResearcherAgent
-from backend.agents.script_evaluator import ScriptEvaluatorAgent
-from backend.agents.script_rewriter import ScriptRewriterAgent
+from backend.agents.angles_and_hooks import AnglesAndHooksAgent
+from backend.agents.chapter_writer import ChapterWriterAgent
+from backend.agents.chief_editor_evaluator import ChiefEditorEvaluatorAgent
+from backend.agents.research import ResearchAgent
 from backend.agents.scriptwriter import ScriptwriterAgent
-from backend.agents.storyline_creator import StorylineCreatorAgent
 
 __all__ = [
-    "ResearcherAgent",
-    "AnalystAgent",
-    "StorylineCreatorAgent",
-    "EvaluatorAgent",
+    "ResearchAgent",
+    "AnglesAndHooksAgent",
+    "ChapterWriterAgent",
     "ScriptwriterAgent",
-    "ScriptEvaluatorAgent",
-    "ScriptRewriterAgent",
+    "ChiefEditorEvaluatorAgent",
 ]

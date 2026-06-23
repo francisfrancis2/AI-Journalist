@@ -7,6 +7,12 @@ import { Loader2, ArrowLeft } from "lucide-react";
 import { StoryCard } from "@/components/StoryCard";
 import { ScriptViewer } from "@/components/ScriptViewer";
 import { apiClient, type Story, type FinalScript } from "@/lib/api";
+import {
+  ANGLE_SELECTION_STOPPED_MESSAGE,
+  isAngleSelectionExpired,
+  isTerminalStoryStatus,
+  storyStatusTitle,
+} from "@/lib/story-status";
 
 export default function StoriesPage() {
   return (
@@ -120,8 +126,7 @@ function StoryDetailView({
     queryFn: () => apiClient.getStory(storyId),
     refetchInterval: (query) => {
       const s = query.state.data as Story | undefined;
-      const active = ["pending", "researching", "analysing", "writing_storyline", "evaluating", "scripting"];
-      return s?.status && active.includes(s.status) ? 4_000 : false;
+      return s?.status && !isTerminalStoryStatus(s.status) ? 4_000 : false;
     },
   });
 
@@ -149,7 +154,8 @@ function StoryDetailView({
 
   const isComplete = story.status === "completed";
   const isFailed = story.status === "failed";
-  const isRunning = !isComplete && !isFailed;
+  const isStopped = isAngleSelectionExpired(story.status);
+  const isRunning = !isComplete && !isFailed && !isStopped;
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
@@ -189,6 +195,21 @@ function StoryDetailView({
           </div>
         )}
 
+        {isStopped && (
+          <div
+            style={{
+              padding: "12px 16px",
+              background: "var(--color-warning-bg)",
+              border: "0.5px solid #fed7aa",
+              borderRadius: "var(--border-radius-md)",
+              fontSize: 13,
+              color: "var(--color-warning)",
+            }}
+          >
+            {story.error_message || ANGLE_SELECTION_STOPPED_MESSAGE}
+          </div>
+        )}
+
         {isComplete && script && <ScriptViewer script={script} />}
       </div>
     </div>
@@ -213,7 +234,7 @@ function PipelineProgress({ status }: { status: string }) {
     <div className="card" style={{ padding: "24px", maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
       <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-text-tertiary)", marginBottom: 14 }} />
       <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
-        {status.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}…
+        {storyStatusTitle(status)}…
       </p>
       <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16 }}>
         Stage {Math.max(currentIdx + 1, 1)} of {PIPELINE_STAGES.length}

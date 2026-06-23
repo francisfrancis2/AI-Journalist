@@ -108,7 +108,7 @@ class DocStructure(BaseModel):
 
 
 class BIPatternLibrary(BaseModel):
-    """Synthesised patterns across a benchmark corpus — used by BenchmarkAgent."""
+    """Synthesised patterns across a benchmark corpus — used by Chief Editor benchmark skill."""
     version: int
     doc_count: int
     avg_act_count: float
@@ -173,7 +173,7 @@ class BenchmarkCriterionDetail(BaseModel):
 
 
 class BenchmarkScores(BaseModel):
-    """Structured output from the BenchmarkAgent LLM call."""
+    """Structured output from the Chief Editor benchmark skill LLM call."""
     hook_potency: float = Field(ge=0.0, le=1.0, description="How strongly the hook creates immediate stakes")
     title_formula_fit: float = Field(ge=0.0, le=1.0, description="How well the title fits proven documentary title patterns")
     act_architecture: float = Field(ge=0.0, le=1.0, description="Act count, duration, and arc shape vs benchmark averages")

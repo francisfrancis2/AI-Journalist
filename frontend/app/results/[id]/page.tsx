@@ -7,6 +7,13 @@ import { Loader2, ArrowLeft, Download, CheckCircle2, XCircle, ChevronDown, Chevr
 import { apiClient, type Story, type FinalScript, type ResearchSource } from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
 import { downloadScriptPdf, downloadSourceListPdf } from "@/lib/script-export";
+import {
+  ANGLE_SELECTION_STOPPED_MESSAGE,
+  isAngleSelectionExpired,
+  isTerminalStoryStatus,
+  storyStatusLabel,
+  storyStatusTitle,
+} from "@/lib/story-status";
 
 type Tab = "script";
 
@@ -175,7 +182,7 @@ export default function ResultsPage() {
     queryFn: () => apiClient.getStory(id),
     refetchInterval: (q) => {
       const s = q.state.data?.status;
-      return s && ["completed", "failed"].includes(s) ? false : 4000;
+      return s && isTerminalStoryStatus(s) ? false : 4000;
     },
   });
 
@@ -230,7 +237,8 @@ export default function ResultsPage() {
 
   const isComplete = story.status === "completed";
   const isFailed   = story.status === "failed";
-  const isRunning  = !isComplete && !isFailed;
+  const isStopped  = isAngleSelectionExpired(story.status);
+  const isRunning  = !isComplete && !isFailed && !isStopped;
   const failureBannerKey = story.pipeline_failure_summary
     ? `${story.id}:${story.pipeline_failure_summary}`
     : null;
@@ -270,7 +278,8 @@ export default function ResultsPage() {
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
                 {isComplete && <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>}
                 {isFailed   && <span className="badge badge-danger"  style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>}
-                {isRunning  && <span className="badge badge-active"  style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> {story.status.replace(/_/g, " ")}</span>}
+                {isStopped  && <span className="badge badge-warning" style={{ fontSize: 11 }}><AlertTriangle size={10} /> Script writing stopped</span>}
+                {isRunning  && <span className="badge badge-active"  style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> {storyStatusLabel(story.status)}</span>}
                 <span className={`badge tone-${story.tone}`} style={{ fontSize: 11, border: "none" }}>{story.tone}</span>
               </div>
 
@@ -402,6 +411,7 @@ export default function ResultsPage() {
       <div style={{ padding: "28px", maxWidth: 800 }}>
         {isRunning  && <PipelineStatus story={story} />}
         {isFailed   && <FailedState story={story} />}
+        {isStopped  && <AngleSelectionStoppedState story={story} />}
         {isComplete && tab === "script"     && script && (
           <ScriptPanel
             script={script}
@@ -423,7 +433,7 @@ function PipelineStatus({ story }: { story: Story }) {
     <div className="card" style={{ padding: "24px", maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
       <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-text-tertiary)", marginBottom: 14 }} />
       <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
-        {story.status.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}…
+        {storyStatusTitle(story.status)}…
       </p>
       <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16 }}>
         Stage {Math.max(current + 1, 1)} of {STAGES.length}
@@ -431,6 +441,19 @@ function PipelineStatus({ story }: { story: Story }) {
       <div className="progress-track">
         <div className="progress-fill" style={{ width: `${pct}%` }} />
       </div>
+    </div>
+  );
+}
+
+/* ── Angle selection stopped state ── */
+function AngleSelectionStoppedState({ story }: { story: Story }) {
+  return (
+    <div className="card" style={{ padding: "32px", maxWidth: 520, margin: "0 auto", textAlign: "center" }}>
+      <AlertTriangle size={24} style={{ color: "var(--color-warning)", marginBottom: 10 }} />
+      <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>Script writing stopped</p>
+      <p style={{ fontSize: 12, color: "var(--color-warning)", background: "var(--color-warning-bg)", padding: "10px 12px", borderRadius: 8, border: "0.5px solid #fed7aa" }}>
+        {story.error_message || ANGLE_SELECTION_STOPPED_MESSAGE}
+      </p>
     </div>
   );
 }

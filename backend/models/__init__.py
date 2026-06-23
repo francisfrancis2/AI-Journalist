@@ -16,6 +16,7 @@ from backend.models.research import (
 from backend.models.story import (
     BenchmarkComparison,
     FinalScript,
+    IdeationStage,
     ScriptSection,
     ScriptAuditCriteria,
     ScriptAuditReport,
@@ -32,6 +33,16 @@ from backend.models.benchmark import (
     LibraryKnowledgeCardORM,
     LibraryReferenceCard,
     LibraryReferencePack,
+)
+from backend.models.research_session import (
+    ResearchSessionCitation,
+    ResearchSessionCreate,
+    ResearchSessionListItem,
+    ResearchSessionORM,
+    ResearchSessionRead,
+    ResearchSessionStatus,
+    ResearchSessionTurn,
+    ResearchSessionTurnCreate,
 )
 
 __all__ = [
@@ -50,6 +61,7 @@ __all__ = [
     # story
     "StoryStatus",
     "StoryTone",
+    "IdeationStage",
     "StoryORM",
     "StoryCreate",
     "StoryRead",
@@ -65,4 +77,13 @@ __all__ = [
     "LibraryKnowledgeCardORM",
     "LibraryReferenceCard",
     "LibraryReferencePack",
+    # research sessions
+    "ResearchSessionORM",
+    "ResearchSessionStatus",
+    "ResearchSessionCreate",
+    "ResearchSessionTurnCreate",
+    "ResearchSessionRead",
+    "ResearchSessionListItem",
+    "ResearchSessionCitation",
+    "ResearchSessionTurn",
 ]

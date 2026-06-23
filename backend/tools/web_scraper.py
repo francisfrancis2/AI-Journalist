@@ -136,7 +136,7 @@ class WebScraperTool:
                 author=author,
                 credibility=SourceCredibility.MEDIUM,
                 # Neutral 0.5 — same baseline as every other provider. The
-                # analyst and scriptwriter judge usefulness from content.
+                # Angles & Hooks and Scriptwriter judge usefulness from content.
                 relevance_score=0.5,
                 metadata={"word_count": len(content.split())},
             )

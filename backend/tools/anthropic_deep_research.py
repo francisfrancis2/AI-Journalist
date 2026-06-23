@@ -1,9 +1,13 @@
 """
 Anthropic-powered deep research report generator.
 
-This is used by the Research Workspace for additional research on an existing
-story. It is read-only with respect to story/script records: it returns a report
-and citations, but does not mutate pipeline artefacts.
+Used by the standalone Research Hub:
+- `run_standalone(prompt)` — generate the first consolidated report from a free-form prompt.
+- `resynthesize(existing_report, existing_citations, prompt)` — integrate a follow-up
+  prompt (extension, removal, refinement) into the existing report and return an
+  updated consolidated report + merged citation list.
+
+Returns markdown + citations; never mutates any story/script record.
 """
 
 from __future__ import annotations
@@ -75,55 +79,44 @@ def _usage_web_search_requests(response: Any) -> int:
     return int(_attr(server_tool_use, "web_search_requests", 0) or 0)
 
 
-def _append_source_appendix(report: str, citations: list[DeepResearchCitation]) -> str:
-    if not citations:
-        return report.strip()
-    if "## Sources" in report or "## Source" in report:
-        return report.strip()
+def _merge_citations(
+    existing: list[DeepResearchCitation],
+    new: list[DeepResearchCitation],
+) -> list[DeepResearchCitation]:
+    """Dedupe by URL, preserve order: existing first, then new."""
+    merged: list[DeepResearchCitation] = []
+    seen: set[str] = set()
+    for citation in [*existing, *new]:
+        url = citation.url
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        merged.append(citation)
+    return merged
 
-    source_lines = "\n".join(f"- [{citation.title}]({citation.url})" for citation in citations)
-    return f"{report.strip()}\n\n## Sources Consulted\n{source_lines}"
+
+def _format_existing_citations_for_prompt(
+    citations: list[DeepResearchCitation],
+    limit: int = 40,
+) -> str:
+    if not citations:
+        return "(no prior citations)"
+    lines: list[str] = []
+    for index, citation in enumerate(citations[:limit], start=1):
+        lines.append(f"{index}. {citation.title} — {citation.url}")
+    if len(citations) > limit:
+        lines.append(f"... and {len(citations) - limit} more")
+    return "\n".join(lines)
 
 
 class AnthropicDeepResearchTool:
-    """Generate an Anthropic web-search-backed research report."""
+    """Generate Anthropic web-search-backed research reports."""
 
     def __init__(self) -> None:
         self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         self._model = settings.claude_opus_model
 
-    async def run(self, *, prompt: str, story_context: str) -> DeepResearchResult:
-        instructions = f"""You are running deep research for a documentary research workspace.
-
-Use Anthropic web search as the primary research source. Search broadly, then narrow toward
-credible primary sources, official data, expert sources, reputable reporting, and recent
-developments. Treat the existing script as read-only: do not rewrite the script and do not
-suggest that the script has already changed.
-
-Research request:
-{prompt}
-
-Story and existing script context:
-{story_context}
-
-Return a Markdown report with these sections:
-# Additional Research Report
-## Executive Brief
-## New Findings
-## Source Leads
-## Verification Gaps
-## Script-Relevance Notes
-## Next Research Queries
-
-Rules:
-- Cite factual claims with source titles and URLs.
-- Separate confirmed findings from leads that still need verification.
-- Mention which existing act or claim the new information could strengthen.
-- Do not provide rewritten script text.
-- Do not recommend or trigger script regeneration."""
-
-        # Claude Opus 4.7 is a reasoning model and rejects the `temperature`
-        # argument at the API layer; omit it (matches analyst + script_evaluator).
+    async def _call(self, instructions: str) -> DeepResearchResult:
         response = await self._client.messages.create(
             model=self._model,
             max_tokens=settings.claude_max_tokens,
@@ -136,14 +129,84 @@ Rules:
             ],
             messages=[{"role": "user", "content": instructions}],
         )
-
         report, citations = _extract_text_and_citations(response.content)
         if not report:
             raise RuntimeError("Anthropic deep research returned an empty report.")
-
         return DeepResearchResult(
-            report_markdown=_append_source_appendix(report, citations),
+            report_markdown=report.strip(),
             citations=citations,
             model=self._model,
             web_search_requests=_usage_web_search_requests(response),
         )
+
+    async def run_standalone(self, *, prompt: str) -> DeepResearchResult:
+        """Generate the first consolidated research report from a free-form prompt."""
+        instructions = f"""You are running deep research for a documentary research hub.
+
+Use Anthropic web search as the primary research source. Search broadly, then narrow toward
+credible primary sources, official data, expert sources, reputable reporting, and recent
+developments.
+
+Research request:
+{prompt}
+
+Return a Markdown report with these sections (omit a section only when nothing applies):
+# Research Report
+## Executive Brief
+## Key Findings
+## Supporting Evidence
+## Open Questions and Verification Gaps
+## Recommended Next Steps
+
+Rules:
+- Cite factual claims with source titles and URLs inline.
+- Separate confirmed findings from leads that still need verification.
+- Be concrete: prefer numbers, dates, named sources over generalities.
+- Do not invent sources or citations."""
+        return await self._call(instructions)
+
+    async def resynthesize(
+        self,
+        *,
+        existing_report: str,
+        existing_citations: list[DeepResearchCitation],
+        prompt: str,
+    ) -> DeepResearchResult:
+        """
+        Integrate a follow-up prompt into the existing report and return an
+        updated consolidated report. Honors three intents:
+          - Extend (add new findings, geographies, angles)
+          - Remove (drop specific sections / information per user instruction)
+          - Refine (rephrase, restructure, deepen specific parts)
+
+        The returned report is the FULL updated consolidated document. Citations
+        are merged downstream (existing + new, deduped by URL).
+        """
+        existing_citation_block = _format_existing_citations_for_prompt(existing_citations)
+        instructions = f"""You are updating a consolidated research report in a documentary research hub.
+
+The user has submitted a follow-up instruction. Determine the user's intent and update the report accordingly:
+- EXTEND: research new findings (use web search) and integrate them into the relevant sections.
+- REMOVE: delete the requested information from the report cleanly. Do not leave dangling references.
+- REFINE: restructure, rephrase, or deepen the parts the user calls out.
+
+If web search is needed, use it. If the user is only asking to remove or restructure existing content, do not invent new findings — just edit.
+
+Existing consolidated report:
+---
+{existing_report}
+---
+
+Existing citations already known to the report (do not re-list these unless they remain relevant):
+{existing_citation_block}
+
+User follow-up instruction:
+{prompt}
+
+Output requirements:
+- Return the FULL updated report in Markdown — not a diff, not just the new section. The output replaces the existing report verbatim.
+- Preserve the existing section structure where it still applies. Add or remove sections as needed.
+- Cite new factual claims with source titles and URLs inline.
+- Do not invent sources or citations.
+- Do not include preamble or commentary outside the report itself."""
+        return await self._call(instructions)

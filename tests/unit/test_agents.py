@@ -122,7 +122,7 @@ def _make_final_script() -> FinalScript:
 
 class TestResearchRouting:
     def test_researcher_normalise_sources_keeps_rss_with_newsapi(self):
-        from backend.agents.researcher import ResearchPlan, ResearcherAgent
+        from backend.agents.research import ResearchPlan, ResearchAgent
 
         plan = ResearchPlan(
             topic_type="news",
@@ -134,14 +134,14 @@ class TestResearchRouting:
             rss_keyword="ai",
         )
 
-        selected = ResearcherAgent._normalise_sources(plan)
+        selected = ResearchAgent._normalise_sources(plan)
 
         assert "tavily" in selected
         assert "newsapi" in selected
         assert "rss" in selected
 
     def test_researcher_balanced_query_cap_preserves_evidence_lanes(self):
-        from backend.agents.researcher import ResearchPlan, ResearcherAgent
+        from backend.agents.research import ResearchPlan, ResearchAgent
 
         plan = ResearchPlan(
             topic_type="mixed",
@@ -154,7 +154,7 @@ class TestResearchRouting:
             visual_queries=["visual 1"],
         )
 
-        selected = ResearcherAgent._select_balanced_queries(plan, cap=6)
+        selected = ResearchAgent._select_balanced_queries(plan, cap=6)
 
         assert selected == [
             "cost 1",
@@ -165,19 +165,19 @@ class TestResearchRouting:
             "visual 1",
         ]
 
-# ── AnalystAgent ──────────────────────────────────────────────────────────────
+# ── AngleSynthesisSkill ──────────────────────────────────────────────────────────────
 
-class TestAnalystAgent:
+class TestAngleSynthesisSkill:
     @pytest.mark.asyncio
     async def test_run_returns_analysis_result(self, sample_topic):
-        from backend.agents.analyst import (
+        from backend.agents._angle_synthesis_skill import (
             AnalysisOutput,
-            AnalystAgent,
+            AngleSynthesisSkill,
             KeyFindingOutput,
             SelectableAngleOutput,
         )
 
-        with patch("backend.agents.analyst.ChatAnthropic") as MockLLM:
+        with patch("backend.agents._angle_synthesis_skill.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.return_value = AnalysisOutput(
                 executive_summary="AI is booming.",
@@ -219,7 +219,7 @@ class TestAnalystAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            agent = AnalystAgent()
+            agent = AngleSynthesisSkill()
             package = _make_research_package(sample_topic)
             state = {
                 "topic": sample_topic,
@@ -241,9 +241,9 @@ class TestAnalystAgent:
 
     @pytest.mark.asyncio
     async def test_run_uses_fallback_when_llm_fails(self, sample_topic):
-        from backend.agents.analyst import AnalystAgent
+        from backend.agents._angle_synthesis_skill import AngleSynthesisSkill
 
-        with patch("backend.agents.analyst.ChatAnthropic") as MockLLM:
+        with patch("backend.agents._angle_synthesis_skill.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.side_effect = ValueError("did not return valid JSON")
 
@@ -251,7 +251,7 @@ class TestAnalystAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            agent = AnalystAgent()
+            agent = AngleSynthesisSkill()
             state = {
                 "topic": sample_topic,
                 "tone": "explanatory",
@@ -263,16 +263,16 @@ class TestAnalystAgent:
         assert len(result["generated_angles"]) >= 3
 
 
-# ── EvaluatorAgent ────────────────────────────────────────────────────────────
+# ── PlanReviewSkill ────────────────────────────────────────────────────────────
 
-class TestEvaluatorAgent:
+class TestPlanReviewSkill:
     @pytest.mark.asyncio
     async def test_run_returns_scriptwriter_recommendations(self, sample_topic):
-        from backend.agents.evaluator import EvaluatorAgent, EvaluatorOutput
+        from backend.agents._chief_editor_plan_review_skill import PlanReviewSkill, PlanReviewOutput
 
-        with patch("backend.agents.evaluator.ChatAnthropic") as MockLLM:
+        with patch("backend.agents._chief_editor_plan_review_skill.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
-            mock_structured.ainvoke.return_value = EvaluatorOutput(
+            mock_structured.ainvoke.return_value = PlanReviewOutput(
                 strengths=["Well sourced"],
                 weaknesses=[],
                 improvement_suggestions=["Clarify the Act 2 turn"],
@@ -286,7 +286,7 @@ class TestEvaluatorAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            agent = EvaluatorAgent()
+            agent = PlanReviewSkill()
             state = {
                 "topic": sample_topic,
                 "selected_storyline": _make_storyline(),
@@ -302,17 +302,19 @@ class TestEvaluatorAgent:
             "Open with the strongest verified number",
             "Evidence caution: Avoid naming a company unless source support is explicit",
         ]
-        prompt = mock_structured.ainvoke.call_args.args[0][1].content
+        messages = mock_structured.ainvoke.call_args.args[0]
+        system_prompt = messages[0].content
+        prompt = messages[1].content
+        assert "PLAN REVIEW SKILL" in system_prompt
         assert "RECOMMENDATION CALIBRATION" in prompt
-        assert "best-practice patterns" in prompt
 
     @pytest.mark.asyncio
     async def test_run_falls_back_to_improvement_suggestions(self, sample_topic):
-        from backend.agents.evaluator import EvaluatorAgent, EvaluatorOutput
+        from backend.agents._chief_editor_plan_review_skill import PlanReviewSkill, PlanReviewOutput
 
-        with patch("backend.agents.evaluator.ChatAnthropic") as MockLLM:
+        with patch("backend.agents._chief_editor_plan_review_skill.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
-            mock_structured.ainvoke.return_value = EvaluatorOutput(
+            mock_structured.ainvoke.return_value = PlanReviewOutput(
                 strengths=[],
                 weaknesses=["Weak sourcing"],
                 improvement_suggestions=["Add more data"],
@@ -324,7 +326,7 @@ class TestEvaluatorAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            agent = EvaluatorAgent()
+            agent = PlanReviewSkill()
             state = {
                 "topic": sample_topic,
                 "selected_storyline": _make_storyline(),
@@ -337,14 +339,14 @@ class TestEvaluatorAgent:
         assert result["scriptwriter_recommendations"] == ["Add more data"]
 
 
-# ── StorylineCreatorAgent ─────────────────────────────────────────────────────
+# ── ChapterStructureSkill ─────────────────────────────────────────────────────
 
-class TestStorylineCreatorAgent:
+class TestChapterStructureSkill:
     @pytest.mark.asyncio
     async def test_run_returns_proposals(self, sample_topic):
-        from backend.agents.storyline_creator import (
+        from backend.agents._chapter_structure_skill import (
             StoryActOutput,
-            StorylineCreatorAgent,
+            ChapterStructureSkill,
             StorylineCreatorOutput,
             StorylineProposalOutput,
         )
@@ -374,7 +376,7 @@ class TestStorylineCreatorAgent:
             recommended_proposal_index=0,
         )
 
-        with patch("backend.agents.storyline_creator.ChatAnthropic") as MockLLM:
+        with patch("backend.agents._chapter_structure_skill.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.return_value = mock_response
 
@@ -382,7 +384,7 @@ class TestStorylineCreatorAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            agent = StorylineCreatorAgent()
+            agent = ChapterStructureSkill()
             state = {
                 "topic": sample_topic,
                 "tone": "investigative",
@@ -398,9 +400,9 @@ class TestStorylineCreatorAgent:
 
     @pytest.mark.asyncio
     async def test_run_enforces_short_duration_act_shape(self, sample_topic):
-        from backend.agents.storyline_creator import (
+        from backend.agents._chapter_structure_skill import (
             StoryActOutput,
-            StorylineCreatorAgent,
+            ChapterStructureSkill,
             StorylineCreatorOutput,
             StorylineProposalOutput,
         )
@@ -431,7 +433,7 @@ class TestStorylineCreatorAgent:
             recommended_proposal_index=0,
         )
 
-        with patch("backend.agents.storyline_creator.ChatAnthropic") as MockLLM:
+        with patch("backend.agents._chapter_structure_skill.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.return_value = mock_response
 
@@ -439,7 +441,7 @@ class TestStorylineCreatorAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            result = await StorylineCreatorAgent().run({
+            result = await ChapterStructureSkill().run({
                 "topic": sample_topic,
                 "tone": "explanatory",
                 "target_duration_minutes": 5,
@@ -457,9 +459,9 @@ class TestStorylineCreatorAgent:
 
     @pytest.mark.asyncio
     async def test_run_uses_deterministic_fallback_after_empty_structured_responses(self, sample_topic):
-        from backend.agents.storyline_creator import StorylineCreatorAgent
+        from backend.agents._chapter_structure_skill import ChapterStructureSkill
 
-        with patch("backend.agents.storyline_creator.ChatAnthropic") as MockLLM:
+        with patch("backend.agents._chapter_structure_skill.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.side_effect = [
                 ValueError("1 validation error for StorylineCreatorOutput proposals Field required"),
@@ -476,7 +478,7 @@ class TestStorylineCreatorAgent:
             ]
             MockLLM.return_value = mock_base
 
-            agent = StorylineCreatorAgent()
+            agent = ChapterStructureSkill()
             state = {
                 "topic": sample_topic,
                 "tone": "investigative",
@@ -522,7 +524,7 @@ class TestScriptwriterAgent:
                 "research_package": package,
                 "evaluation_report": None,
                 "scriptwriter_recommendations": [
-                    "Open with the evaluator's strongest verified number."
+                    "Open with the Chief Editor's strongest verified number."
                 ],
                 "target_duration_minutes": 15,
                 "target_audience": "Business viewers",
@@ -532,29 +534,29 @@ class TestScriptwriterAgent:
         assert script.metadata["target_duration_minutes"] == 15
         assert script.metadata["target_audience"] == "Business viewers"
         assert script.metadata["scriptwriter_recommendations"] == [
-            "Open with the evaluator's strongest verified number."
+            "Open with the Chief Editor's strongest verified number."
         ]
         assert all(section.source_ids == [source_id] for section in script.sections)
         assert script.sources[0]["source_id"] == source_id
         prompt = mock_structured.ainvoke.call_args_list[0].args[0][1].content
-        assert "EVALUATOR AGENT RECOMMENDATIONS TO APPLY WHILE WRITING" in prompt
+        assert "CHIEF EDITOR RECOMMENDATIONS TO APPLY WHILE WRITING" in prompt
         assert "mandatory editorial direction" in prompt
         assert "Requested duration: 15 minutes" in prompt
         assert "Target total word count for the complete script: 2220" in prompt
 
 
-# ── ScriptEvaluatorAgent ─────────────────────────────────────────────────────
+# ── ScriptAuditSkill ──────────────────────────────────────────────────────────
 
-class TestScriptEvaluatorAgent:
+class TestScriptAuditSkill:
     @pytest.mark.asyncio
     async def test_run_returns_script_audit_report(self, sample_topic):
-        from backend.agents.script_evaluator import ScriptAuditOutput, ScriptEvaluatorAgent
+        from backend.agents._chief_editor_script_audit_skill import ScriptAuditOutput, ScriptAuditSkill
         from backend.models.story import (
             BenchmarkComparison,
             ScriptSectionAudit,
         )
 
-        with patch("backend.agents.script_evaluator.ChatAnthropic") as MockLLM:
+        with patch("backend.agents._chief_editor_script_audit_skill.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.return_value = ScriptAuditOutput(
                 audit_summary="Strong script with a slightly thin middle section.",
@@ -596,7 +598,7 @@ class TestScriptEvaluatorAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            agent = ScriptEvaluatorAgent()
+            agent = ScriptAuditSkill()
             state = {
                 "topic": sample_topic,
                 "final_script": _make_final_script(),
@@ -624,7 +626,7 @@ class TestScriptEvaluatorAgent:
             }
 
             with patch(
-                "backend.agents.script_evaluator.load_active_benchmark_library",
+                "backend.agents._chief_editor_script_audit_skill.load_active_benchmark_library",
                 new=AsyncMock(return_value=(
                     None,
                     BenchmarkLibraryStatus(
@@ -645,23 +647,25 @@ class TestScriptEvaluatorAgent:
         assert report.grade is None
         assert report.ready_for_production is None
         assert report.overall_score is None
-        assert result["script_rewriter_recommendations"] == ["Add one specific data point to Act 2"]
+        assert result["script_rewrite_recommendations"] == ["Add one specific data point to Act 2"]
         assert len(report.section_audits) == 2
         assert report.benchmark_comparison is None
-        prompt = mock_structured.ainvoke.call_args.args[0][1].content
+        messages = mock_structured.ainvoke.call_args.args[0]
+        system_prompt = messages[0].content
+        prompt = messages[1].content
+        assert "SCRIPT AUDIT SKILL" in system_prompt
         assert "REWRITE RECOMMENDATION CALIBRATION" in prompt
-        assert "best-practice patterns" in prompt
 
 
-# ── ScriptRewriterAgent ──────────────────────────────────────────────────────
+# ── ScriptRewriteSkill ──────────────────────────────────────────────────────
 
-class TestScriptRewriterAgent:
+class TestScriptRewriteSkill:
     @pytest.mark.asyncio
-    async def test_run_passes_script_evaluator_recommendations_to_rewrite_prompt(self, sample_topic):
-        from backend.agents.script_rewriter import RevisedSectionOutput, ScriptRewriterAgent
+    async def test_run_passes_chief_editor_audit_recommendations_to_rewrite_prompt(self, sample_topic):
+        from backend.agents._chief_editor_script_rewrite_skill import RevisedSectionOutput, ScriptRewriteSkill
         from backend.models.story import ScriptAuditReport, ScriptSectionAudit
 
-        with patch("backend.agents.script_rewriter.ChatAnthropic") as MockLLM:
+        with patch("backend.agents._chief_editor_script_rewrite_skill.ChatAnthropic") as MockLLM:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.return_value = RevisedSectionOutput(
                 narration="Rewritten narration with a sharper supported detail.",
@@ -672,7 +676,7 @@ class TestScriptRewriterAgent:
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
 
-            result = await ScriptRewriterAgent().run({
+            result = await ScriptRewriteSkill().run({
                 "story_id": str(uuid.uuid4()),
                 "topic": sample_topic,
                 "final_script": _make_final_script(),
@@ -697,7 +701,7 @@ class TestScriptRewriterAgent:
                 ),
                 "analysis_result": _make_analysis_result(sample_topic),
                 "research_package": _make_research_package(sample_topic),
-                "script_rewriter_recommendations": [
+                "script_rewrite_recommendations": [
                     "Add one concrete source-backed number."
                 ],
                 "script_revision_cycle": 0,
@@ -705,5 +709,5 @@ class TestScriptRewriterAgent:
             })
 
         prompt = mock_structured.ainvoke.call_args_list[0].args[0][1].content
-        assert "SCRIPT EVALUATOR AGENT RECOMMENDATIONS TO APPLY IN THIS REWRITE" in prompt
+        assert "CHIEF EDITOR AUDIT RECOMMENDATIONS TO APPLY IN THIS REWRITE" in prompt
         assert "mandatory rewrite direction" in prompt

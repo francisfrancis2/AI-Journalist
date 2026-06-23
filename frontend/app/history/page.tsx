@@ -2,17 +2,20 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Search, Download, ChevronRight, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, Search, Download, ChevronRight, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { apiClient, type Story, type StoryStatus } from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
 import { downloadScriptPdf } from "@/lib/script-export";
+import { isTerminalStoryStatus, storyStatusLabel } from "@/lib/story-status";
 
 const STATUS_FILTERS: { value: StoryStatus | "all"; label: string }[] = [
   { value: "all",         label: "All" },
+  { value: "ideating",    label: "Drafts" },
   { value: "completed",   label: "Completed" },
   { value: "researching", label: "In progress" },
+  { value: "angle_selection_expired", label: "Stopped" },
   { value: "failed",      label: "Failed" },
 ];
 
@@ -28,9 +31,20 @@ function ToneBadge({ tone }: { tone: string }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  if (status === "ideating") return <span className="badge badge-neutral" style={{ fontSize: 11 }}>Ideating</span>;
   if (status === "completed") return <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>;
   if (status === "failed")    return <span className="badge badge-danger"  style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>;
-  return <span className="badge badge-active" style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> {status.replace(/_/g, " ")}</span>;
+  if (status === "angle_selection_expired") return <span className="badge badge-warning" style={{ fontSize: 11 }}><AlertTriangle size={10} /> Script writing stopped</span>;
+  return <span className="badge badge-active" style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> {storyStatusLabel(status)}</span>;
+}
+
+function storyHref(story: Story): string {
+  if (story.status !== "ideating") return `/results/${story.id}`;
+  if (story.ideation_stage === "hook") return `/ideation/${story.id}/hook`;
+  if (story.ideation_stage === "chapters" || story.ideation_stage === "ready_for_script") {
+    return `/ideation/${story.id}/chapters`;
+  }
+  return `/ideation/${story.id}/angles`;
 }
 
 export default function HistoryPage() {
@@ -67,7 +81,7 @@ export default function HistoryPage() {
 
   const filtered = (stories ?? []).filter(s => {
     const matchStatus = statusFilter === "all" ? true
-      : statusFilter === "researching" ? !["completed", "failed"].includes(s.status)
+      : statusFilter === "researching" ? !isTerminalStoryStatus(s.status)
       : s.status === statusFilter;
     const q = search.trim().toLowerCase();
     const matchSearch = !q || s.title.toLowerCase().includes(q) || s.topic.toLowerCase().includes(q);
@@ -106,7 +120,9 @@ export default function HistoryPage() {
           <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
             {[
               { label: "Total",     value: stories.length },
+              { label: "Drafts",    value: stories.filter(s => s.status === "ideating").length },
               { label: "Completed", value: completed.length },
+              { label: "Stopped",   value: stories.filter(s => s.status === "angle_selection_expired").length },
               { label: "Failed",    value: stories.filter(s => s.status === "failed").length },
             ].map(({ label, value }) => (
               <div
@@ -269,7 +285,7 @@ export default function HistoryPage() {
                   {/* Title */}
                   <div style={{ minWidth: 0 }}>
                     <Link
-                      href={`/results/${story.id}`}
+                      href={storyHref(story)}
                       style={{
                         fontSize: 13,
                         color: "var(--color-text-primary)",
@@ -329,7 +345,7 @@ export default function HistoryPage() {
 
                   {/* Actions — visible on row hover via opacity trick */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
-                    <Link href={`/results/${story.id}`} className="btn-ghost" style={{ padding: "5px 8px" }} title="Open">
+                    <Link href={storyHref(story)} className="btn-ghost" style={{ padding: "5px 8px" }} title="Open">
                       <ChevronRight size={13} />
                     </Link>
                     {isComplete && (

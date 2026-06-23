@@ -17,13 +17,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.agents.analyst import AnalystAgent
-from backend.agents.benchmarker import BenchmarkAgent
-from backend.agents.evaluator import EvaluatorAgent
-from backend.agents.script_evaluator import ScriptEvaluatorAgent
-from backend.agents.script_rewriter import ScriptRewriterAgent
+from backend.agents.angles_and_hooks import AnglesAndHooksAgent, IdeationOutput
+from backend.agents.chapter_writer import ChapterWriterAgent
+from backend.agents.chief_editor_evaluator import ChiefEditorEvaluatorAgent
 from backend.agents.scriptwriter import ScriptwriterAgent
-from backend.agents.storyline_creator import StorylineCreatorAgent
 from backend.api.deps import get_current_user
 from backend.api.security import validate_user_input
 from backend.config import settings
@@ -41,6 +38,7 @@ from backend.models.research import (
 from backend.models.notification import AdminNotificationORM
 from backend.models.story import (
     FinalScript,
+    IdeationStage,
     ScriptAuditReport,
     StoryCreate,
     StoryListItem,
@@ -50,15 +48,14 @@ from backend.models.story import (
 )
 from backend.models.user import UserORM
 from backend.tools.anthropic_search import AnthropicSearchTool
-from backend.tools.anthropic_deep_research import (
-    AnthropicDeepResearchTool,
-    DeepResearchCitation,
-)
 from backend.tools.news_api import NewsAPITool
 from backend.tools.web_search import WebSearchTool
 
 log = structlog.get_logger(__name__)
 router = APIRouter()
+_angles_and_hooks_agent = AnglesAndHooksAgent()
+_chapter_writer_agent = ChapterWriterAgent()
+_chief_editor_agent = ChiefEditorEvaluatorAgent()
 
 
 # ── Chat / Research models ────────────────────────────────────────────────────
@@ -93,19 +90,44 @@ class ChatResponse(BaseModel):
     youtube_results: list[YouTubeVideo] = Field(default_factory=list)
 
 
-class DeepResearchRequest(BaseModel):
-    prompt: str = Field(..., min_length=4, max_length=2000)
+class IdeationCreateRequest(BaseModel):
+    prompt: str = Field(..., min_length=10, max_length=2000)
 
 
-class DeepResearchReport(BaseModel):
-    story_id: uuid.UUID
-    story_title: str
-    prompt: str
-    report_markdown: str
-    citations: list[DeepResearchCitation] = Field(default_factory=list)
-    model: str
-    web_search_requests: int = 0
-    generated_at: datetime
+class IdeationChatRequest(BaseModel):
+    message: str = Field(..., min_length=2, max_length=2000)
+
+
+class ApproveAngleRequest(BaseModel):
+    selected_angle: str = Field(..., min_length=4, max_length=500)
+
+
+class ApproveHookRequest(BaseModel):
+    story_hook: str = Field(..., min_length=10, max_length=900)
+
+
+class IdeationChapter(BaseModel):
+    chapter_number: int
+    title: str
+    purpose: str
+    key_points: list[str] = Field(default_factory=list)
+
+
+class ApproveChaptersRequest(BaseModel):
+    chapters: list[IdeationChapter] = Field(..., min_length=1)
+
+
+class IdeationSourceLink(BaseModel):
+    title: str
+    url: Optional[str] = None
+    provider: str = "source"
+    preview: str = ""
+
+
+class IdeationChatResponse(BaseModel):
+    story: StoryRead
+    content: str
+    sources: list[IdeationSourceLink] = Field(default_factory=list)
 
 
 # ── Chat helpers ──────────────────────────────────────────────────────────────
@@ -137,8 +159,33 @@ def _should_fetch_fresh_research(message: str) -> bool:
     return any(keyword in lower for keyword in _FRESH_RESEARCH_KEYWORDS)
 
 
-async def _fresh_research_context(message: str, topic: str) -> str:
-    """Run lightweight live search for story chat research requests."""
+def _source_links_from_sources(sources: list[RawSource], limit: int = 12) -> list[IdeationSourceLink]:
+    links: list[IdeationSourceLink] = []
+    seen: set[str] = set()
+    for source in sources:
+        key = source.url or source.title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        provider = source.metadata.get("provider")
+        if not provider:
+            provider = getattr(source.source_type, "value", str(source.source_type))
+        preview = source.content.strip()
+        links.append(
+            IdeationSourceLink(
+                title=source.title or "Untitled source",
+                url=source.url,
+                provider=str(provider),
+                preview=preview[:240] + ("..." if len(preview) > 240 else ""),
+            )
+        )
+        if len(links) >= limit:
+            break
+    return links
+
+
+async def _fresh_research_pack(message: str, topic: str) -> tuple[str, list[RawSource], list[IdeationSourceLink]]:
+    """Run lightweight live search and return prompt context plus source links."""
     query = f"{topic} {message}".strip()
     fetches: list[tuple[str, Any]] = [
         (
@@ -169,7 +216,9 @@ async def _fresh_research_context(message: str, topic: str) -> str:
         if isinstance(result, Exception):
             log.warning("chat.fresh_research.failed", provider=provider, error=str(result))
             continue
-        sources.extend(result if isinstance(result, list) else [result])
+        for candidate in (result if isinstance(result, list) else [result]):
+            if isinstance(candidate, RawSource):
+                sources.append(candidate)
 
     seen: set[str] = set()
     lines: list[str] = []
@@ -197,64 +246,239 @@ async def _fresh_research_context(message: str, topic: str) -> str:
         if len(lines) >= 12:
             break
 
-    return "\n".join(lines)
+    return "\n".join(lines), sources, _source_links_from_sources(sources)
 
 
-def _build_deep_research_story_context(story: StoryORM) -> str:
-    """Compact read-only context for Research Workspace deep research."""
-    lines = [
-        f"Title: {story.title}",
-        f"Topic: {story.topic}",
-        f"Tone: {story.tone}",
-        f"Target duration: {story.target_duration_minutes} minutes",
-    ]
-    if story.target_audience:
-        lines.append(f"Target audience: {story.target_audience}")
-    if story.selected_angle:
-        lines.append(f"Selected angle: {story.selected_angle}")
+async def _fresh_research_context(message: str, topic: str) -> str:
+    """Run lightweight live search for story chat research requests."""
+    context, _, _ = await _fresh_research_pack(message, topic)
+    return context
 
-    if story.script_data:
-        lines.append("\nCurrent script sections (read-only):")
-        for section in story.script_data.get("sections", []):
-            if not isinstance(section, dict):
-                continue
-            narration = str(section.get("narration") or "").strip()
-            excerpt = narration[:1000] + ("..." if len(narration) > 1000 else "")
-            source_ids = section.get("source_ids") or []
-            if not isinstance(source_ids, list):
-                source_ids = []
-            lines.append(
-                "\n".join(
-                    [
-                        f"- Act {section.get('section_number', '?')}: {section.get('title', 'Untitled')}",
-                        f"  Source IDs: {', '.join(str(source_id) for source_id in source_ids) or 'None'}",
-                        f"  Narration excerpt: {excerpt or 'Not available'}",
-                    ]
+
+def _append_ideation_messages(
+    current: Optional[list],
+    *,
+    user_message: str,
+    assistant_message: str,
+) -> list[dict[str, str]]:
+    history = [item for item in (current or []) if isinstance(item, dict)]
+    history.extend(
+        [
+            {
+                "role": "user",
+                "content": user_message,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+            {
+                "role": "assistant",
+                "content": assistant_message,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        ]
+    )
+    return history[-40:]
+
+
+def _append_pending_ideation_message(
+    current: Optional[list],
+    *,
+    user_message: str,
+) -> list[dict[str, str]]:
+    history = [item for item in (current or []) if isinstance(item, dict)]
+    history.append(
+        {
+            "role": "user",
+            "content": user_message,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "running",
+        }
+    )
+    return history[-40:]
+
+
+def _complete_pending_ideation_message(
+    current: Optional[list],
+    *,
+    assistant_message: str | None = None,
+    error_message: str | None = None,
+) -> list[dict[str, str]]:
+    history = [dict(item) for item in (current or []) if isinstance(item, dict)]
+    for index in range(len(history) - 1, -1, -1):
+        item = history[index]
+        if item.get("role") == "user" and item.get("status") == "running":
+            item["status"] = "failed" if error_message else "completed"
+            item["completed_at"] = datetime.now(timezone.utc).isoformat()
+            if error_message:
+                item["error_message"] = error_message
+            history[index] = item
+            break
+    if assistant_message:
+        history.append(
+            {
+                "role": "assistant",
+                "content": assistant_message,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "status": "completed",
+            }
+        )
+    return history[-40:]
+
+
+def _ideation_operation(
+    operation_type: str,
+    message: str,
+    *,
+    status_value: str = "running",
+    error_message: str | None = None,
+) -> dict[str, str | None]:
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "type": operation_type,
+        "status": status_value,
+        "message": message,
+        "started_at": now,
+        "completed_at": None if status_value == "running" else now,
+        "error_message": error_message,
+    }
+
+
+async def _run_story_planning_agent(
+    *,
+    story: StoryORM,
+    user_message: str,
+    stage: IdeationStage,
+    fresh_research_context: str = "",
+) -> IdeationOutput:
+    """Delegate one planning turn to the correct canonical five-agent role."""
+    validate_user_input(user_message, field="message")
+    if stage == IdeationStage.CHAPTERS:
+        return await _chapter_writer_agent.plan_chapters(
+            story=story,
+            user_message=user_message,
+            fresh_research_context=fresh_research_context,
+        )
+    return await _angles_and_hooks_agent.run(
+        story=story,
+        user_message=user_message,
+        stage=stage,
+        fresh_research_context=fresh_research_context,
+    )
+
+
+async def _run_ideation_operation(
+    *,
+    story_id: str,
+    user_message: str,
+    stage_value: str,
+    operation_type: str,
+    fetch_research: bool = False,
+    selected_angle: str | None = None,
+    approved_hook: str | None = None,
+) -> None:
+    """Finish a persisted ideation operation after the HTTP response returns."""
+    from backend.db.database import AsyncSessionLocal
+
+    story_uuid = uuid.UUID(story_id)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(StoryORM).where(StoryORM.id == story_uuid))
+        story = result.scalar_one_or_none()
+        if story is None:
+            log.warning("ideation_operation.story_missing", story_id=story_id)
+            return
+
+    try:
+        stage = IdeationStage(stage_value)
+        fresh_context = ""
+        sources: list[IdeationSourceLink] = []
+        if fetch_research:
+            fresh_context, _, sources = await _fresh_research_pack(user_message, story.topic)
+
+        output = await _run_story_planning_agent(
+            story=story,
+            user_message=user_message,
+            stage=stage,
+            fresh_research_context=fresh_context,
+        )
+        values: dict[str, Any] = {
+            "tone": output.decided_tone,
+            "target_duration_minutes": output.target_duration_minutes,
+            "ideation_chat_data": _complete_pending_ideation_message(
+                story.ideation_chat_data,
+                assistant_message=output.assistant_message,
+            ),
+            "ideation_operation_data": None,
+            "error_message": None,
+        }
+        if selected_angle is not None:
+            values["selected_angle"] = selected_angle.strip()
+            values["ideation_stage"] = IdeationStage.HOOK.value
+        if approved_hook is not None:
+            values["story_hook"] = approved_hook.strip()
+            values["ideation_stage"] = IdeationStage.CHAPTERS.value
+        if sources:
+            existing_sources = [
+                item for item in (story.ideation_research_data or [])
+                if isinstance(item, dict)
+            ]
+            merged_sources: list[dict[str, Any]] = []
+            seen_source_keys: set[str] = set()
+            for source in [
+                *existing_sources,
+                *[source.model_dump(mode="json") for source in sources],
+            ]:
+                key = str(source.get("url") or source.get("title") or "").strip().lower()
+                if not key or key in seen_source_keys:
+                    continue
+                seen_source_keys.add(key)
+                merged_sources.append(source)
+            values["ideation_research_data"] = merged_sources
+        if stage == IdeationStage.ANGLES and output.angles:
+            values["angles_data"] = [angle.model_dump(mode="json") for angle in output.angles]
+            values["selected_angle"] = None
+        elif stage == IdeationStage.HOOK and output.story_hook:
+            values["story_hook"] = output.story_hook
+        elif stage == IdeationStage.CHAPTERS and output.chapters:
+            values["chapters_data"] = [chapter.model_dump(mode="json") for chapter in output.chapters]
+
+        if output.title:
+            values["title"] = output.title[:512]
+
+        async with AsyncSessionLocal() as db:
+            await db.execute(update(StoryORM).where(StoryORM.id == story_uuid).values(**values))
+            await db.commit()
+        log.info("ideation_operation.completed", story_id=story_id, operation_type=operation_type)
+
+    except Exception as exc:
+        error_message = str(exc)
+        log.error(
+            "ideation_operation.failed",
+            story_id=story_id,
+            operation_type=operation_type,
+            error=error_message,
+        )
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(StoryORM).where(StoryORM.id == story_uuid))
+            story = result.scalar_one_or_none()
+            if story is None:
+                return
+            await db.execute(
+                update(StoryORM)
+                .where(StoryORM.id == story_uuid)
+                .values(
+                    ideation_chat_data=_complete_pending_ideation_message(
+                        story.ideation_chat_data,
+                        error_message=error_message,
+                    ),
+                    ideation_operation_data=_ideation_operation(
+                        operation_type,
+                        user_message,
+                        status_value="failed",
+                        error_message=error_message,
+                    ),
+                    error_message=error_message,
                 )
             )
-    else:
-        lines.append("\nCurrent script sections: Script not yet available.")
-
-    if story.research_data:
-        raw_sources = story.research_data.get("sources", [])
-        if isinstance(raw_sources, list) and raw_sources:
-            lines.append("\nSaved source pack highlights:")
-            for source in raw_sources[:15]:
-                if not isinstance(source, dict):
-                    continue
-                content = str(source.get("content") or "").strip()
-                preview = content[:450] + ("..." if len(content) > 450 else "")
-                lines.append(
-                    "\n".join(
-                        [
-                            f"- {source.get('title', 'Untitled')}",
-                            f"  URL: {source.get('url') or 'N/A'}",
-                            f"  Source ID: {source.get('source_id') or 'N/A'}",
-                            f"  Preview: {preview or 'No preview available'}",
-                        ]
-                    )
-                )
-    return "\n".join(lines)
+            await db.commit()
 
 
 def _build_chat_system_prompt(story: StoryORM, fresh_research_context: str = "") -> str:
@@ -425,7 +649,7 @@ def _evaluation_quality_score(
     evaluation: Optional[EvaluationReport],
     fallback: Optional[float] = None,
 ) -> Optional[float]:
-    """Return a legacy persisted score only when the evaluator actually produced one."""
+    """Return a legacy persisted score only when Chief Editor produced one."""
     if evaluation is None:
         return fallback
     return evaluation.overall_score
@@ -434,21 +658,24 @@ def _evaluation_quality_score(
 # ── Background pipeline runner ────────────────────────────────────────────────
 
 _NODE_STATUS_MAP: dict[str, StoryStatus] = {
-    "researcher": StoryStatus.RESEARCHING,
-    "analyst": StoryStatus.ANALYSING,
-    "storyline_creator": StoryStatus.WRITING_STORYLINE,
-    "evaluator": StoryStatus.EVALUATING,
+    "research_agent": StoryStatus.RESEARCHING,
+    "angles_and_hooks": StoryStatus.ANALYSING,
+    "chapter_writer": StoryStatus.WRITING_STORYLINE,
+    "chief_editor_evaluator": StoryStatus.EVALUATING,
+    "chief_editor_script_audit": StoryStatus.SCRIPTING,
+    "chief_editor_rewrite": StoryStatus.SCRIPTING,
     "scriptwriter": StoryStatus.SCRIPTING,
-    "script_rewriter": StoryStatus.SCRIPTING,
 }
 
 # Ordering used to guard against status regression when the graph is re-driven
 # (e.g. resume after angle selection) — only advance forward, never backward.
 _STATUS_PHASE_ORDER: dict[StoryStatus, int] = {
+    StoryStatus.IDEATING: 0,
     StoryStatus.PENDING: 0,
     StoryStatus.RESEARCHING: 1,
     StoryStatus.ANALYSING: 2,
     StoryStatus.AWAITING_ANGLE_SELECTION: 3,
+    StoryStatus.ANGLE_SELECTION_EXPIRED: 7,
     StoryStatus.WRITING_STORYLINE: 4,
     StoryStatus.EVALUATING: 5,
     StoryStatus.SCRIPTING: 6,
@@ -456,12 +683,18 @@ _STATUS_PHASE_ORDER: dict[StoryStatus, int] = {
     StoryStatus.FAILED: 7,
 }
 
+_TERMINAL_STORY_STATUSES: set[StoryStatus] = {
+    StoryStatus.COMPLETED,
+    StoryStatus.FAILED,
+    StoryStatus.ANGLE_SELECTION_EXPIRED,
+}
+
 
 def _status_for_completed_node(node_name: str, state: dict) -> Optional[StoryStatus]:
     """Decide what status the story should advance to after a node completes."""
-    if node_name == "analyst" and state.get("generated_angles"):
-        # If selected_angle is set (quality-gate restart path), don't pause —
-        # the next node (storyline_creator) will move status forward instead.
+    if node_name == "angles_and_hooks" and state.get("generated_angles"):
+        # If selected_angle is set (quality-gate restart path), don't pause.
+        # The next node will move status forward instead.
         if state.get("selected_angle"):
             return None
         return StoryStatus.AWAITING_ANGLE_SELECTION
@@ -523,7 +756,7 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
         return
 
     # ── Paused at angle selection ─────────────────────────────────────────────
-    # If we have angles but no selection, the graph ended after the analyst
+    # If we have angles but no selection, the graph ended after Angles & Hooks
     # node. Persist research/analysis + angles and exit cleanly; the user will
     # resume via POST /stories/{id}/select-angle.
     if final_state.get("generated_angles") and not final_state.get("selected_angle"):
@@ -640,10 +873,48 @@ async def _run_pipeline(
     await _drive_pipeline(story_id, initial_state)
 
 
+async def _run_pipeline_from_ideation(story_id: str) -> None:
+    """Fresh-start pipeline path seeded with the approved ideation artifacts."""
+    from backend.db.database import AsyncSessionLocal
+
+    log.info("pipeline.ideation_started", story_id=story_id)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(StoryORM).where(StoryORM.id == uuid.UUID(story_id)))
+        story = result.scalar_one_or_none()
+        if story is None:
+            log.error("pipeline.ideation.story_not_found", story_id=story_id)
+            return
+
+    if not story.selected_angle or not story.story_hook or not story.chapters_data:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(StoryORM)
+                .where(StoryORM.id == uuid.UUID(story_id))
+                .values(
+                    status=StoryStatus.FAILED,
+                    error_message="Approved ideation plan is incomplete.",
+                )
+            )
+            await db.commit()
+        return
+
+    state = create_initial_state(
+        topic=story.topic,
+        story_id=story_id,
+        tone=story.tone,
+        target_duration_minutes=story.target_duration_minutes,
+        target_audience=story.target_audience,
+    )
+    state["selected_angle"] = story.selected_angle
+    state["story_hook"] = story.story_hook
+    state["chapters_data"] = story.chapters_data
+    await _drive_pipeline(story_id, state)
+
+
 def _hydrate_state_for_angle_resume(story: StoryORM, selected_angle: str) -> dict[str, Any]:
     """
     Rebuild graph state from the persisted story so the post-angle phase of the
-    pipeline can resume. researcher_node and analyst_node skip themselves when
+    pipeline can resume. Research and Angles & Hooks nodes skip themselves when
     research_package + analysis_result are present and no improvement plan is set.
     """
     from backend.models.research import ResearchPackage  # local import to avoid cycle
@@ -694,7 +965,7 @@ async def _run_pipeline_resume_after_angle_selection(story_id: str, selected_ang
 
 
 async def _run_regenerate_angles(story_id: str) -> None:
-    """Re-run the merged analyst/angle step using persisted research."""
+    """Re-run the Angles & Hooks synthesis step using persisted research."""
     from backend.db.database import AsyncSessionLocal
     from backend.models.research import ResearchPackage
 
@@ -713,8 +984,7 @@ async def _run_regenerate_angles(story_id: str) -> None:
         "research_package": ResearchPackage(**story.research_data),
     }
     try:
-        agent = AnalystAgent()
-        updates = await agent.run(state)
+        updates = await _angles_and_hooks_agent.analyze_research(state)
     except Exception as exc:
         log.error("pipeline.regenerate_angles.error", story_id=story_id, error=str(exc))
         return
@@ -837,9 +1107,9 @@ async def _run_manual_script_rewrite(story_id: str, source_story_id: str) -> Non
         try:
             state = _hydrate_existing_story_state(story)
             if state.get("script_audit_report") is None:
-                state.update(await ScriptEvaluatorAgent().run(state))
-            state.update(await ScriptRewriterAgent().run(state))
-            state.update(await ScriptEvaluatorAgent().run(state))
+                state.update(await _chief_editor_agent.audit_script(state))
+            state.update(await _chief_editor_agent.rewrite_script(state))
+            state.update(await _chief_editor_agent.audit_script(state))
 
             script: FinalScript = state["final_script"]
             audit = state.get("script_audit_report")
@@ -936,9 +1206,9 @@ async def _run_implement_recommendations(story_id: str, source_story_id: str, re
                     .values(status=StoryStatus.ANALYSING)
                 )
                 await db.commit()
-                state.update(await AnalystAgent().run(state))
+                state.update(await _angles_and_hooks_agent.analyze_research(state))
 
-            state.update(await StorylineCreatorAgent().run(state))
+            state.update(await _chapter_writer_agent.run(state))
 
             await db.execute(
                 update(StoryORM)
@@ -946,15 +1216,7 @@ async def _run_implement_recommendations(story_id: str, source_story_id: str, re
                 .values(status=StoryStatus.EVALUATING)
             )
             await db.commit()
-            eval_result, bench_result = await asyncio.gather(
-                EvaluatorAgent().run(state),
-                BenchmarkAgent().run(state),
-                return_exceptions=True,
-            )
-            if not isinstance(eval_result, Exception):
-                state.update(eval_result)
-            if not isinstance(bench_result, Exception):
-                state.update(bench_result)
+            state.update(await _chief_editor_agent.evaluate_story_plan(state))
 
             await db.execute(
                 update(StoryORM)
@@ -964,7 +1226,7 @@ async def _run_implement_recommendations(story_id: str, source_story_id: str, re
             await db.commit()
 
             state.update(await ScriptwriterAgent().run(state))
-            state.update(await ScriptEvaluatorAgent().run(state))
+            state.update(await _chief_editor_agent.audit_script(state))
 
             script: FinalScript = state["final_script"]
             audit = state.get("script_audit_report")
@@ -1018,7 +1280,7 @@ async def _run_implement_recommendations(story_id: str, source_story_id: str, re
 
 
 async def _run_script_regeneration(story_id: str) -> None:
-    """Re-run the full pipeline from Storyline Creator onward using updated research data."""
+    """Re-run the full pipeline from Chapter Writer onward using updated research data."""
     from backend.db.database import AsyncSessionLocal
 
     log.info("regenerate.started", story_id=story_id)
@@ -1054,31 +1316,23 @@ async def _run_script_regeneration(story_id: str) -> None:
             # Re-analyse with updated research data
             await db.execute(update(StoryORM).where(StoryORM.id == uuid.UUID(story_id)).values(status=StoryStatus.ANALYSING))
             await db.commit()
-            state.update(await AnalystAgent().run(state))
+            state.update(await _angles_and_hooks_agent.analyze_research(state))
 
             # Re-build storyline
             await db.execute(update(StoryORM).where(StoryORM.id == uuid.UUID(story_id)).values(status=StoryStatus.WRITING_STORYLINE))
             await db.commit()
-            state.update(await StorylineCreatorAgent().run(state))
+            state.update(await _chapter_writer_agent.run(state))
 
             # Evaluate
             await db.execute(update(StoryORM).where(StoryORM.id == uuid.UUID(story_id)).values(status=StoryStatus.EVALUATING))
             await db.commit()
-            eval_result, bench_result = await asyncio.gather(
-                EvaluatorAgent().run(state),
-                BenchmarkAgent().run(state),
-                return_exceptions=True,
-            )
-            if not isinstance(eval_result, Exception):
-                state.update(eval_result)
-            if not isinstance(bench_result, Exception):
-                state.update(bench_result)
+            state.update(await _chief_editor_agent.evaluate_story_plan(state))
 
             # Write script
             await db.execute(update(StoryORM).where(StoryORM.id == uuid.UUID(story_id)).values(status=StoryStatus.SCRIPTING))
             await db.commit()
             state.update(await ScriptwriterAgent().run(state))
-            state.update(await ScriptEvaluatorAgent().run(state))
+            state.update(await _chief_editor_agent.audit_script(state))
 
             script: FinalScript = state["final_script"]
             audit = state.get("script_audit_report")
@@ -1160,6 +1414,273 @@ async def _get_story_for_user(
     if not story:
         raise HTTPException(status_code=404, detail=f"Story {story_id} not found")
     return story
+
+
+@router.post("/ideation", response_model=IdeationChatResponse, status_code=status.HTTP_201_CREATED)
+async def create_ideation_story(
+    payload: IdeationCreateRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> IdeationChatResponse:
+    """Create a draft story and queue the first set of editorial angles."""
+    validate_user_input(payload.prompt, field="prompt")
+    prompt = payload.prompt.strip()
+    story = StoryORM(
+        title=f"Story: {prompt[:80]}",
+        topic=prompt,
+        status=StoryStatus.IDEATING,
+        tone="explanatory",
+        target_duration_minutes=10,
+        owner_user_id=current_user.id,
+        ideation_stage=IdeationStage.ANGLES.value,
+        ideation_chat_data=_append_pending_ideation_message([], user_message=prompt),
+        ideation_research_data=[],
+        ideation_operation_data=_ideation_operation(
+            "initial_angles",
+            "Researching the first set of angles.",
+        ),
+    )
+    db.add(story)
+    await db.commit()
+    await db.refresh(story)
+    background_tasks.add_task(
+        _run_ideation_operation,
+        story_id=str(story.id),
+        user_message=prompt,
+        stage_value=IdeationStage.ANGLES.value,
+        operation_type="initial_angles",
+        fetch_research=True,
+    )
+    _attach_story_owner(story, current_user.email)
+    return IdeationChatResponse(
+        story=StoryRead.model_validate(story),
+        content="Researching the first set of angles.",
+        sources=[],
+    )
+
+
+@router.post("/{story_id}/ideation/chat", response_model=IdeationChatResponse)
+async def chat_with_ideation_story(
+    story_id: uuid.UUID,
+    payload: IdeationChatRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> IdeationChatResponse:
+    """Queue a stage-aware chat turn for the current ideation artifact."""
+    story = await _get_story_for_user(
+        db,
+        story_id=story_id,
+        current_user=current_user,
+        include_owner=True,
+    )
+    if story.status != StoryStatus.IDEATING:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Story is currently {story.status}; ideation chat only applies while ideating.",
+        )
+    stage = IdeationStage(story.ideation_stage or IdeationStage.ANGLES.value)
+    if stage == IdeationStage.READY_FOR_SCRIPT:
+        stage = IdeationStage.CHAPTERS
+    if (story.ideation_operation_data or {}).get("status") == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An ideation request is already running for this story.",
+        )
+    message = payload.message.strip()
+    await db.execute(
+        update(StoryORM)
+        .where(StoryORM.id == story_id)
+        .values(
+            ideation_chat_data=_append_pending_ideation_message(
+                story.ideation_chat_data,
+                user_message=message,
+            ),
+            ideation_operation_data=_ideation_operation(
+                "chat",
+                message,
+            ),
+            error_message=None,
+        )
+    )
+    await db.commit()
+    await db.refresh(story)
+    background_tasks.add_task(
+        _run_ideation_operation,
+        story_id=str(story_id),
+        user_message=message,
+        stage_value=stage.value,
+        operation_type="chat",
+        fetch_research=_should_fetch_fresh_research(message),
+    )
+    return IdeationChatResponse(
+        story=StoryRead.model_validate(story),
+        content="Working on your request.",
+        sources=[],
+    )
+
+
+@router.post("/{story_id}/ideation/approve-angle", response_model=IdeationChatResponse)
+async def approve_ideation_angle(
+    story_id: uuid.UUID,
+    payload: ApproveAngleRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> IdeationChatResponse:
+    """Approve an angle and queue the initial story hook for the next page."""
+    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user, include_owner=True)
+    if story.status != StoryStatus.IDEATING:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only ideating stories can approve an angle.")
+    if (story.ideation_operation_data or {}).get("status") == "running":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An ideation request is already running.")
+    angle = payload.selected_angle.strip()
+    user_message = f"Use this selected angle and draft a story hook: {angle}"
+    await db.execute(
+        update(StoryORM)
+        .where(StoryORM.id == story_id)
+        .values(
+            selected_angle=angle,
+            story_hook=None,
+            ideation_stage=IdeationStage.HOOK.value,
+            ideation_chat_data=_append_pending_ideation_message(
+                story.ideation_chat_data,
+                user_message=f"Approved angle: {angle}",
+            ),
+            ideation_operation_data=_ideation_operation(
+                "approve_angle",
+                "Drafting the story hook.",
+            ),
+            error_message=None,
+        )
+    )
+    await db.commit()
+    await db.refresh(story)
+    background_tasks.add_task(
+        _run_ideation_operation,
+        story_id=str(story_id),
+        user_message=user_message,
+        stage_value=IdeationStage.HOOK.value,
+        operation_type="approve_angle",
+        selected_angle=angle,
+    )
+    return IdeationChatResponse(story=StoryRead.model_validate(story), content="Drafting the story hook.")
+
+
+@router.post("/{story_id}/ideation/approve-hook", response_model=IdeationChatResponse)
+async def approve_ideation_hook(
+    story_id: uuid.UUID,
+    payload: ApproveHookRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> IdeationChatResponse:
+    """Approve a hook and queue the initial chapter outline for the next page."""
+    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user, include_owner=True)
+    if story.status != StoryStatus.IDEATING:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only ideating stories can approve a hook.")
+    if (story.ideation_operation_data or {}).get("status") == "running":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An ideation request is already running.")
+    hook_words = payload.story_hook.strip().split()
+    if len(hook_words) > 100:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Story hook cannot exceed 100 words.")
+    hook = payload.story_hook.strip()
+    user_message = f"Use this approved hook and draft the chapter outline: {hook}"
+    await db.execute(
+        update(StoryORM)
+        .where(StoryORM.id == story_id)
+        .values(
+            story_hook=hook,
+            chapters_data=None,
+            ideation_stage=IdeationStage.CHAPTERS.value,
+            ideation_chat_data=_append_pending_ideation_message(
+                story.ideation_chat_data,
+                user_message="Approved story hook.",
+            ),
+            ideation_operation_data=_ideation_operation(
+                "approve_hook",
+                "Drafting the chapter outline.",
+            ),
+            error_message=None,
+        )
+    )
+    await db.commit()
+    await db.refresh(story)
+    background_tasks.add_task(
+        _run_ideation_operation,
+        story_id=str(story_id),
+        user_message=user_message,
+        stage_value=IdeationStage.CHAPTERS.value,
+        operation_type="approve_hook",
+        approved_hook=hook,
+    )
+    return IdeationChatResponse(story=StoryRead.model_validate(story), content="Drafting the chapter outline.")
+
+
+@router.post("/{story_id}/ideation/approve-chapters", response_model=StoryRead)
+async def approve_ideation_chapters(
+    story_id: uuid.UUID,
+    payload: ApproveChaptersRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> StoryORM:
+    """Approve the chapter outline and mark the ideation plan ready for script generation."""
+    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user, include_owner=True)
+    if story.status != StoryStatus.IDEATING:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only ideating stories can approve chapters.")
+    if (story.ideation_operation_data or {}).get("status") == "running":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An ideation request is already running.")
+    await db.execute(
+        update(StoryORM)
+        .where(StoryORM.id == story_id)
+        .values(
+            chapters_data=[chapter.model_dump(mode="json") for chapter in payload.chapters],
+            ideation_stage=IdeationStage.READY_FOR_SCRIPT.value,
+        )
+    )
+    await db.commit()
+    await db.refresh(story)
+    return story
+
+
+@router.post("/{story_id}/ideation/generate-script", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
+async def generate_script_from_ideation(
+    story_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> StoryORM:
+    """Launch the full script pipeline from an approved ideation plan."""
+    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user, include_owner=True)
+    if story.status != StoryStatus.IDEATING:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only ideating stories can be sent to script generation.")
+    if (story.ideation_operation_data or {}).get("status") == "running":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Wait for the current ideation request to finish before generating the script.")
+    if not story.selected_angle or not story.story_hook or not story.chapters_data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Approve an angle, story hook, and chapters before generating the script.",
+        )
+    await db.execute(
+        update(StoryORM)
+        .where(StoryORM.id == story_id)
+        .values(
+            status=StoryStatus.PENDING,
+            ideation_stage=IdeationStage.READY_FOR_SCRIPT.value,
+            error_message=None,
+            script_data=None,
+            script_audit_data=None,
+            quality_score=None,
+            word_count=None,
+            estimated_duration_minutes=None,
+        )
+    )
+    await db.commit()
+    await db.refresh(story)
+    background_tasks.add_task(_run_pipeline_from_ideation, story_id=str(story_id))
+    return story
+
 
 @router.post("", response_model=StoryRead, status_code=status.HTTP_202_ACCEPTED)
 async def create_story(
@@ -1287,7 +1808,7 @@ async def stream_story_events(
                 if encoded != last_payload:
                     yield f"event: story\ndata: {encoded}\n\n"
                     last_payload = encoded
-                if story.status in {StoryStatus.COMPLETED, StoryStatus.FAILED}:
+                if story.status in _TERMINAL_STORY_STATUSES:
                     return
             await asyncio.sleep(2)
 
@@ -1313,7 +1834,7 @@ async def rewrite_story_script(
             status_code=status.HTTP_425_TOO_EARLY,
             detail="Script is not available yet.",
         )
-    if story.status not in {StoryStatus.COMPLETED, StoryStatus.FAILED}:
+    if story.status not in _TERMINAL_STORY_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Story is currently {story.status}; wait for the current run to finish.",
@@ -1344,7 +1865,7 @@ async def regenerate_story_script(
             status_code=status.HTTP_425_TOO_EARLY,
             detail="No research data available to regenerate from.",
         )
-    if story.status not in {StoryStatus.COMPLETED, StoryStatus.FAILED}:
+    if story.status not in _TERMINAL_STORY_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Story is currently {story.status}; wait for the current run to finish.",
@@ -1373,7 +1894,7 @@ async def implement_recommendations(
     )
     if not story.script_data:
         raise HTTPException(status_code=status.HTTP_425_TOO_EARLY, detail="No script to rewrite yet.")
-    if story.status not in {StoryStatus.COMPLETED, StoryStatus.FAILED}:
+    if story.status not in _TERMINAL_STORY_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Story is currently {story.status}; wait for the current run to finish.",
@@ -1397,7 +1918,7 @@ async def select_angle(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> StoryORM:
-    """Persist the user's selected angle and resume the pipeline from storyline_creator."""
+    """Persist the user's selected angle and resume the pipeline from Chapter Writer."""
     story = await _get_story_for_user(
         db,
         story_id=story_id,
@@ -1506,52 +2027,6 @@ async def get_research_sources(
         for s in sorted_sources
         if s.get("title")
     ]
-
-
-@router.post("/{story_id}/deep-research", response_model=DeepResearchReport)
-async def run_deep_research_report(
-    story_id: uuid.UUID,
-    payload: DeepResearchRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserORM = Depends(get_current_user),
-) -> DeepResearchReport:
-    """
-    Generate a read-only Anthropic deep research report for the selected story.
-
-    This endpoint intentionally does not update the story, regenerate analysis,
-    or rewrite the existing script.
-    """
-    validate_user_input(payload.prompt, field="prompt")
-    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user)
-
-    try:
-        result = await AnthropicDeepResearchTool().run(
-            prompt=payload.prompt,
-            story_context=_build_deep_research_story_context(story),
-        )
-    except Exception as exc:
-        log.error("deep_research.failed", story_id=str(story_id), error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Anthropic deep research could not complete. Please try again.",
-        ) from exc
-
-    log.info(
-        "deep_research.complete",
-        story_id=str(story_id),
-        citations=len(result.citations),
-        web_search_requests=result.web_search_requests,
-    )
-    return DeepResearchReport(
-        story_id=story.id,
-        story_title=story.title,
-        prompt=payload.prompt,
-        report_markdown=result.report_markdown,
-        citations=result.citations,
-        model=result.model,
-        web_search_requests=result.web_search_requests,
-        generated_at=datetime.now(timezone.utc),
-    )
 
 
 @router.post("/{story_id}/chat", response_model=ChatResponse)

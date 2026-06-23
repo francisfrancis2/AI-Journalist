@@ -11,7 +11,6 @@ container includes the updated files.
 
 Prompt files with placeholders use Python `str.format` syntax:
 
-- `benchmarker.md`: `{doc_count}`, `{avg_act_count}`, `{avg_act_duration_seconds}`, `{avg_stat_count}`, `{human_story_act_avg}`
 - `corpus_builder_synthesise.md`: `{channel_label}`
 
 Do not put secrets, API keys, database URLs, or passwords in prompt files.

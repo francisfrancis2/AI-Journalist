@@ -120,6 +120,15 @@ def _card(
 
 
 def _cards_for_role(role: str, library_key: str, library: BIPatternLibrary) -> list[LibraryReferenceCard]:
+    canonical_role = {
+        "research_agent": "research",
+        "angles_and_hooks": "angle_synthesis",
+        "angle_refinement": "angle_synthesis",
+        "hook_editor": "angle_synthesis",
+        "chapter_writer": "chapter_structure",
+        "chief_editor_evaluator": "chief_editor",
+        "planning_evaluator": "chief_editor",
+    }.get(role, role)
     hook_types = _top_distribution_names(library.hook_type_distribution)
     title_formulas = _top_distribution_names(library.title_formula_distribution)
     closing_devices = _top_distribution_names(library.closing_device_distribution, limit=2)
@@ -133,7 +142,7 @@ def _cards_for_role(role: str, library_key: str, library: BIPatternLibrary) -> l
         "Do not name the source channels or reference titles in user-facing output.",
     ]
 
-    if role == "researcher":
+    if canonical_role == "research":
         return [
             _card(
                 role=role,
@@ -158,7 +167,7 @@ def _cards_for_role(role: str, library_key: str, library: BIPatternLibrary) -> l
             )
         ]
 
-    if role == "analyst":
+    if canonical_role == "angle_synthesis":
         return [
             _card(
                 role=role,
@@ -190,7 +199,7 @@ def _cards_for_role(role: str, library_key: str, library: BIPatternLibrary) -> l
             ),
         ]
 
-    if role == "storyline_creator":
+    if canonical_role == "chapter_structure":
         return [
             _card(
                 role=role,
@@ -224,7 +233,7 @@ def _cards_for_role(role: str, library_key: str, library: BIPatternLibrary) -> l
             ),
         ]
 
-    if role == "evaluator":
+    if canonical_role == "chief_editor":
         return [
             _card(
                 role=role,
@@ -246,7 +255,7 @@ def _cards_for_role(role: str, library_key: str, library: BIPatternLibrary) -> l
             )
         ]
 
-    if role in {"scriptwriter", "script_evaluator", "script_rewriter"}:
+    if canonical_role in {"scriptwriter", "chief_editor"}:
         return [
             _card(
                 role=role,
@@ -292,6 +301,36 @@ def _context_text(topic: str, state: dict[str, Any] | None) -> str:
     selected_angle = state.get("selected_angle")
     if selected_angle:
         parts.append(str(selected_angle))
+
+    story_hook = state.get("story_hook")
+    if story_hook:
+        parts.append(str(story_hook))
+
+    generated_angles = state.get("generated_angles")
+    if isinstance(generated_angles, list):
+        for angle in generated_angles[:6]:
+            if isinstance(angle, dict):
+                parts.extend(
+                    str(angle.get(key, ""))
+                    for key in ("angle", "rationale", "framing_axis")
+                    if angle.get(key)
+                )
+            elif angle:
+                parts.append(str(angle))
+
+    chapters_data = state.get("chapters_data")
+    if isinstance(chapters_data, list):
+        for chapter in chapters_data[:6]:
+            if not isinstance(chapter, dict):
+                continue
+            parts.extend(
+                str(chapter.get(key, ""))
+                for key in ("title", "purpose")
+                if chapter.get(key)
+            )
+            key_points = chapter.get("key_points") or []
+            if isinstance(key_points, list):
+                parts.extend(str(point) for point in key_points[:4])
 
     analysis = state.get("analysis_result")
     if analysis:

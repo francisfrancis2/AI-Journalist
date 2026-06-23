@@ -1,8 +1,8 @@
 # AI Journalist
 
-An autonomous AI system that researches topics across the web, develops documentary storylines,
-evaluates them editorially, and produces production-ready scripts for 10–15 minute documentary films
-in the style of Business Insider, Bloomberg, and CNBC Make It.
+An autonomous AI system that researches topics across the web, develops documentary angles and
+chapter structures, evaluates them editorially, and produces production-ready scripts for
+5, 10, or 15 minute documentary films.
 
 ## Architecture
 
@@ -13,14 +13,18 @@ User Topic
 ┌──────────────────────────────────────────────────────┐
 │  LangGraph StateGraph (journalist_graph)             │
 │                                                      │
-│  Researcher ──► Analyst ──► Storyline Creator        │
-│      ▲                           │                   │
-│      │                           ▼                   │
-│      └──── (needs more data) Evaluator               │
-│                        │          │                  │
-│                        │  (approved)                 │
-│                        ▼          ▼                  │
-│               Refine Storyline  Scriptwriter         │
+│  Research Agent ──► Angles & Hooks ──► Chapter Writer│
+│          │                  │                 │      │
+│          │        angle selection pause       ▼      │
+│          │                  └────► Chief Editor       │
+│          │                            │               │
+│          │                            ▼               │
+│          └────────────────────► Scriptwriter          │
+│                                       │               │
+│                                       ▼               │
+│                         Chief Editor Script Audit     │
+│                                       │               │
+│                         optional targeted rewrite     │
 └──────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -30,11 +34,12 @@ User Topic
 ### Agents
 | Agent | Role |
 |---|---|
-| **Researcher** | Tavily web search + NewsAPI + RSS polling + Playwright scraping + Alpha Vantage financial data |
-| **Analyst** | Synthesises sources into key findings, narrative angles, notable quotes |
-| **Storyline Creator** | Generates 2 multi-act documentary proposals; selects the strongest |
-| **Evaluator** | Scores across 6 editorial criteria; approves or requests refinement |
-| **Scriptwriter** | Writes full narrator script act-by-act with b-roll cues and interview prompts |
+| **ResearchAgent** | Plans benchmark-style research lanes, routes source tools, scrapes selected evidence, and packages sources |
+| **AnglesAndHooksAgent** | Synthesizes research into key findings, producer-selectable angles, and hook direction |
+| **ChapterWriterAgent** | Converts approved ideation into duration-fit chapter and act structures |
+| **ChiefEditorEvaluatorAgent** | Reviews plans, runs benchmark analytics, audits scripts, and performs targeted rewrites |
+| **ScriptwriterAgent** | Writes full narrator script act-by-act from the approved structure and research package |
+| **CorpusBuilderAgent** | Admin/support agent that builds and refreshes benchmark reference corpora |
 
 ### Stack
 - **LLM**: Anthropic `claude-opus-4-6` via `langchain-anthropic`
@@ -103,12 +108,13 @@ docker compose up --build
 ```
 AI-Journalist/
 ├── backend/
-│   ├── agents/          # Five LangGraph agent nodes
-│   │   ├── researcher.py
-│   │   ├── analyst.py
-│   │   ├── storyline_creator.py
-│   │   ├── evaluator.py
-│   │   └── scriptwriter.py
+│   ├── agents/          # LangGraph agents and embedded skills
+│   │   ├── research.py
+│   │   ├── angles_and_hooks.py
+│   │   ├── chapter_writer.py
+│   │   ├── chief_editor_evaluator.py
+│   │   ├── scriptwriter.py
+│   │   └── corpus_builder.py
 │   ├── graph/
 │   │   ├── state.py             # JournalistState TypedDict
 │   │   └── journalist_graph.py  # StateGraph assembly + routing
@@ -180,7 +186,7 @@ All settings live in `backend/config.py` and are loaded from `.env`:
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Optional first admin account; created with `must_change_password=true` and never reset automatically after creation |
 | `CLAUDE_MODEL` | Defaults to `claude-sonnet-4-6` |
 | `MAX_RESEARCH_ITERATIONS` | How many times the researcher can re-run (default: 3) |
-| `MAX_REFINEMENT_CYCLES` | Evaluator→refinement loops before forcing output (default: 2) |
+| `MAX_REFINEMENT_CYCLES` | Story-plan refinement budget before scripting (default: 2) |
 | `QUALITY_SCORE_THRESHOLD` | Minimum score (0–1) to approve a storyline (default: 0.70) |
 
 ### Database setup by environment

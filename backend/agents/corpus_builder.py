@@ -217,7 +217,7 @@ class CorpusBuilderAgent:
             fresh_db.add(orm)
             await fresh_db.commit()
 
-        # Write JSON cache for fast loading in BenchmarkAgent
+        # Write JSON cache for fast loading in the Chief Editor benchmark skill.
         cache_path = Path(settings.get_pattern_cache_path(library_key))
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(library.model_dump_json(indent=2))

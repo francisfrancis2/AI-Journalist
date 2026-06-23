@@ -66,6 +66,76 @@ class ScriptwriterAgent:
         )
         self._structured_llm = _llm.with_structured_output(ActOutput)
 
+    @staticmethod
+    def _decide_treatment(
+        *,
+        state: dict,
+        storyline: StorylineProposal,
+        analysis: AnalysisResult,
+    ) -> dict[str, str]:
+        """
+        Backend treatment-selection skill embedded in Scriptwriter.
+
+        Ideation can suggest tone, but final script generation decides the
+        executable story treatment from all approved inputs.
+        """
+        context = " ".join(
+            str(item or "")
+            for item in [
+                state.get("selected_angle"),
+                state.get("story_hook"),
+                storyline.unique_angle,
+                storyline.logline,
+                analysis.executive_summary,
+            ]
+        ).lower()
+        narrative_terms = {
+            "person",
+            "people",
+            "worker",
+            "founder",
+            "family",
+            "journey",
+            "life",
+            "human",
+            "character",
+            "protagonist",
+        }
+        investigative_terms = {
+            "hidden",
+            "behind",
+            "risk",
+            "crisis",
+            "controversy",
+            "scandal",
+            "power",
+            "money",
+            "influence",
+            "accountability",
+            "exposed",
+        }
+        if any(term in context for term in narrative_terms):
+            tone = "narrative"
+        elif any(term in context for term in investigative_terms):
+            tone = "investigative"
+        else:
+            tone = (
+                str(state.get("tone") or analysis.recommended_tone or storyline.tone or "explanatory")
+                .strip()
+                .lower()
+            )
+        if tone not in {"investigative", "explanatory", "narrative"}:
+            tone = "explanatory"
+
+        return {
+            "story_type": tone,
+            "tone": tone,
+            "notes": (
+                "Final backend treatment selected by Scriptwriter from approved angle, "
+                "hook, chapter plan, storyline, and editorial analysis."
+            ),
+        }
+
     async def _write_act(
         self,
         act_data: dict,
@@ -82,6 +152,7 @@ class ScriptwriterAgent:
         library_reference: str = "",
         voice_section: str = "",
         duration_contract: str = "",
+        treatment_directive: str = "",
     ) -> ScriptSection:
         """Write narration for a single act."""
         relevant_quotes = "\n".join(
@@ -107,8 +178,8 @@ class ScriptwriterAgent:
         revision_goals = ""
         if rewrite_recommendations:
             revision_goals = (
-                "=== EVALUATOR AGENT RECOMMENDATIONS TO APPLY WHILE WRITING ===\n"
-                "These recommendations were passed from the Evaluator Agent. Treat them as "
+                "=== CHIEF EDITOR RECOMMENDATIONS TO APPLY WHILE WRITING ===\n"
+                "These recommendations were passed from the Chief Editor. Treat them as "
                 "mandatory editorial direction for this act unless they conflict with verified source facts.\n"
                 + "\n".join(f"  - {item}" for item in rewrite_recommendations)
                 + "\n\n"
@@ -139,6 +210,7 @@ class ScriptwriterAgent:
             f"Overall tone: {storyline.tone}\n\n"
             f"Target audience: {target_audience or storyline.target_audience}\n\n"
             f"{duration_contract}"
+            f"{treatment_directive}"
             f"{angle_directive}"
             f"{revision_goals}"
             f"=== FULL STORY ARC ===\n{act_arc}\n\n"
@@ -185,12 +257,24 @@ class ScriptwriterAgent:
         evaluator_recommendations: list[str] = state.get("scriptwriter_recommendations") or []
         if evaluator_recommendations:
             rewrite_recommendations = evaluator_recommendations + rewrite_recommendations
+        treatment = self._decide_treatment(
+            state=state,
+            storyline=storyline,
+            analysis=analysis,
+        )
+        if storyline.tone != treatment["tone"]:
+            storyline = storyline.model_copy(update={"tone": treatment["tone"]})
         duration_scale = duration_target.seconds / max(
             storyline.total_estimated_duration_seconds,
             1,
         )
 
-        log.info("scriptwriter.start", topic=topic, acts=len(storyline.acts))
+        log.info(
+            "scriptwriter.start",
+            topic=topic,
+            acts=len(storyline.acts),
+            treatment=treatment["story_type"],
+        )
         source_lookup = {
             src.source_id: {
                 "title": src.title,
@@ -228,6 +312,13 @@ class ScriptwriterAgent:
         )
 
         selected_angle: str | None = state.get("selected_angle")
+        treatment_directive = (
+            "=== SCRIPTWRITER TREATMENT DECISION ===\n"
+            f"Story type: {treatment['story_type']}\n"
+            f"Tone: {treatment['tone']}\n"
+            f"Notes: {treatment['notes']}\n"
+            "This backend decision supersedes earlier UI/default tone suggestions for final drafting.\n\n"
+        )
         reference_pack = get_reference_pack(
             role="scriptwriter",
             topic=topic,
@@ -294,6 +385,7 @@ class ScriptwriterAgent:
                 library_reference=library_reference,
                 voice_section=voice_section,
                 duration_contract=duration_contract,
+                treatment_directive=treatment_directive,
             )
             for index, act_data in enumerate(act_plans)
         ]
@@ -325,7 +417,9 @@ class ScriptwriterAgent:
             sources=source_refs,
             metadata={
                 "topic": topic,
-                "tone": storyline.tone,
+                "story_type": treatment["story_type"],
+                "tone": treatment["tone"],
+                "treatment_notes": treatment["notes"],
                 "target_duration_minutes": target_duration_minutes,
                 "target_duration_seconds": duration_target.seconds,
                 "target_word_count": duration_target.target_word_count,

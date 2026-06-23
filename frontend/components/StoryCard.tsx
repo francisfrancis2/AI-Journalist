@@ -1,10 +1,11 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import type { Story } from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
+import { isAngleSelectionExpired, storyStatusLabel } from "@/lib/story-status";
 
 interface StoryCardProps {
   story: Story;
@@ -16,7 +17,11 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
   const showOwner = Boolean(currentUser?.is_admin && story.owner_email);
   const isComplete = story.status === "completed";
   const isFailed   = story.status === "failed";
-  const isRunning  = !isComplete && !isFailed;
+  const isStopped  = isAngleSelectionExpired(story.status);
+  const isRunning  = !isComplete && !isFailed && !isStopped;
+  const href = story.status === "ideating"
+    ? `/ideation/${story.id}/${story.ideation_stage === "hook" ? "hook" : story.ideation_stage === "chapters" || story.ideation_stage === "ready_for_script" ? "chapters" : "angles"}`
+    : `/stories?id=${story.id}`;
 
   const card = (
     <div
@@ -103,10 +108,15 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
             <XCircle size={10} /> Failed
           </span>
         )}
+        {isStopped && (
+          <span className="badge badge-warning" style={{ fontSize: 11 }}>
+            <AlertTriangle size={10} /> Script writing stopped
+          </span>
+        )}
         {isRunning && (
           <span className="badge badge-active" style={{ fontSize: 11 }}>
             <Loader2 size={10} className="animate-spin" />
-            {story.status.replace(/_/g, " ")}
+            {storyStatusLabel(story.status)}
           </span>
         )}
         <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
@@ -118,7 +128,7 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
 
   if (showLink) {
     return (
-      <Link href={`/stories?id=${story.id}`} style={{ display: "block", height: "100%", textDecoration: "none" }}>
+      <Link href={href} style={{ display: "block", height: "100%", textDecoration: "none" }}>
         {card}
       </Link>
     );

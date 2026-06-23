@@ -41,10 +41,12 @@ export type StoryTone =
   | "narrative";
 
 export type StoryStatus =
+  | "ideating"
   | "pending"
   | "researching"
   | "analysing"
   | "awaiting_angle_selection"
+  | "angle_selection_expired"
   | "writing_storyline"
   | "evaluating"
   | "scripting"
@@ -57,10 +59,46 @@ export interface StoryAngle {
   rationale?: string;
 }
 
+export type IdeationStage =
+  | "prompt"
+  | "angles"
+  | "hook"
+  | "chapters"
+  | "ready_for_script";
+
+export interface IdeationChapter {
+  chapter_number: number;
+  title: string;
+  purpose: string;
+  key_points: string[];
+}
+
+export interface IdeationSourceLink {
+  title: string;
+  url: string | null;
+  provider: string;
+  preview: string;
+}
+
+export interface IdeationOperationData {
+  type: string;
+  status: "running" | "failed" | "completed";
+  message: string;
+  started_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+}
+
+export interface IdeationChatResponse {
+  story: Story;
+  content: string;
+  sources: IdeationSourceLink[];
+}
+
 export interface StoryCreate {
   topic: string;
   title?: string;
-  tone: StoryTone;
+  tone?: StoryTone;
   target_duration_minutes?: number;
   target_audience?: string | null;
 }
@@ -262,6 +300,12 @@ export interface Story {
   pipeline_failure_summary: string | null;
   angles_data: StoryAngle[] | null;
   selected_angle: string | null;
+  ideation_stage: IdeationStage | null;
+  ideation_chat_data: ChatMessage[] | null;
+  ideation_research_data: IdeationSourceLink[] | null;
+  ideation_operation_data: IdeationOperationData | null;
+  story_hook: string | null;
+  chapters_data: IdeationChapter[] | null;
   created_at: string;
   updated_at: string;
 }
@@ -335,6 +379,10 @@ export interface YouTubeVideo {
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  status?: "running" | "completed" | "failed";
+  created_at?: string;
+  completed_at?: string;
+  error_message?: string | null;
 }
 
 export interface ChatResponse {
@@ -342,21 +390,53 @@ export interface ChatResponse {
   youtube_results: YouTubeVideo[];
 }
 
-export interface DeepResearchCitation {
+export interface ResearchSessionCitation {
   title: string;
   url: string;
   cited_text: string | null;
 }
 
-export interface DeepResearchReport {
-  story_id: string;
-  story_title: string;
+export interface ResearchSessionTurn {
   prompt: string;
+  created_at: string;
+  status: ResearchSessionStatus;
+  completed_at: string | null;
+  error_message: string | null;
   report_markdown: string;
-  citations: DeepResearchCitation[];
-  model: string;
+  citations: ResearchSessionCitation[];
   web_search_requests: number;
-  generated_at: string;
+}
+
+export type ResearchSessionStatus = "pending" | "running" | "completed" | "failed";
+
+export interface ResearchSession {
+  id: string;
+  title: string;
+  report_markdown: string;
+  citations: ResearchSessionCitation[];
+  turns: ResearchSessionTurn[];
+  model: string | null;
+  web_search_requests: number;
+  status: ResearchSessionStatus;
+  active_operation: string | null;
+  pending_prompt: string | null;
+  error_message: string | null;
+  operation_started_at: string | null;
+  operation_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResearchSessionSummary {
+  id: string;
+  title: string;
+  status: ResearchSessionStatus;
+  active_operation: string | null;
+  pending_prompt: string | null;
+  error_message: string | null;
+  operation_started_at: string | null;
+  updated_at: string;
+  created_at: string;
 }
 
 // ── Client ────────────────────────────────────────────────────────────────────
@@ -462,6 +542,53 @@ class AIJournalistAPIClient {
     return data;
   }
 
+  async createIdeationStory(prompt: string): Promise<IdeationChatResponse> {
+    const { data } = await this.http.post<IdeationChatResponse>(
+      "/api/v1/stories/ideation",
+      { prompt }
+    );
+    return data;
+  }
+
+  async ideationChat(storyId: string, message: string): Promise<IdeationChatResponse> {
+    const { data } = await this.http.post<IdeationChatResponse>(
+      `/api/v1/stories/${storyId}/ideation/chat`,
+      { message }
+    );
+    return data;
+  }
+
+  async approveIdeationAngle(storyId: string, selectedAngle: string): Promise<IdeationChatResponse> {
+    const { data } = await this.http.post<IdeationChatResponse>(
+      `/api/v1/stories/${storyId}/ideation/approve-angle`,
+      { selected_angle: selectedAngle }
+    );
+    return data;
+  }
+
+  async approveIdeationHook(storyId: string, storyHook: string): Promise<IdeationChatResponse> {
+    const { data } = await this.http.post<IdeationChatResponse>(
+      `/api/v1/stories/${storyId}/ideation/approve-hook`,
+      { story_hook: storyHook }
+    );
+    return data;
+  }
+
+  async approveIdeationChapters(storyId: string, chapters: IdeationChapter[]): Promise<Story> {
+    const { data } = await this.http.post<Story>(
+      `/api/v1/stories/${storyId}/ideation/approve-chapters`,
+      { chapters }
+    );
+    return data;
+  }
+
+  async generateScriptFromIdeation(storyId: string): Promise<Story> {
+    const { data } = await this.http.post<Story>(
+      `/api/v1/stories/${storyId}/ideation/generate-script`
+    );
+    return data;
+  }
+
   async listStories(limit = 20, offset = 0, status?: StoryStatus): Promise<Story[]> {
     const params: Record<string, unknown> = { limit, offset };
     if (status) params.status = status;
@@ -532,16 +659,45 @@ class AIJournalistAPIClient {
     return data;
   }
 
-  async generateDeepResearchReport(
-    storyId: string,
-    prompt: string
-  ): Promise<DeepResearchReport> {
-    const { data } = await this.http.post<DeepResearchReport>(
-      `/api/v1/stories/${storyId}/deep-research`,
-      { prompt },
-      { timeout: 180_000 }
+  // ── Research Hub (standalone sessions) ────────────────────────────────────
+
+  async listResearchSessions(): Promise<ResearchSessionSummary[]> {
+    const { data } = await this.http.get<ResearchSessionSummary[]>(
+      "/api/v1/research/sessions"
     );
     return data;
+  }
+
+  async getResearchSession(sessionId: string): Promise<ResearchSession> {
+    const { data } = await this.http.get<ResearchSession>(
+      `/api/v1/research/sessions/${sessionId}`
+    );
+    return data;
+  }
+
+  async createResearchSession(prompt: string): Promise<ResearchSession> {
+    const { data } = await this.http.post<ResearchSession>(
+      "/api/v1/research/sessions",
+      { prompt },
+      { timeout: 240_000 }
+    );
+    return data;
+  }
+
+  async addResearchSessionTurn(
+    sessionId: string,
+    prompt: string
+  ): Promise<ResearchSession> {
+    const { data } = await this.http.post<ResearchSession>(
+      `/api/v1/research/sessions/${sessionId}/turns`,
+      { prompt },
+      { timeout: 240_000 }
+    );
+    return data;
+  }
+
+  async deleteResearchSession(sessionId: string): Promise<void> {
+    await this.http.delete(`/api/v1/research/sessions/${sessionId}`);
   }
 
   // ── Research Tools ────────────────────────────────────────────────────────

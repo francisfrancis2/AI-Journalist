@@ -48,7 +48,7 @@ class RawSource(BaseModel):
 # ── Research Package ──────────────────────────────────────────────────────────
 
 class ResearchQuery(BaseModel):
-    """A structured query issued by the Researcher agent."""
+    """A structured query issued by the Research Agent."""
     query_text: str
     sub_queries: list[str] = Field(default_factory=list)
     target_source_types: list[SourceType] = Field(
@@ -110,7 +110,7 @@ class StoryAct(BaseModel):
 
 
 class StorylineProposal(BaseModel):
-    """A documentary storyline proposal created by the Storyline Creator agent."""
+    """A documentary storyline proposal created by the Chapter Writer agent."""
     title: str
     logline: str                    # One-sentence pitch
     opening_hook: str               # First 30 seconds concept

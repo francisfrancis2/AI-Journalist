@@ -1,7 +1,7 @@
 """
 CLI script to build the benchmark reference corpus.
 
-Run once before using the benchmarker, then re-run periodically to refresh.
+Run once before using the Chief Editor benchmark skill, then re-run periodically to refresh.
 
 Usage:
     python -m backend.scripts.build_corpus                 # default combined corpus

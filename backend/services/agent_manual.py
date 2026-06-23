@@ -23,14 +23,11 @@ class ManualSource:
 
 
 _AGENT_SOURCES = [
-    ManualSource("Researcher Agent", "backend/agents/researcher.py", ("researcher",)),
-    ManualSource("Analyst Agent", "backend/agents/analyst.py", ("analyst",)),
-    ManualSource("Storyline Creator Agent", "backend/agents/storyline_creator.py", ("storyline_creator",)),
-    ManualSource("Evaluator Agent", "backend/agents/evaluator.py", ("evaluator",)),
-    ManualSource("Benchmark Agent", "backend/agents/benchmarker.py", ("benchmarker",)),
+    ManualSource("Research Agent", "backend/agents/research.py", ("research",)),
+    ManualSource("Angles & Hooks Agent", "backend/agents/angles_and_hooks.py", ("angles_and_hooks",)),
+    ManualSource("Chapter Writer Agent", "backend/agents/chapter_writer.py", ("chapter_writer",)),
     ManualSource("Scriptwriter Agent", "backend/agents/scriptwriter.py", ("scriptwriter",)),
-    ManualSource("Script Evaluator Agent", "backend/agents/script_evaluator.py", ("script_evaluator",)),
-    ManualSource("Script Rewriter Agent", "backend/agents/script_rewriter.py", ("script_rewriter",)),
+    ManualSource("Chief Editor & Evaluator Agent", "backend/agents/chief_editor_evaluator.py", ("chief_editor_evaluator",)),
     ManualSource(
         "Corpus Builder Agent",
         "backend/agents/corpus_builder.py",
@@ -245,9 +242,10 @@ def _graph_section() -> str:
         source,
         {
             "route_after_researcher",
-            "route_after_analyst",
-            "route_after_storyline_creator",
+            "route_after_angles_and_hooks",
+            "route_after_chapter_writer",
             "route_after_evaluator",
+            "route_after_chief_editor_script_audit",
             "build_journalist_graph",
         },
     )

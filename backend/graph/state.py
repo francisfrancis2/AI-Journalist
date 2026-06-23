@@ -55,6 +55,8 @@ class JournalistState(TypedDict):
     # ── Angle selection phase (pause between research and scripting) ──────────
     generated_angles: list[dict]              # [{angle: str, framing_axis: str}, ...]
     selected_angle: Optional[str]              # Picked by the user; carries through restarts
+    story_hook: Optional[str]                  # Producer-approved synopsis from ideation
+    chapters_data: Optional[list[dict[str, Any]]]  # Producer-approved chapter outline
 
     # ── Storyline phase ───────────────────────────────────────────────────────
     storyline_proposals: list[StorylineProposal]  # Multiple candidates
@@ -63,14 +65,14 @@ class JournalistState(TypedDict):
 
     # ── Evaluation phase ──────────────────────────────────────────────────────
     evaluation_report: Optional[EvaluationReport]
-    benchmark_report: Optional[BenchmarkReport]  # Benchmark report (runs parallel to evaluator)
+    benchmark_report: Optional[BenchmarkReport]  # Chief Editor benchmark analytics report
     scriptwriter_recommendations: list[str]       # Evaluator guidance passed to Scriptwriter
     refinement_cycle: int                   # How many times evaluation→refinement has run
 
     # ── Script phase ──────────────────────────────────────────────────────────
     final_script: Optional[FinalScript]
     script_audit_report: Optional[ScriptAuditReport]
-    script_rewriter_recommendations: list[str]    # Script audit guidance passed to ScriptRewriter
+    script_rewrite_recommendations: list[str]     # Chief Editor audit guidance passed to rewrite skill
     script_revision_cycle: int              # How many audit-triggered rewrites have run
 
     # ── Legacy pipeline tracking ──────────────────────────────────────────────
@@ -122,6 +124,8 @@ def create_initial_state(
         analysis_result=None,
         generated_angles=[],
         selected_angle=None,
+        story_hook=None,
+        chapters_data=None,
         storyline_proposals=[],
         selected_storyline=None,
         user_rewrite_recommendations=[],
@@ -131,7 +135,7 @@ def create_initial_state(
         refinement_cycle=0,
         final_script=None,
         script_audit_report=None,
-        script_rewriter_recommendations=[],
+        script_rewrite_recommendations=[],
         script_revision_cycle=0,
         pipeline_cycle=0,
         best_script=None,
