@@ -142,6 +142,7 @@ class StoryORM(Base):
     ideation_research_data: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     ideation_operation_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     story_hook: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    hook_options_data: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     chapters_data: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     # Pipeline quality-gate tracking
@@ -227,6 +228,7 @@ class StoryRead(BaseModel):
     ideation_research_data: Optional[list] = None
     ideation_operation_data: Optional[dict] = None
     story_hook: Optional[str] = None
+    hook_options_data: Optional[list] = None
     chapters_data: Optional[list] = None
     created_at: datetime
     updated_at: datetime
@@ -253,6 +255,7 @@ class StoryListItem(BaseModel):
     ideation_stage: Optional[IdeationStage] = None
     ideation_operation_data: Optional[dict] = None
     story_hook: Optional[str] = None
+    hook_options_data: Optional[list] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

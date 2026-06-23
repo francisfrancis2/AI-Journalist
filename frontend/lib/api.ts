@@ -305,6 +305,7 @@ export interface Story {
   ideation_research_data: IdeationSourceLink[] | null;
   ideation_operation_data: IdeationOperationData | null;
   story_hook: string | null;
+  hook_options_data: string[] | null;
   chapters_data: IdeationChapter[] | null;
   created_at: string;
   updated_at: string;
@@ -554,6 +555,22 @@ class AIJournalistAPIClient {
     const { data } = await this.http.post<IdeationChatResponse>(
       `/api/v1/stories/${storyId}/ideation/chat`,
       { message }
+    );
+    return data;
+  }
+
+  async generateIdeationAngles(storyId: string): Promise<IdeationChatResponse> {
+    const { data } = await this.http.post<IdeationChatResponse>(
+      `/api/v1/stories/${storyId}/ideation/generate-angles`,
+      {}
+    );
+    return data;
+  }
+
+  async generateIdeationHooks(storyId: string): Promise<IdeationChatResponse> {
+    const { data } = await this.http.post<IdeationChatResponse>(
+      `/api/v1/stories/${storyId}/ideation/generate-hooks`,
+      {}
     );
     return data;
   }

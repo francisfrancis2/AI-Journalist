@@ -10,9 +10,11 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  Edit3,
   ExternalLink,
   Loader2,
   MessageSquareText,
+  Plus,
   Send,
   Sparkles,
 } from "lucide-react";
@@ -47,6 +49,36 @@ function stagePath(storyId: string, stage: WorkspaceStage): string {
 function countWords(value: string): number {
   const trimmed = value.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+function normalizeChapterDrafts(chapters: IdeationChapter[]): IdeationChapter[] {
+  return chapters.map((chapter, index) => ({
+    chapter_number: index + 1,
+    title: chapter.title.trim(),
+    purpose: chapter.purpose.trim(),
+    key_points: chapter.key_points
+      .map((point) => point.trim())
+      .filter(Boolean),
+  }));
+}
+
+function chapterDraftsEqual(left: IdeationChapter[], right: IdeationChapter[]): boolean {
+  return JSON.stringify(normalizeChapterDrafts(left)) === JSON.stringify(normalizeChapterDrafts(right));
+}
+
+function hookOptionsForStory(story: Story): string[] {
+  const seen = new Set<string>();
+  return [
+    story.story_hook,
+    ...(story.hook_options_data ?? []),
+  ]
+    .map((hook) => (hook ?? "").trim())
+    .filter((hook) => {
+      const key = hook.toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function formatElapsed(startedAt: string | undefined): string {
@@ -179,6 +211,53 @@ function AngleCard({
   );
 }
 
+function HookCard({
+  hook,
+  selected,
+  onSelect,
+}: {
+  hook: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      style={{
+        textAlign: "left",
+        padding: "12px 14px",
+        border: `1px solid ${selected ? "var(--color-action)" : "var(--color-border-tertiary)"}`,
+        borderRadius: "var(--border-radius-md)",
+        background: selected ? "rgba(28, 38, 168, 0.04)" : "#fff",
+        cursor: "pointer",
+        fontFamily: "var(--font-sans)",
+        display: "flex",
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: "50%",
+          border: `1.5px solid ${selected ? "var(--color-action)" : "var(--color-border-primary)"}`,
+          marginTop: 2,
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {selected && <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-action)" }} />}
+      </div>
+      <p style={{ fontSize: 13, lineHeight: 1.55, color: "var(--color-text-primary)" }}>
+        {hook}
+      </p>
+    </button>
+  );
+}
+
 function ChapterList({ chapters }: { chapters: IdeationChapter[] }) {
   if (!chapters.length) {
     return <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>No chapter outline yet. Ask the chat to draft one.</p>;
@@ -209,6 +288,99 @@ function ChapterList({ chapters }: { chapters: IdeationChapter[] }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+function ChapterEditor({
+  chapters,
+  onChange,
+}: {
+  chapters: IdeationChapter[];
+  onChange: (chapters: IdeationChapter[]) => void;
+}) {
+  const updateChapter = (index: number, next: Partial<IdeationChapter>) => {
+    onChange(chapters.map((chapter, chapterIndex) => (
+      chapterIndex === index ? { ...chapter, ...next } : chapter
+    )));
+  };
+
+  const addChapter = () => {
+    onChange([
+      ...chapters,
+      {
+        chapter_number: chapters.length + 1,
+        title: "",
+        purpose: "",
+        key_points: [],
+      },
+    ]);
+  };
+
+  const removeChapter = (index: number) => {
+    onChange(normalizeChapterDrafts(chapters.filter((_, chapterIndex) => chapterIndex !== index)));
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {chapters.map((chapter, index) => (
+        <div
+          key={`chapter-editor-${index}`}
+          style={{
+            padding: "12px 14px",
+            border: "0.5px solid var(--color-border-tertiary)",
+            borderRadius: "var(--border-radius-md)",
+            background: "#fff",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 9 }}>
+            <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Chapter {index + 1}</p>
+            {chapters.length > 1 && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => removeChapter(index)}
+                style={{ padding: "4px 8px", fontSize: 11 }}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input
+              className="input"
+              value={chapter.title}
+              onChange={(event) => updateChapter(index, { title: event.target.value })}
+              placeholder="Chapter title"
+              style={{ background: "#fff", fontFamily: "var(--font-sans)" }}
+            />
+            <textarea
+              className="input"
+              rows={3}
+              value={chapter.purpose}
+              onChange={(event) => updateChapter(index, { purpose: event.target.value })}
+              placeholder="Purpose"
+              style={{ resize: "vertical", background: "#fff", fontFamily: "var(--font-sans)" }}
+            />
+            <textarea
+              className="input"
+              rows={4}
+              value={chapter.key_points.join("\n")}
+              onChange={(event) => updateChapter(index, { key_points: event.target.value.split(/\r?\n/) })}
+              placeholder="Key points, one per line"
+              style={{ resize: "vertical", background: "#fff", fontFamily: "var(--font-sans)" }}
+            />
+          </div>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="btn-secondary"
+        onClick={addChapter}
+        style={{ alignSelf: "flex-start" }}
+      >
+        <Plus size={13} /> Add chapter
+      </button>
     </div>
   );
 }
@@ -360,7 +532,13 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
   const queryClient = useQueryClient();
   const [message, setMessage] = useState("");
   const [selectedAngle, setSelectedAngle] = useState<string | null>(null);
+  const [angleDraft, setAngleDraft] = useState("");
+  const [angleEditMode, setAngleEditMode] = useState(false);
+  const [selectedHook, setSelectedHook] = useState<string | null>(null);
   const [hookDraft, setHookDraft] = useState("");
+  const [hookEditMode, setHookEditMode] = useState(false);
+  const [chaptersDraft, setChaptersDraft] = useState<IdeationChapter[]>([]);
+  const [chaptersEditMode, setChaptersEditMode] = useState(false);
 
   const { data: story, isLoading, error } = useQuery<Story>({
     queryKey: ["story", storyId],
@@ -371,11 +549,29 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
     refetchOnWindowFocus: true,
   });
 
+  const persistedSelectedAngle = story?.selected_angle ?? null;
+  const persistedStoryHook = story?.story_hook ?? null;
+  const persistedChapters = useMemo(
+    () => normalizeChapterDrafts(story?.chapters_data ?? []),
+    [story?.chapters_data]
+  );
+
   useEffect(() => {
-    if (!story) return;
-    setHookDraft(story.story_hook ?? "");
-    if (story.selected_angle) setSelectedAngle(story.selected_angle);
-  }, [story?.id, story?.story_hook, story?.selected_angle, story]);
+    setSelectedAngle(persistedSelectedAngle);
+    setAngleDraft(persistedSelectedAngle ?? "");
+    setAngleEditMode(false);
+  }, [story?.id, persistedSelectedAngle]);
+
+  useEffect(() => {
+    setSelectedHook(persistedStoryHook);
+    setHookDraft(persistedStoryHook ?? "");
+    setHookEditMode(false);
+  }, [story?.id, persistedStoryHook]);
+
+  useEffect(() => {
+    setChaptersDraft(persistedChapters);
+    setChaptersEditMode(false);
+  }, [story?.id, persistedChapters]);
 
   const updateStory = (next: Story) => {
     queryClient.setQueryData(["story", storyId], next);
@@ -390,8 +586,28 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
     },
   });
 
+  const generateAnglesMutation = useMutation({
+    mutationFn: () => apiClient.generateIdeationAngles(storyId),
+    onSuccess: ({ story: nextStory }) => {
+      updateStory(nextStory);
+      setSelectedAngle(null);
+      setAngleDraft("");
+      setAngleEditMode(false);
+      router.push(stagePath(storyId, "angles"));
+    },
+  });
+
+  const generateHooksMutation = useMutation({
+    mutationFn: () => apiClient.generateIdeationHooks(storyId),
+    onSuccess: ({ story: nextStory }) => {
+      updateStory(nextStory);
+      setHookEditMode(false);
+      router.push(stagePath(storyId, "hook"));
+    },
+  });
+
   const approveAngleMutation = useMutation({
-    mutationFn: () => apiClient.approveIdeationAngle(storyId, selectedAngle ?? ""),
+    mutationFn: () => apiClient.approveIdeationAngle(storyId, angleDraft.trim()),
     onSuccess: ({ story: nextStory }) => {
       updateStory(nextStory);
       router.push(stagePath(storyId, "hook"));
@@ -407,8 +623,11 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
   });
 
   const approveChaptersMutation = useMutation({
-    mutationFn: () => apiClient.approveIdeationChapters(storyId, story?.chapters_data ?? []),
-    onSuccess: updateStory,
+    mutationFn: () => apiClient.approveIdeationChapters(storyId, normalizeChapterDrafts(chaptersDraft)),
+    onSuccess: (nextStory) => {
+      updateStory(nextStory);
+      setChaptersEditMode(false);
+    },
   });
 
   const generateMutation = useMutation({
@@ -421,6 +640,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
 
   const messages = useMemo(() => story?.ideation_chat_data ?? [], [story?.ideation_chat_data]);
   const sources = useMemo(() => story?.ideation_research_data ?? [], [story?.ideation_research_data]);
+  const hookOptions = useMemo(() => story ? hookOptionsForStory(story) : [], [story]);
 
   if (isLoading) {
     return (
@@ -446,6 +666,9 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
   const canGenerate = Boolean(story.selected_angle && story.story_hook && story.chapters_data?.length);
   const operation = story.ideation_operation_data ?? null;
   const operationRunning = operation?.status === "running";
+  const chaptersDirty = !chapterDraftsEqual(chaptersDraft, persistedChapters);
+  const chaptersValid = chaptersDraft.length > 0 && normalizeChapterDrafts(chaptersDraft).every((chapter) => chapter.title && chapter.purpose);
+  const planDirty = chaptersEditMode || chaptersDirty;
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
@@ -502,8 +725,18 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
           {stage === "angles" && (
             <ArtifactShell title="Choose the story angle" kicker="Stage 1">
               <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
-                Ask for more options, a different direction, or research on a specific datapoint in the chat. Select the framing you want to carry forward.
+                Select the framing you want to carry forward. You can return here later, generate more options, edit the selected angle, and restart hook generation.
               </p>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={generateAnglesMutation.isPending || operationRunning || approveAngleMutation.isPending}
+                onClick={() => generateAnglesMutation.mutate()}
+                style={{ marginBottom: 12 }}
+              >
+                {generateAnglesMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                Generate more angles
+              </button>
               <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
                 {(story.angles_data ?? []).length === 0 && operationRunning ? (
                   <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
@@ -513,89 +746,211 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                   <AngleCard
                     key={angle.angle}
                     angle={angle}
-                    selected={selectedAngle === angle.angle}
-                    onSelect={() => setSelectedAngle(angle.angle)}
+                    selected={selectedAngle === angle.angle || angleDraft === angle.angle}
+                    onSelect={() => {
+                      setSelectedAngle(angle.angle);
+                      setAngleDraft(angle.angle);
+                      setAngleEditMode(false);
+                    }}
                   />
                 ))}
               </div>
-              <button
-                type="button"
-                className="btn-primary"
-                style={{ marginTop: 14 }}
-                disabled={!selectedAngle || approveAngleMutation.isPending || operationRunning}
-                onClick={() => approveAngleMutation.mutate()}
-              >
-                {approveAngleMutation.isPending && <Loader2 size={13} className="animate-spin" />}
-                Approve angle
-                <ChevronRight size={13} />
-              </button>
+              {angleDraft && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: "12px 14px",
+                    border: "0.5px solid var(--color-border-tertiary)",
+                    borderRadius: "var(--border-radius-md)",
+                    background: "var(--color-background-secondary)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: angleEditMode ? 8 : 0 }}>
+                    <p style={{ fontSize: 12, fontWeight: 500 }}>Selected angle</p>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setAngleEditMode((value) => !value)}
+                      disabled={operationRunning || approveAngleMutation.isPending}
+                      style={{ padding: "5px 9px", fontSize: 11 }}
+                    >
+                      <Edit3 size={12} /> {angleEditMode ? "Done editing" : "Edit"}
+                    </button>
+                  </div>
+                  {angleEditMode ? (
+                    <textarea
+                      className="input"
+                      rows={4}
+                      value={angleDraft}
+                      onChange={(event) => setAngleDraft(event.target.value)}
+                      style={{ resize: "vertical", background: "#fff", fontFamily: "var(--font-sans)" }}
+                      disabled={operationRunning}
+                    />
+                  ) : (
+                    <p style={{ fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.55 }}>{angleDraft}</p>
+                  )}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={!angleDraft.trim() || approveAngleMutation.isPending || operationRunning}
+                  onClick={() => approveAngleMutation.mutate()}
+                >
+                  {approveAngleMutation.isPending && <Loader2 size={13} className="animate-spin" />}
+                  Approve angle
+                  <ChevronRight size={13} />
+                </button>
+              </div>
             </ArtifactShell>
           )}
 
           {stage === "hook" && (
             <ArtifactShell title="Shape the story hook" kicker="Stage 2">
               <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 12, lineHeight: 1.5 }}>
-                The hook is the pitch synopsis: the main idea and tension in under 100 words.
+                Choose one hook example, edit it if needed, then approve it to regenerate the chapter outline.
               </p>
               {story.selected_angle && (
-                <div className="stat-callout" style={{ marginBottom: 12 }}>
-                  <strong>Selected angle:</strong> {story.selected_angle}
+                <div className="stat-callout" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                  <span><strong>Selected angle:</strong> {story.selected_angle}</span>
+                  <Link href={stagePath(storyId, "angles")} className="btn-secondary" style={{ textDecoration: "none", padding: "5px 9px", fontSize: 11 }}>
+                    Reselect
+                  </Link>
                 </div>
               )}
-              <textarea
-                className="input"
-                rows={7}
-                value={hookDraft}
-                onChange={(event) => setHookDraft(event.target.value)}
-                style={{ resize: "vertical", background: "#fff", fontFamily: "var(--font-sans)" }}
-                disabled={operationRunning}
-              />
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 8 }}>
-                <span style={{ fontSize: 11, color: hookWords > 100 ? "var(--color-danger)" : "var(--color-text-tertiary)" }}>
-                  {hookWords}/100 words
-                </span>
-                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Use the chat for rewrites or new hook directions.</span>
-              </div>
               <button
                 type="button"
-                className="btn-primary"
-                style={{ marginTop: 14 }}
-                disabled={!hookDraft.trim() || hookWords > 100 || approveHookMutation.isPending || operationRunning}
-                onClick={() => approveHookMutation.mutate()}
+                className="btn-secondary"
+                disabled={!story.selected_angle || generateHooksMutation.isPending || operationRunning || approveHookMutation.isPending}
+                onClick={() => generateHooksMutation.mutate()}
+                style={{ marginBottom: 12 }}
               >
-                {approveHookMutation.isPending && <Loader2 size={13} className="animate-spin" />}
-                Approve hook
-                <ChevronRight size={13} />
+                {generateHooksMutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                Generate more hooks
               </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                {hookOptions.length === 0 && operationRunning ? (
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                    Hook examples are being generated. You can leave this page and come back to choose one.
+                  </p>
+                ) : hookOptions.length === 0 ? (
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                    No hook examples yet. Generate hooks after selecting an angle.
+                  </p>
+                ) : hookOptions.map((hook, index) => (
+                  <HookCard
+                    key={`${hook}-${index}`}
+                    hook={hook}
+                    selected={selectedHook === hook || hookDraft === hook}
+                    onSelect={() => {
+                      setSelectedHook(hook);
+                      setHookDraft(hook);
+                      setHookEditMode(false);
+                    }}
+                  />
+                ))}
+              </div>
+              {hookDraft && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: "12px 14px",
+                    border: "0.5px solid var(--color-border-tertiary)",
+                    borderRadius: "var(--border-radius-md)",
+                    background: "var(--color-background-secondary)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: hookEditMode ? 8 : 0 }}>
+                    <div>
+                      <p style={{ fontSize: 12, fontWeight: 500 }}>Selected hook</p>
+                      <p style={{ fontSize: 11, color: hookWords > 100 ? "var(--color-danger)" : "var(--color-text-tertiary)", marginTop: 3 }}>
+                        {hookWords}/100 words
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setHookEditMode((value) => !value)}
+                      disabled={operationRunning || approveHookMutation.isPending}
+                      style={{ padding: "5px 9px", fontSize: 11 }}
+                    >
+                      <Edit3 size={12} /> {hookEditMode ? "Done editing" : "Edit"}
+                    </button>
+                  </div>
+                  {hookEditMode ? (
+                    <textarea
+                      className="input"
+                      rows={7}
+                      value={hookDraft}
+                      onChange={(event) => setHookDraft(event.target.value)}
+                      style={{ resize: "vertical", background: "#fff", fontFamily: "var(--font-sans)" }}
+                      disabled={operationRunning}
+                    />
+                  ) : (
+                    <p style={{ fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.55 }}>{hookDraft}</p>
+                  )}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={!hookDraft.trim() || hookWords > 100 || approveHookMutation.isPending || operationRunning}
+                  onClick={() => approveHookMutation.mutate()}
+                >
+                  {approveHookMutation.isPending && <Loader2 size={13} className="animate-spin" />}
+                  Approve hook
+                  <ChevronRight size={13} />
+                </button>
+              </div>
             </ArtifactShell>
           )}
 
           {stage === "chapters" && (
             <ArtifactShell title="Build the chapter structure" kicker="Stage 3">
               <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
-                This is structure only. Use chat to reorder, sharpen, combine, or expand chapters before generating a script.
+                Edit the outline before approving. If you change the angle or hook later, this outline will be regenerated from that new choice.
               </p>
-              {(story.chapters_data ?? []).length === 0 && operationRunning ? (
+              {story.story_hook && (
+                <div className="stat-callout" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                  <span><strong>Selected hook:</strong> {story.story_hook}</span>
+                  <Link href={stagePath(storyId, "hook")} className="btn-secondary" style={{ textDecoration: "none", padding: "5px 9px", fontSize: 11 }}>
+                    Reselect
+                  </Link>
+                </div>
+              )}
+              {chaptersDraft.length === 0 && operationRunning ? (
                 <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
                   The chapter outline is being drafted. You can leave this page and come back to the result.
                 </p>
+              ) : chaptersEditMode ? (
+                <ChapterEditor chapters={chaptersDraft} onChange={setChaptersDraft} />
               ) : (
-                <ChapterList chapters={story.chapters_data ?? []} />
+                <ChapterList chapters={chaptersDraft} />
               )}
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
                 <button
                   type="button"
                   className="btn-secondary"
-                  disabled={!story.chapters_data?.length || approveChaptersMutation.isPending || readyForScript || operationRunning}
+                  disabled={!chaptersDraft.length || operationRunning || approveChaptersMutation.isPending}
+                  onClick={() => setChaptersEditMode((value) => !value)}
+                >
+                  <Edit3 size={13} /> {chaptersEditMode ? "Preview" : "Edit"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={!chaptersValid || approveChaptersMutation.isPending || operationRunning}
                   onClick={() => approveChaptersMutation.mutate()}
                 >
                   {approveChaptersMutation.isPending && <Loader2 size={13} className="animate-spin" />}
-                  {readyForScript ? "Chapters approved" : "Approve chapters"}
+                  {readyForScript && !chaptersDirty ? "Reapprove chapters" : "Approve chapters"}
                 </button>
                 <button
                   type="button"
                   className="btn-primary"
-                  disabled={!canGenerate || !readyForScript || generateMutation.isPending || operationRunning}
+                  disabled={!canGenerate || !readyForScript || planDirty || generateMutation.isPending || operationRunning}
                   onClick={() => generateMutation.mutate()}
                 >
                   {generateMutation.isPending && <Loader2 size={13} className="animate-spin" />}
@@ -603,6 +958,11 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                   <Sparkles size={13} />
                 </button>
               </div>
+              {planDirty && (
+                <p style={{ marginTop: 9, fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+                  Save the edited chapter outline before generating the script.
+                </p>
+              )}
             </ArtifactShell>
           )}
         </div>

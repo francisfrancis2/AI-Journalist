@@ -42,6 +42,7 @@ class IdeationOutput(BaseModel):
     decided_tone: str = "explanatory"
     target_duration_minutes: int = 10
     angles: list[IdeationAngleOutput] = Field(default_factory=list)
+    hook_options: list[str] = Field(default_factory=list)
     story_hook: Optional[str] = None
     chapters: list[IdeationChapterOutput] = Field(default_factory=list)
 
@@ -68,6 +69,7 @@ def normalise_target_duration(value: int | str | None) -> int:
 def compact_ideation_context(story: StoryORM) -> str:
     angles = story.angles_data or []
     chapters = story.chapters_data or []
+    hook_options = story.hook_options_data or []
     return "\n".join(
         [
             f"Topic: {story.topic}",
@@ -79,6 +81,8 @@ def compact_ideation_context(story: StoryORM) -> str:
             "Current angles:",
             str(angles)[:2500] if angles else "[]",
             f"Story hook: {story.story_hook or 'None yet'}",
+            "Current hook options:",
+            str(hook_options)[:2500] if hook_options else "[]",
             "Current chapters:",
             str(chapters)[:2500] if chapters else "[]",
         ]
@@ -114,12 +118,18 @@ def fallback_ideation_output(
         f"This episode follows {angle_base} through the decisions, incentives, and consequences "
         "that turn a familiar headline into a sharper documentary story."
     )
+    hook_options = [
+        story_hook,
+        f"What if {selected_angle or angle_base} is not a side story, but the clue that explains who wins next?",
+        f"The story begins with one visible shift in {angle_base}, then follows the hidden choices that made it inevitable.",
+    ]
     return IdeationOutput(
         assistant_message="I drafted a practical editorial starting point. We can push it in a sharper direction from here.",
         title=f"Story: {topic[:80]}",
         decided_tone="explanatory",
         target_duration_minutes=10,
         angles=angles if stage == IdeationStage.ANGLES else [],
+        hook_options=hook_options if stage == IdeationStage.HOOK else [],
         story_hook=story_hook if stage == IdeationStage.HOOK else None,
     )
 
@@ -162,8 +172,9 @@ class AnglesAndHooksAgent:
                 "They must differ by framing, not just wording. Each angle should be one sentence."
             ),
             IdeationStage.HOOK: (
-                "Active stage: story hook. Return one pitch-style synopsis under 100 words, "
-                "based on the selected angle. It should describe the main idea and hook, not the full script."
+                "Active stage: story hook. Return exactly 3 distinct pitch-style hook_options under 100 words each, "
+                "based on the selected angle. Also set story_hook to the strongest option. Each hook should describe "
+                "the main idea and tension, not the full script."
             ),
             IdeationStage.PROMPT: "Active stage: prompt. Help clarify the rough story idea.",
             IdeationStage.READY_FOR_SCRIPT: "Active stage: ready for script. Help verify the plan before scripting.",
@@ -215,4 +226,22 @@ class AnglesAndHooksAgent:
             words = output.story_hook.split()
             if len(words) > 100:
                 output.story_hook = " ".join(words[:100]).rstrip(",;:")
+        if stage == IdeationStage.HOOK:
+            cleaned_hooks: list[str] = []
+            for hook_option in output.hook_options:
+                hook_text = " ".join((hook_option or "").strip().split())
+                if not hook_text:
+                    continue
+                words = hook_text.split()
+                if len(words) > 100:
+                    hook_text = " ".join(words[:100]).rstrip(",;:")
+                if hook_text not in cleaned_hooks:
+                    cleaned_hooks.append(hook_text)
+            if output.story_hook:
+                story_hook = " ".join(output.story_hook.strip().split())
+                if story_hook and story_hook not in cleaned_hooks:
+                    cleaned_hooks.insert(0, story_hook)
+            output.hook_options = cleaned_hooks[:6]
+            if not output.story_hook and output.hook_options:
+                output.story_hook = output.hook_options[0]
         return output

@@ -117,6 +117,10 @@ class ApproveChaptersRequest(BaseModel):
     chapters: list[IdeationChapter] = Field(..., min_length=1)
 
 
+class IdeationGenerateRequest(BaseModel):
+    instruction: str | None = Field(None, max_length=1000)
+
+
 class IdeationSourceLink(BaseModel):
     title: str
     url: Optional[str] = None
@@ -365,6 +369,34 @@ async def _run_story_planning_agent(
     )
 
 
+def _merge_angle_options(existing: list | None, generated: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for angle in [*([item for item in (existing or []) if isinstance(item, dict)]), *generated]:
+        key = str(angle.get("angle") or "").strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(angle)
+    return merged[:8]
+
+
+def _merge_hook_options(existing: list | None, generated: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for hook in [
+        *[str(item) for item in (existing or []) if str(item).strip()],
+        *generated,
+    ]:
+        cleaned = " ".join(hook.strip().split())
+        key = cleaned.lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(cleaned)
+    return merged[:8]
+
+
 async def _run_ideation_operation(
     *,
     story_id: str,
@@ -412,6 +444,9 @@ async def _run_ideation_operation(
         if selected_angle is not None:
             values["selected_angle"] = selected_angle.strip()
             values["ideation_stage"] = IdeationStage.HOOK.value
+            values["story_hook"] = None
+            values["hook_options_data"] = []
+            values["chapters_data"] = None
         if approved_hook is not None:
             values["story_hook"] = approved_hook.strip()
             values["ideation_stage"] = IdeationStage.CHAPTERS.value
@@ -433,10 +468,26 @@ async def _run_ideation_operation(
                 merged_sources.append(source)
             values["ideation_research_data"] = merged_sources
         if stage == IdeationStage.ANGLES and output.angles:
-            values["angles_data"] = [angle.model_dump(mode="json") for angle in output.angles]
+            generated_angles = [angle.model_dump(mode="json") for angle in output.angles]
+            values["angles_data"] = (
+                _merge_angle_options(story.angles_data, generated_angles)
+                if operation_type == "generate_angles"
+                else generated_angles
+            )
             values["selected_angle"] = None
+            values["story_hook"] = None
+            values["hook_options_data"] = []
+            values["chapters_data"] = None
+            values["ideation_stage"] = IdeationStage.ANGLES.value
         elif stage == IdeationStage.HOOK and output.story_hook:
+            hook_options = output.hook_options or [output.story_hook]
+            values["hook_options_data"] = (
+                _merge_hook_options(story.hook_options_data, hook_options)
+                if operation_type == "generate_hooks"
+                else _merge_hook_options([], hook_options)
+            )
             values["story_hook"] = output.story_hook
+            values["ideation_stage"] = IdeationStage.HOOK.value
         elif stage == IdeationStage.CHAPTERS and output.chapters:
             values["chapters_data"] = [chapter.model_dump(mode="json") for chapter in output.chapters]
 
@@ -1521,6 +1572,106 @@ async def chat_with_ideation_story(
     )
 
 
+@router.post("/{story_id}/ideation/generate-angles", response_model=IdeationChatResponse)
+async def generate_more_ideation_angles(
+    story_id: uuid.UUID,
+    payload: IdeationGenerateRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> IdeationChatResponse:
+    """Queue additional angle options and move the workspace back to angle selection."""
+    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user, include_owner=True)
+    if story.status != StoryStatus.IDEATING:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only ideating stories can generate angles.")
+    if (story.ideation_operation_data or {}).get("status") == "running":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An ideation request is already running.")
+    instruction = (payload.instruction or "").strip()
+    user_message = instruction or "Generate three additional producer-selectable story angles that differ from the current options."
+    await db.execute(
+        update(StoryORM)
+        .where(StoryORM.id == story_id)
+        .values(
+            selected_angle=None,
+            story_hook=None,
+            hook_options_data=[],
+            chapters_data=None,
+            ideation_stage=IdeationStage.ANGLES.value,
+            ideation_chat_data=_append_pending_ideation_message(
+                story.ideation_chat_data,
+                user_message="Generate more angle options.",
+            ),
+            ideation_operation_data=_ideation_operation(
+                "generate_angles",
+                "Generating more angle options.",
+            ),
+            error_message=None,
+        )
+    )
+    await db.commit()
+    await db.refresh(story)
+    background_tasks.add_task(
+        _run_ideation_operation,
+        story_id=str(story_id),
+        user_message=user_message,
+        stage_value=IdeationStage.ANGLES.value,
+        operation_type="generate_angles",
+        fetch_research=_should_fetch_fresh_research(user_message),
+    )
+    return IdeationChatResponse(story=StoryRead.model_validate(story), content="Generating more angle options.")
+
+
+@router.post("/{story_id}/ideation/generate-hooks", response_model=IdeationChatResponse)
+async def generate_more_ideation_hooks(
+    story_id: uuid.UUID,
+    payload: IdeationGenerateRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> IdeationChatResponse:
+    """Queue additional hook options for the current selected angle."""
+    story = await _get_story_for_user(db, story_id=story_id, current_user=current_user, include_owner=True)
+    if story.status != StoryStatus.IDEATING:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only ideating stories can generate hooks.")
+    if (story.ideation_operation_data or {}).get("status") == "running":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An ideation request is already running.")
+    if not story.selected_angle:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Select an angle before generating hooks.")
+    instruction = (payload.instruction or "").strip()
+    user_message = instruction or (
+        "Generate three additional story hook options under 100 words each for the selected angle. "
+        "Make them distinct in tension and opening promise."
+    )
+    await db.execute(
+        update(StoryORM)
+        .where(StoryORM.id == story_id)
+        .values(
+            chapters_data=None,
+            ideation_stage=IdeationStage.HOOK.value,
+            ideation_chat_data=_append_pending_ideation_message(
+                story.ideation_chat_data,
+                user_message="Generate more hook options.",
+            ),
+            ideation_operation_data=_ideation_operation(
+                "generate_hooks",
+                "Generating more hook options.",
+            ),
+            error_message=None,
+        )
+    )
+    await db.commit()
+    await db.refresh(story)
+    background_tasks.add_task(
+        _run_ideation_operation,
+        story_id=str(story_id),
+        user_message=user_message,
+        stage_value=IdeationStage.HOOK.value,
+        operation_type="generate_hooks",
+        fetch_research=_should_fetch_fresh_research(user_message),
+    )
+    return IdeationChatResponse(story=StoryRead.model_validate(story), content="Generating more hook options.")
+
+
 @router.post("/{story_id}/ideation/approve-angle", response_model=IdeationChatResponse)
 async def approve_ideation_angle(
     story_id: uuid.UUID,
@@ -1543,6 +1694,8 @@ async def approve_ideation_angle(
         .values(
             selected_angle=angle,
             story_hook=None,
+            hook_options_data=[],
+            chapters_data=None,
             ideation_stage=IdeationStage.HOOK.value,
             ideation_chat_data=_append_pending_ideation_message(
                 story.ideation_chat_data,

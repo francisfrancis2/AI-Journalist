@@ -35,6 +35,9 @@ type LinkExportNotice = {
   text: string;
 };
 
+type ResearchCitation = ResearchSession["citations"][number];
+type ResearchTurn = ResearchSession["turns"][number];
+
 function formatResearchDuration(totalSeconds: number): string {
   const safeSeconds = Math.max(0, Math.round(totalSeconds));
   const minutes = Math.floor(safeSeconds / 60);
@@ -177,17 +180,155 @@ function TurnStatusLabel({ status }: { status: ResearchSession["turns"][number][
   return <span style={{ color: "var(--color-success)" }}>Completed</span>;
 }
 
-function TurnResearchOutput({
-  turns,
-  fallbackReportMarkdown = "",
-  fallbackCitations = [],
-}: {
-  turns: ResearchSession["turns"];
-  fallbackReportMarkdown?: string;
-  fallbackCitations?: ResearchSession["citations"];
-}) {
-  if (turns.length === 0) return null;
+function dedupeCitations(citations: ResearchCitation[]): ResearchCitation[] {
+  const seen = new Set<string>();
+  return citations.filter((citation) => {
+    const key = (citation.url || citation.title).trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
+function collectSessionCitations(session: ResearchSession): ResearchCitation[] {
+  return dedupeCitations([
+    ...session.citations,
+    ...session.turns.flatMap((turn) => turn.citations),
+  ]);
+}
+
+function reportForTurn(
+  turn: ResearchTurn,
+  index: number,
+  turns: ResearchTurn[],
+  fallbackReportMarkdown: string
+): string {
+  if (turn.report_markdown.trim()) return turn.report_markdown;
+
+  const isLatestTurn = index === turns.length - 1;
+  const fallback = fallbackReportMarkdown.trim();
+  if (isLatestTurn && fallback && turn.status !== "running") {
+    return fallbackReportMarkdown;
+  }
+
+  return "";
+}
+
+function ResearchReportThread({ session }: { session: ResearchSession }) {
+  const hasAnyReport = Boolean(session.report_markdown.trim()) || session.turns.some((turn) => turn.report_markdown.trim());
+  if (session.turns.length === 0 && !hasAnyReport) return null;
+
+  return (
+    <section
+      style={{
+        border: "0.5px solid var(--color-border-tertiary)",
+        borderRadius: 10,
+        background: "var(--color-background-primary)",
+        maxHeight: "min(62vh, 720px)",
+        overflowY: "auto",
+      }}
+    >
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 1,
+          padding: "14px 18px 12px",
+          borderBottom: "0.5px solid var(--color-border-tertiary)",
+          background: "var(--color-background-primary)",
+        }}
+      >
+        <p style={{ fontSize: 12, fontWeight: 500 }}>Report</p>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 18, padding: "18px 18px 20px" }}>
+        {session.turns.map((turn, index) => {
+          const turnReportMarkdown = reportForTurn(turn, index, session.turns, session.report_markdown);
+          const hasTurnReport = Boolean(turnReportMarkdown.trim());
+          return (
+            <article
+              key={`${turn.created_at}-${index}`}
+              style={{ display: "flex", flexDirection: "column", gap: 10 }}
+            >
+              <div style={{ alignSelf: "flex-end", maxWidth: "min(82%, 720px)" }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: 0 }}>
+                    Query {index + 1}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                    <TurnStatusLabel status={turn.status} />
+                  </span>
+                  {turn.completed_at && (
+                    <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                      {formatDistanceToNow(new Date(turn.completed_at), { addSuffix: true })}
+                    </span>
+                  )}
+                  {turn.web_search_requests > 0 && (
+                    <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                      {turn.web_search_requests} web {turn.web_search_requests === 1 ? "search" : "searches"}
+                    </span>
+                  )}
+                </div>
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "var(--color-text-primary)",
+                    lineHeight: 1.55,
+                    whiteSpace: "pre-wrap",
+                    background: "var(--color-background-secondary)",
+                    border: "0.5px solid var(--color-border-tertiary)",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                  }}
+                >
+                  {turn.prompt}
+                </p>
+                {turn.error_message && (
+                  <p style={{ fontSize: 12, color: "var(--color-danger)", marginTop: 6 }}>
+                    {turn.error_message}
+                  </p>
+                )}
+              </div>
+
+              {hasTurnReport ? (
+                <div
+                  style={{
+                    alignSelf: "flex-start",
+                    width: "100%",
+                    background: "#fff",
+                    border: "0.5px solid var(--color-border-tertiary)",
+                    borderRadius: 8,
+                    padding: "16px 18px",
+                  }}
+                >
+                  <ReportMarkdown markdown={turnReportMarkdown} />
+                </div>
+              ) : turn.status === "running" ? (
+                <div
+                  style={{
+                    alignSelf: "flex-start",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    color: "var(--color-text-secondary)",
+                    fontSize: 12,
+                    background: "#fff",
+                    border: "0.5px solid var(--color-border-tertiary)",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                  }}
+                >
+                  <Loader2 size={13} className="animate-spin" /> Research update running
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ResearchLinksList({ citations }: { citations: ResearchCitation[] }) {
   return (
     <section
       style={{
@@ -197,113 +338,42 @@ function TurnResearchOutput({
         background: "var(--color-background-primary)",
       }}
     >
-      <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Output by query</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {turns.map((turn, index) => {
-          const canUseLegacyFallback = turns.length === 1 && index === 0;
-          const turnReportMarkdown = turn.report_markdown?.trim()
-            ? turn.report_markdown
-            : canUseLegacyFallback
-              ? fallbackReportMarkdown
-              : "";
-          const turnCitations = turn.citations.length > 0
-            ? turn.citations
-            : canUseLegacyFallback
-              ? fallbackCitations
-              : [];
-          const hasTurnReport = Boolean(turnReportMarkdown.trim());
-          const hasTurnCitations = turnCitations.length > 0;
-          return (
-            <article
-              key={`${turn.created_at}-${index}`}
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", marginBottom: 10 }}>
+        <p style={{ fontSize: 12, fontWeight: 500 }}>Research links</p>
+        <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+          {citations.length} {citations.length === 1 ? "link" : "links"}
+        </p>
+      </div>
+      {citations.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 320, overflowY: "auto" }}>
+          {citations.map((citation, index) => (
+            <a
+              key={`${citation.url}-${index}`}
+              href={citation.url}
+              target="_blank"
+              rel="noopener noreferrer"
               style={{
-                border: "0.5px solid var(--color-border-tertiary)",
-                borderRadius: 8,
-                overflow: "hidden",
-                background: "var(--color-background-secondary)",
+                fontSize: 12,
+                color: "var(--color-action)",
+                display: "flex",
+                gap: 6,
+                alignItems: "baseline",
+                overflowWrap: "anywhere",
+                textDecoration: "none",
+                lineHeight: 1.5,
               }}
             >
-              <div style={{ padding: "12px 14px", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", marginBottom: 6 }}>
-                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Query {index + 1}
-                  </p>
-                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    <TurnStatusLabel status={turn.status} />
-                    {turn.completed_at && <span>{formatDistanceToNow(new Date(turn.completed_at), { addSuffix: true })}</span>}
-                    {turn.web_search_requests > 0 && (
-                      <span>{turn.web_search_requests} web {turn.web_search_requests === 1 ? "search" : "searches"}</span>
-                    )}
-                  </p>
-                </div>
-                <p style={{ fontSize: 13, color: "var(--color-text-primary)", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
-                  {turn.prompt}
-                </p>
-                {turn.error_message && (
-                  <p style={{ fontSize: 12, color: "var(--color-danger)", marginTop: 8 }}>
-                    {turn.error_message}
-                  </p>
-                )}
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(180px, 260px)", gap: 0 }}>
-                <div
-                  style={{
-                    padding: "14px 16px",
-                    maxHeight: 320,
-                    overflowY: "auto",
-                    background: "#fff",
-                    borderRight: "0.5px solid var(--color-border-tertiary)",
-                  }}
-                >
-                  {hasTurnReport ? (
-                    <ReportMarkdown markdown={turnReportMarkdown} />
-                  ) : (
-                    <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-                      {turn.status === "running"
-                        ? "This query is still running. Its report output will appear here when complete."
-                        : "No separate report output was captured for this query."}
-                    </p>
-                  )}
-                </div>
-                <div style={{ padding: "14px 14px", maxHeight: 320, overflowY: "auto", background: "var(--color-background-primary)" }}>
-                  <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 9 }}>Links for this query</p>
-                  {hasTurnCitations ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                      {turnCitations.map((citation, citationIndex) => (
-                        <a
-                          key={`${citation.url}-${citationIndex}`}
-                          href={citation.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            fontSize: 12,
-                            color: "var(--color-action)",
-                            display: "flex",
-                            gap: 6,
-                            alignItems: "baseline",
-                            overflowWrap: "anywhere",
-                            textDecoration: "none",
-                            lineHeight: 1.45,
-                          }}
-                        >
-                          <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>{citationIndex + 1}.</span>
-                          <span style={{ textDecoration: "underline", flex: 1 }}>{citation.title}</span>
-                          <ExternalLink size={11} style={{ flexShrink: 0 }} />
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-                      Links will appear here when this query returns citations.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </article>
-          );
-        })}
-      </div>
+              <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>{index + 1}.</span>
+              <span style={{ textDecoration: "underline", flex: 1 }}>{citation.title}</span>
+              <ExternalLink size={11} style={{ flexShrink: 0 }} />
+            </a>
+          ))}
+        </div>
+      ) : (
+        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+          Links will appear here when research returns citations.
+        </p>
+      )}
     </section>
   );
 }
@@ -390,7 +460,7 @@ function ResearchPageInner() {
     },
     onSuccess: (session) => {
       setPromptText("");
-      setStatusNotice("Follow-up accepted. New findings will merge into the report and appear under Output by query when the update finishes.");
+      setStatusNotice("Follow-up accepted. New findings will appear in the report thread and links list when the update finishes.");
       queryClient.setQueryData(["research-session", session.id], session);
       queryClient.invalidateQueries({ queryKey: ["research-sessions"] });
     },
@@ -398,7 +468,7 @@ function ResearchPageInner() {
       if (err.message.includes("already running")) {
         setPromptText("");
         setError(null);
-        setStatusNotice("A research update is already in progress. The updated report will appear here, with its links grouped under Output by query when it finishes.");
+        setStatusNotice("A research update is already in progress. The next report entry and links will appear here when it finishes.");
         queryClient.invalidateQueries({ queryKey: ["research-session", activeSessionId] });
         queryClient.invalidateQueries({ queryKey: ["research-sessions"] });
         return;
@@ -809,25 +879,16 @@ function ActiveSessionView({
   const isRunning = session.status === "running";
   const isFailed = session.status === "failed";
   const hasReport = Boolean(session.report_markdown.trim());
-  const hasAnyTurnCitations = session.turns.some((turn) => turn.citations.length > 0);
-  const shouldShowUngroupedCitationsFallback =
-    session.citations.length > 0 && !hasAnyTurnCitations && session.turns.length !== 1;
+  const dedupedCitations = useMemo(() => collectSessionCitations(session), [session]);
   const citationExportSources = useMemo(() => {
-    const seen = new Set<string>();
-    return session.citations
-      .filter((citation) => {
-        const key = (citation.url || citation.title).trim().toLowerCase();
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
+    return dedupedCitations
       .map((citation) => ({
         title: citation.title,
         url: citation.url,
         type: "research citation",
         preview: citation.cited_text,
       }));
-  }, [session.citations]);
+  }, [dedupedCitations]);
 
   useEffect(() => {
     if (!linkExportNotice) return;
@@ -852,7 +913,7 @@ function ActiveSessionView({
           <p style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>{session.title}</p>
           <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
             {session.turns.length} {session.turns.length === 1 ? "prompt" : "prompts"} ·{" "}
-            {session.citations.length} {session.citations.length === 1 ? "citation" : "citations"} ·{" "}
+            {dedupedCitations.length} {dedupedCitations.length === 1 ? "citation" : "citations"} ·{" "}
             {session.web_search_requests} web searches
           </p>
         </div>
@@ -896,7 +957,7 @@ function ActiveSessionView({
           description={
             session.active_operation === "initial"
               ? "The first report will appear in this session when the background research finishes. You can switch tabs and come back."
-              : "The update is running in the background. New findings will merge into the report below and appear under Output by query when complete."
+              : "The update is running in the background. The next report entry and links will appear here when complete."
           }
         />
       )}
@@ -907,20 +968,8 @@ function ActiveSessionView({
         </p>
       )}
 
-      {hasReport ? (
-        <div
-          style={{
-            background: "var(--color-background-primary)",
-            border: "0.5px solid var(--color-border-tertiary)",
-            borderRadius: 10,
-            padding: "20px 24px",
-            maxHeight: "min(58vh, 640px)",
-            overflowY: "auto",
-          }}
-        >
-          <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 10 }}>Consolidated report</p>
-          <ReportMarkdown markdown={session.report_markdown} />
-        </div>
+      {hasReport || session.turns.length > 0 ? (
+        <ResearchReportThread session={session} />
       ) : !isRunning ? (
         <div
           style={{
@@ -937,11 +986,7 @@ function ActiveSessionView({
         </div>
       ) : null}
 
-      <TurnResearchOutput
-        turns={session.turns}
-        fallbackReportMarkdown={session.report_markdown}
-        fallbackCitations={session.citations}
-      />
+      <ResearchLinksList citations={dedupedCitations} />
 
       {(error || (isFailed && session.error_message)) && (
         <p role="alert" style={{ fontSize: 12, color: "var(--color-danger)" }}>
@@ -970,43 +1015,6 @@ function ActiveSessionView({
         </div>
       </form>
 
-      {shouldShowUngroupedCitationsFallback && (
-        <div
-          style={{
-            border: "0.5px solid var(--color-border-tertiary)",
-            borderRadius: 10,
-            padding: "16px 18px",
-            maxHeight: 320,
-            overflowY: "auto",
-          }}
-        >
-          <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 10 }}>Ungrouped links from older saved output</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {session.citations.map((citation, index) => (
-              <a
-                key={`${citation.url}-${index}`}
-                href={citation.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  fontSize: 12,
-                  color: "var(--color-action)",
-                  display: "flex",
-                  gap: 6,
-                  alignItems: "baseline",
-                  overflowWrap: "anywhere",
-                  textDecoration: "none",
-                  lineHeight: 1.5,
-                }}
-              >
-                <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>{index + 1}.</span>
-                <span style={{ textDecoration: "underline", flex: 1 }}>{citation.title}</span>
-                <ExternalLink size={11} style={{ flexShrink: 0 }} />
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
