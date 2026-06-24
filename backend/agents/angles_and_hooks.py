@@ -168,13 +168,17 @@ class AnglesAndHooksAgent:
 
         stage_rules = {
             IdeationStage.ANGLES: (
-                "Active stage: angles. Return 3-5 producer-selectable angles. "
-                "They must differ by framing, not just wording. Each angle should be one sentence."
+                "Active stage: angles. The only editable artifact is the visible angle list. "
+                "When the user asks to add, remove, reorder, or rewrite angles, return the final visible list of 3-8 "
+                "producer-selectable angles. They must differ by framing, not just wording, and each angle should be one sentence. "
+                "If the user asks only for research or advice, leave angles empty and answer in assistant_message."
             ),
             IdeationStage.HOOK: (
-                "Active stage: story hook. Return exactly 3 distinct pitch-style hook_options under 100 words each, "
-                "based on the selected angle. Also set story_hook to the strongest option. Each hook should describe "
-                "the main idea and tension, not the full script."
+                "Active stage: story hook. The only editable artifact is the visible hook text and hook options. "
+                "When the user asks to add, remove, reorder, or rewrite hooks, return up to 6 distinct pitch-style "
+                "hook_options under 100 words each and set story_hook to the strongest visible hook. Each hook should "
+                "describe the main idea and tension, not the full script. If the user asks only for research or advice, "
+                "leave hook_options empty, leave story_hook unset, and answer in assistant_message."
             ),
             IdeationStage.PROMPT: "Active stage: prompt. Help clarify the rough story idea.",
             IdeationStage.READY_FOR_SCRIPT: "Active stage: ready for script. Help verify the plan before scripting.",
@@ -203,6 +207,7 @@ class AnglesAndHooksAgent:
             + f"\n\n=== FRESH RESEARCH CONTEXT ===\n{fresh_research_context or 'No fresh research was fetched for this turn.'}\n\n"
             f"{reference_context}\n\n"
             f"User request: {user_message}\n\n"
+            "Do not change application UI text, navigation, page layout, hidden fields, credentials, or anything outside the active artifact. "
             "Also decide the most fitting documentary tone: investigative, explanatory, or narrative. "
             "Decide target duration as 5, 10, or 15 minutes based on complexity."
         )

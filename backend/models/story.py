@@ -281,6 +281,11 @@ class FinalScript(BaseModel):
     total_word_count: int
     estimated_duration_minutes: float
     sources: list[dict[str, Any]]
+    # Consolidated research dossier accompanying the final script — produced by
+    # the Scriptwriter's gap-driven research loop (Markdown report + citations).
+    research_report: str = ""
+    research_citations: list[dict[str, Any]] = Field(default_factory=list)
+    research_iterations: int = 1
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -14,10 +14,10 @@ Routing logic:
 import structlog
 from langgraph.graph import END, StateGraph
 
+from backend.agents._research_enrichment import get_research_agent
 from backend.agents.angles_and_hooks import AnglesAndHooksAgent
 from backend.agents.chapter_writer import ChapterWriterAgent
 from backend.agents.chief_editor_evaluator import ChiefEditorEvaluatorAgent
-from backend.agents.research import ResearchAgent
 from backend.agents.scriptwriter import ScriptwriterAgent
 from backend.config import settings
 from backend.graph.state import JournalistState
@@ -25,7 +25,9 @@ from backend.graph.state import JournalistState
 log = structlog.get_logger(__name__)
 
 # ── Instantiate agents (shared across graph invocations) ──────────────────────
-_research_agent = ResearchAgent()
+# The Research Agent is shared with the writer-side enrichment helper so the
+# pipeline research node and Chapter/Script enrichment reuse one instance.
+_research_agent = get_research_agent()
 _angles_and_hooks_agent = AnglesAndHooksAgent()
 _chapter_writer_agent = ChapterWriterAgent()
 _scriptwriter = ScriptwriterAgent()

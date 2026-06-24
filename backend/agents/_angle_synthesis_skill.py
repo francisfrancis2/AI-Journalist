@@ -267,6 +267,16 @@ class AngleSynthesisSkill:
                 + "\n=== END TEAM VOICE PROFILE ===\n"
             )
 
+        deep_research_section = ""
+        if package.deep_research_report:
+            deep_research_section = (
+                "\n=== DEEP RESEARCH BRIEF (Anthropic web search) ===\n"
+                "Synthesized narrative across the gathered evidence. Mine it for the "
+                "sharpest numbers, protagonists, and counterintuitive findings, but the "
+                "RESEARCH SOURCES below remain the citable source of truth.\n"
+                f"{package.deep_research_report[:6000]}\n"
+            )
+
         prompt = (
             f"Topic: {topic}\n"
             f"Target tone: {tone}\n"
@@ -278,7 +288,7 @@ class AngleSynthesisSkill:
             f"more context, protagonists, and visual evidence.\n"
             f"Total sources collected: {package.total_sources}\n"
             f"{gap_section}{focus_section}{inspiration_section}{corpus_section}"
-            f"{analyst_section}{voice_section}"
+            f"{analyst_section}{voice_section}{deep_research_section}"
             f"\n=== RESEARCH SOURCES ===\n{_build_source_digest(package)}"
         )
 

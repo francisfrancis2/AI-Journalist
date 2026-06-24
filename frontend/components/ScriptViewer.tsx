@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp, Download } from "lucide-react";
 import type { FinalScript, ScriptSection } from "@/lib/api";
 import { downloadScriptPdf } from "@/lib/script-export";
+import { ReportMarkdown } from "@/components/ReportMarkdown";
 
 interface ScriptViewerProps {
   script: FinalScript;
@@ -21,6 +22,7 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
     setOpen((p) => (p.includes(i) ? p.filter((x) => x !== i) : [...p, i]));
 
   const hasSources = script.sources.length > 0;
+  const hasResearch = Boolean(script.research_report && script.research_report.trim());
 
   return (
     <div>
@@ -45,6 +47,16 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
               <li style={{ padding: "5px 0", fontSize: 12, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
                 Closing
               </li>
+              {hasResearch && (
+                <li style={{ padding: "5px 0", fontSize: 12, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
+                  <a
+                    href="#research-appendix"
+                    style={{ color: "var(--color-action)", textDecoration: "none" }}
+                  >
+                    Research{script.research_iterations ? ` (${script.research_iterations}×)` : ""}
+                  </a>
+                </li>
+              )}
               {hasSources && (
                 <li style={{ padding: "5px 0", fontSize: 12, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
                   <a
@@ -105,6 +117,14 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
             <div className="section-rule"><span>Closing Statement</span></div>
             <p style={{ fontSize: 13, lineHeight: 1.7 }}>{script.closing_statement}</p>
           </div>
+
+          {/* Research Dossier */}
+          {hasResearch && (
+            <ResearchAppendix
+              report={script.research_report as string}
+              iterations={script.research_iterations}
+            />
+          )}
 
           {/* Sources Appendix */}
           {hasSources && <SourcesAppendix sources={script.sources} />}
@@ -177,6 +197,28 @@ function ActCard({
           <p style={{ fontSize: 13, lineHeight: 1.8 }}>{section.narration}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function ResearchAppendix({
+  report,
+  iterations,
+}: {
+  report: string;
+  iterations?: number;
+}) {
+  return (
+    <div id="research-appendix" className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
+      <div className="section-rule">
+        <span>
+          Appendix: Research Dossier
+          {iterations ? ` · ${iterations} research ${iterations === 1 ? "pass" : "passes"}` : ""}
+        </span>
+      </div>
+      <div style={{ marginTop: 4 }}>
+        <ReportMarkdown markdown={report} />
+      </div>
     </div>
   );
 }

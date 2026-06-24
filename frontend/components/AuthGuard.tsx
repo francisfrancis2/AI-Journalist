@@ -13,6 +13,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setReady(false);
+    // TEMP-FIGMA-CAPTURE: bypass auth + inject a real token so data pages can fetch.
+    const capToken = process.env.NEXT_PUBLIC_CAPTURE_TOKEN;
+    if (capToken) {
+      localStorage.setItem("ai_journalist_token", capToken);
+      const capUser = process.env.NEXT_PUBLIC_CAPTURE_USER;
+      if (capUser) localStorage.setItem("ai_journalist_user", capUser);
+      setReady(true);
+      return;
+    }
     if (PUBLIC_PATHS.includes(pathname)) {
       setReady(true);
       return;

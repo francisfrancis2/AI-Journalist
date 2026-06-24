@@ -16,9 +16,6 @@ import {
 } from "@/lib/story-status";
 
 type Tab = "script";
-
-const BENCHMARK_GRADE_HELP =
-  "Measures how closely the story matches the benchmark corpus in hook, structure, data density, human narrative, and closing pattern.";
 const TOP_RESEARCH_SOURCES_LIMIT = 10;
 
 type DisplaySource = {
@@ -302,11 +299,6 @@ export default function ResultsPage() {
                   {story.estimated_duration_minutes && (
                     <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
                       Duration <strong style={{ color: "var(--color-text-primary)" }}>{story.estimated_duration_minutes} min</strong>
-                    </span>
-                  )}
-                  {story.benchmark_data && (
-                    <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }} title={BENCHMARK_GRADE_HELP}>
-                      Benchmark <strong style={{ color: "var(--color-text-primary)" }}>{story.benchmark_data.grade}</strong>
                     </span>
                   )}
                 </div>

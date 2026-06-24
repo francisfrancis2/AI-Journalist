@@ -64,10 +64,27 @@ class ResearchPackage(BaseModel):
     sources: list[RawSource] = Field(default_factory=list)
     total_sources: int = 0
     research_duration_seconds: float = 0.0
+    # Anthropic deep-research narrative folded into the package (always-on when
+    # settings.enable_deep_research is True). Enrichment passes append to it.
+    deep_research_report: str = ""
+    deep_research_web_search_requests: int = 0
+    # How many research passes contributed to this package (initial = 1, each
+    # gap-driven enrichment pass increments).
+    research_iterations: int = 1
 
     def add_source(self, source: RawSource) -> None:
         self.sources.append(source)
         self.total_sources = len(self.sources)
+
+    def add_source_deduped(self, source: RawSource, seen_urls: set[str]) -> bool:
+        """Add a source unless its URL was already seen. Returns True if added."""
+        url = getattr(source, "url", None)
+        if url:
+            if url in seen_urls:
+                return False
+            seen_urls.add(url)
+        self.add_source(source)
+        return True
 
     def top_sources(self, n: int = 10) -> list[RawSource]:
         return sorted(self.sources, key=lambda s: s.relevance_score, reverse=True)[:n]

@@ -16,8 +16,9 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, ValidationError
 
+from backend.agents._research_enrichment import enrich_if_gaps, fresh_research_digest
 from backend.config import settings
-from backend.models.research import AnalysisResult, StoryAct, StorylineProposal
+from backend.models.research import AnalysisResult, ResearchPackage, StoryAct, StorylineProposal
 from backend.services.duration_targets import (
     DurationTarget,
     act_timings_for_count,
@@ -355,6 +356,7 @@ class ChapterStructureSkill:
         ideation_directive = ""
         story_hook = state.get("story_hook")
         chapters_data = state.get("chapters_data")
+        plan_priority = state.get("script_plan_priority")
         if story_hook or chapters_data:
             chapter_lines = ""
             if isinstance(chapters_data, list):
@@ -377,10 +379,13 @@ class ChapterStructureSkill:
                 chapter_lines = "\n".join(formatted_chapters)
             ideation_directive = (
                 "\n=== APPROVED IDEATION PLAN ===\n"
+                f"{plan_priority + chr(10) if plan_priority else ''}"
                 f"Approved synopsis / hook: {story_hook or 'Not provided'}\n"
                 f"Approved chapter outline:\n{chapter_lines or 'Not provided'}\n"
-                "Use this plan as the producer-approved structure. You may adapt chapter labels "
-                "into duration-fit acts, but preserve the intended order, central hook, and major beats.\n"
+                "Use this plan as the producer-approved structure. Roughly 80% of the structure should come from "
+                "the selected angle, hook, chapter order, and major beats above. You may adapt chapter labels into "
+                "duration-fit acts and use additional research to support or sharpen the plan, but do not let new "
+                "research turn this into a different story.\n"
             )
 
         reference_pack = get_reference_pack(
@@ -426,6 +431,37 @@ class ChapterStructureSkill:
                 + load_prompt("team_voice_profile")
                 + "\n=== END TEAM VOICE PROFILE ===\n"
             )
+        # Gap-driven research enrichment: before drafting the act structure, let
+        # the Research Agent fill evidence gaps the approved plan exposes. New
+        # sources are merged into the package and surfaced to this prompt, and
+        # the enriched package flows downstream to the Scriptwriter.
+        package: ResearchPackage | None = state.get("research_package")
+        enrichment_section = ""
+        chapters_summary = ""
+        if isinstance(chapters_data, list):
+            chapters_summary = "; ".join(
+                str(c.get("title", "")) for c in chapters_data if isinstance(c, dict)
+            )
+        draft_context = (
+            f"Selected angle: {selected_angle or 'n/a'}\n"
+            f"Story hook: {story_hook or 'n/a'}\n"
+            f"Approved chapters: {chapters_summary or 'n/a'}\n"
+            f"Executive summary: {analysis.executive_summary}"
+        )
+        new_sources = await enrich_if_gaps(
+            state,
+            package=package,
+            draft_context=draft_context,
+            label="chapter_writer",
+        )
+        if new_sources:
+            enrichment_section = (
+                "\n=== FRESH GAP-FILLING RESEARCH ===\n"
+                "These sources were just gathered to close evidence gaps. Weave their "
+                "facts into the act structure where they strengthen the story.\n"
+                f"{fresh_research_digest(new_sources)}\n"
+            )
+
         timing_plan = act_timings_for_count(duration_target)
         duration_contract = (
             f"{duration_prompt_block(duration_target, role=self.duration_role_name)}"
@@ -446,7 +482,7 @@ class ChapterStructureSkill:
             f"Target duration: {target_duration_minutes} minutes\n"
             f"Target audience: {target_audience or 'General documentary audience'}\n"
             f"{duration_contract}"
-            f"{angle_directive}{ideation_directive}{reference_section}{voice_section}\n"
+            f"{angle_directive}{ideation_directive}{reference_section}{voice_section}{enrichment_section}\n"
             f"=== EDITORIAL ANALYSIS ===\n"
             f"Executive Summary: {analysis.executive_summary}\n\n"
             f"Key Findings:\n"
@@ -541,8 +577,13 @@ class ChapterStructureSkill:
             duration_s=selected.total_estimated_duration_seconds,
         )
 
-        return {
+        result_updates = {
             "storyline_proposals": proposals,
             "selected_storyline": selected,
             "reference_packs": merge_reference_pack(state, reference_pack),
         }
+        # Propagate the (possibly enriched) research package downstream so the
+        # Scriptwriter writes from the merged evidence set.
+        if package is not None:
+            result_updates["research_package"] = package
+        return result_updates

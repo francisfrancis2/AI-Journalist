@@ -41,6 +41,18 @@ class Settings(BaseSettings):
     anthropic_search_max_queries: int = 4          # caps how many planned queries we send
     anthropic_deep_research_max_uses: int = 12     # caps Research Workspace deep research searches
 
+    # ── Unified Research Agent (deep research always-on + writer enrichment) ───
+    # When True, ResearchAgent.run always folds an Anthropic deep-research report
+    # into the ResearchPackage (Research Tab + pipeline research node). Set False
+    # to fall back to multi-source-only research if cost becomes a concern.
+    enable_deep_research: bool = True
+    # When True, Chapter Writer and Scriptwriter may call ResearchAgent for
+    # additional gap-driven research before/while writing. Set False to write
+    # only from the original research package.
+    enable_writer_research_enrichment: bool = True
+    research_enrichment_max_queries: int = 4              # caps queries per enrichment pass
+    anthropic_deep_research_enrichment_max_uses: int = 6  # lighter deep-research cap for enrichment
+
     # ── Team voice profile ────────────────────────────────────────────────────
     # When True, Angles & Hooks / Chapter Writer / Scriptwriter / Chief Editor rewrite
     # prepend backend/prompts/team_voice_profile.md to their LLM prompts so the

@@ -31,13 +31,25 @@ from backend.models.research_session import (
 )
 from backend.models.user import UserORM
 from backend.tools.anthropic_deep_research import (
-    AnthropicDeepResearchTool,
     DeepResearchCitation,
     _merge_citations,
 )
 
 log = structlog.get_logger(__name__)
 router = APIRouter()
+
+# Lazily-instantiated shared Research Agent — the unified research engine
+# (all tools + always-on Anthropic deep research) that backs the Research Tab.
+_research_agent = None
+
+
+def _get_research_agent():
+    global _research_agent
+    if _research_agent is None:
+        from backend.agents.research import ResearchAgent
+
+        _research_agent = ResearchAgent()
+    return _research_agent
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -189,7 +201,7 @@ async def _run_initial_research_session(session_id: uuid.UUID) -> None:
             return
 
     try:
-        result = await AnthropicDeepResearchTool().run_standalone(prompt=prompt)
+        result = await _get_research_agent().run_report(prompt=prompt)
     except Exception as exc:
         log.error("research_session.initial.failed", session_id=str(session_id), error=str(exc))
         async with AsyncSessionLocal() as db:
@@ -250,10 +262,10 @@ async def _run_research_session_turn(session_id: uuid.UUID) -> None:
         existing_citations = _orm_to_citations(session.citations)
 
     try:
-        result = await AnthropicDeepResearchTool().resynthesize(
+        result = await _get_research_agent().run_report(
+            prompt=prompt,
             existing_report=existing_report,
             existing_citations=existing_citations,
-            prompt=prompt,
         )
     except Exception as exc:
         log.error("research_session.turn.failed", session_id=str(session_id), error=str(exc))

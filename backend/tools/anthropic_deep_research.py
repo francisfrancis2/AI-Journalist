@@ -116,7 +116,7 @@ class AnthropicDeepResearchTool:
         self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
         self._model = settings.claude_opus_model
 
-    async def _call(self, instructions: str) -> DeepResearchResult:
+    async def _call(self, instructions: str, *, max_uses: int | None = None) -> DeepResearchResult:
         response = await self._client.messages.create(
             model=self._model,
             max_tokens=settings.claude_max_tokens,
@@ -124,7 +124,7 @@ class AnthropicDeepResearchTool:
                 {
                     "type": "web_search_20250305",
                     "name": "web_search",
-                    "max_uses": settings.anthropic_deep_research_max_uses,
+                    "max_uses": max_uses or settings.anthropic_deep_research_max_uses,
                 }
             ],
             messages=[{"role": "user", "content": instructions}],
@@ -139,7 +139,7 @@ class AnthropicDeepResearchTool:
             web_search_requests=_usage_web_search_requests(response),
         )
 
-    async def run_standalone(self, *, prompt: str) -> DeepResearchResult:
+    async def run_standalone(self, *, prompt: str, max_uses: int | None = None) -> DeepResearchResult:
         """Generate the first consolidated research report from a free-form prompt."""
         instructions = f"""You are running deep research for a documentary research hub.
 
@@ -163,7 +163,7 @@ Rules:
 - Separate confirmed findings from leads that still need verification.
 - Be concrete: prefer numbers, dates, named sources over generalities.
 - Do not invent sources or citations."""
-        return await self._call(instructions)
+        return await self._call(instructions, max_uses=max_uses)
 
     async def resynthesize(
         self,

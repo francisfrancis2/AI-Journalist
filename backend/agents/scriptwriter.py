@@ -16,9 +16,11 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from backend.agents._research_enrichment import enrich_if_gaps
 from backend.config import settings
 from backend.models.research import AnalysisResult, StorylineProposal
 from backend.models.story import FinalScript, ScriptSection
+from backend.services.research_report import ResearchReportSynthesizer
 from backend.services.duration_targets import (
     WORDS_PER_MINUTE,
     duration_prompt_block,
@@ -65,6 +67,7 @@ class ScriptwriterAgent:
             max_tokens=4096,
         )
         self._structured_llm = _llm.with_structured_output(ActOutput)
+        self._synthesizer = ResearchReportSynthesizer()
 
     @staticmethod
     def _decide_treatment(
@@ -153,6 +156,7 @@ class ScriptwriterAgent:
         voice_section: str = "",
         duration_contract: str = "",
         treatment_directive: str = "",
+        plan_priority: str = "",
     ) -> ScriptSection:
         """Write narration for a single act."""
         relevant_quotes = "\n".join(
@@ -203,6 +207,14 @@ class ScriptwriterAgent:
                 "This is the frame the script must execute on. Every sentence of narration "
                 "in this act should advance or reinforce this angle.\n\n"
             )
+        plan_priority_directive = ""
+        if plan_priority:
+            plan_priority_directive = (
+                "=== APPROVED PLAN PRIORITY ===\n"
+                f"{plan_priority}\n"
+                "For this act, base the structure, emphasis, and transitions primarily on the approved storyline "
+                "and act plan. Use research to verify and enrich claims, not to redirect the story into a new premise.\n\n"
+            )
 
         prompt = (
             f"Documentary: {storyline.title}\n"
@@ -212,6 +224,7 @@ class ScriptwriterAgent:
             f"{duration_contract}"
             f"{treatment_directive}"
             f"{angle_directive}"
+            f"{plan_priority_directive}"
             f"{revision_goals}"
             f"=== FULL STORY ARC ===\n{act_arc}\n\n"
             f"=== CONTINUITY CONTEXT ===\n{previous_context}{next_context}\n"
@@ -275,16 +288,21 @@ class ScriptwriterAgent:
             acts=len(storyline.acts),
             treatment=treatment["story_type"],
         )
-        source_lookup = {
-            src.source_id: {
-                "title": src.title,
-                "url": src.url,
-                "credibility": src.credibility.value,
-                "type": src.source_type.value,
-                "excerpt": src.content[:500],
+        package = state["research_package"]
+
+        def _build_source_lookup() -> dict[str, dict]:
+            return {
+                src.source_id: {
+                    "title": src.title,
+                    "url": src.url,
+                    "credibility": src.credibility.value,
+                    "type": src.source_type.value,
+                    "excerpt": src.content[:500],
+                }
+                for src in package.top_sources(20)
             }
-            for src in state["research_package"].top_sources(20)
-        }
+
+        source_lookup = _build_source_lookup()
         act_plans = [
             {
                 "act_number": act.act_number,
@@ -312,6 +330,7 @@ class ScriptwriterAgent:
         )
 
         selected_angle: str | None = state.get("selected_angle")
+        plan_priority: str = str(state.get("script_plan_priority") or "")
         treatment_directive = (
             "=== SCRIPTWRITER TREATMENT DECISION ===\n"
             f"Story type: {treatment['story_type']}\n"
@@ -368,28 +387,52 @@ class ScriptwriterAgent:
                 + "\n=== END TEAM VOICE PROFILE ===\n\n"
             )
 
-        # Write acts in parallel while giving each one the full arc for continuity.
-        act_tasks = [
-            self._write_act(
-                act_data=act_data,
-                storyline=storyline,
-                analysis=analysis,
-                source_lookup=source_lookup,
-                topic=topic,
-                target_audience=target_audience,
-                rewrite_recommendations=rewrite_recommendations,
-                act_arc=act_arc,
-                previous_act=act_plans[index - 1] if index > 0 else None,
-                next_act=act_plans[index + 1] if index + 1 < len(act_plans) else None,
-                selected_angle=selected_angle,
-                library_reference=library_reference,
-                voice_section=voice_section,
-                duration_contract=duration_contract,
-                treatment_directive=treatment_directive,
+        # Write all acts in parallel, giving each the full arc for continuity.
+        async def _write_acts(lookup: dict[str, dict]) -> list[ScriptSection]:
+            act_tasks = [
+                self._write_act(
+                    act_data=act_data,
+                    storyline=storyline,
+                    analysis=analysis,
+                    source_lookup=lookup,
+                    topic=topic,
+                    target_audience=target_audience,
+                    rewrite_recommendations=rewrite_recommendations,
+                    act_arc=act_arc,
+                    previous_act=act_plans[index - 1] if index > 0 else None,
+                    next_act=act_plans[index + 1] if index + 1 < len(act_plans) else None,
+                    selected_angle=selected_angle,
+                    library_reference=library_reference,
+                    voice_section=voice_section,
+                    duration_contract=duration_contract,
+                    treatment_directive=treatment_directive,
+                    plan_priority=plan_priority,
+                )
+                for index, act_data in enumerate(act_plans)
+            ]
+            return list(await asyncio.gather(*act_tasks))
+
+        sections: list[ScriptSection] = await _write_acts(source_lookup)
+
+        # Iterative gap-driven deepening: after each draft, the Research Agent
+        # checks the script for missing evidence and, if any, runs another
+        # targeted research pass; the affected acts are then rewritten against
+        # the enriched evidence. Bounded by settings.max_research_iterations.
+        for _ in range(settings.max_research_iterations):
+            draft_context = "\n\n".join(
+                f"Act {section.section_number} — {section.title}\n{section.narration[:600]}"
+                for section in sections
             )
-            for index, act_data in enumerate(act_plans)
-        ]
-        sections: list[ScriptSection] = list(await asyncio.gather(*act_tasks))
+            new_sources = await enrich_if_gaps(
+                state,
+                package=package,
+                draft_context=draft_context,
+                label="scriptwriter",
+            )
+            if not new_sources:
+                break
+            source_lookup = _build_source_lookup()
+            sections = await _write_acts(source_lookup)
 
         total_words = sum(len(s.narration.split()) for s in sections)
         duration_minutes = total_words / _WORDS_PER_MINUTE
@@ -402,8 +445,22 @@ class ScriptwriterAgent:
                 "credibility": src.credibility.value,
                 "type": src.source_type.value,
             }
-            for src in state["research_package"].top_sources(20)
+            for src in package.top_sources(20)
         ]
+
+        # Consolidated research dossier that ships with the final script —
+        # synthesized from the accumulated deep-research narrative + sources.
+        research_report = ""
+        research_citations: list[dict] = []
+        try:
+            report_md, citations = await self._synthesizer.synthesize(
+                prompt=state.get("selected_angle") or topic,
+                package=package,
+            )
+            research_report = report_md
+            research_citations = [c.model_dump(mode="json") for c in citations]
+        except Exception as exc:
+            log.warning("scriptwriter.research_dossier_failed", error=str(exc))
 
         final_script = FinalScript(
             story_id=uuid.UUID(story_id),
@@ -415,6 +472,9 @@ class ScriptwriterAgent:
             total_word_count=total_words,
             estimated_duration_minutes=round(duration_minutes, 1),
             sources=source_refs,
+            research_report=research_report,
+            research_citations=research_citations,
+            research_iterations=package.research_iterations,
             metadata={
                 "topic": topic,
                 "story_type": treatment["story_type"],
@@ -429,6 +489,7 @@ class ScriptwriterAgent:
                 "unique_angle": storyline.unique_angle,
                 "scriptwriter_recommendations": rewrite_recommendations[:10],
                 "library_reference_cards": len(reference_pack.cards),
+                "research_iterations": package.research_iterations,
             },
         )
 
@@ -437,9 +498,11 @@ class ScriptwriterAgent:
             title=storyline.title,
             word_count=total_words,
             duration_min=f"{duration_minutes:.1f}",
+            research_iterations=package.research_iterations,
         )
 
         return {
             "final_script": final_script,
+            "research_package": package,
             "reference_packs": merge_reference_pack(state, reference_pack),
         }

@@ -31,6 +31,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" style={{ height: "100%" }} className={`${fraunces.variable} ${jetbrains.variable}`}>
       <body>
+        {/* TEMP-FIGMA-CAPTURE */}
+        <script async src="https://mcp.figma.com/mcp/html-to-design/capture.js" />
         <Providers>
           <AuthGuard>
             <SidebarWrapper>

@@ -105,8 +105,10 @@ class ChapterWriterAgent(ChapterStructureSkill):
         )
         reference_context = format_reference_pack(reference_pack)
         prompt = (
-            "Active stage: chapters. Return a chapter outline only. Each chapter needs "
-            "a title, purpose, and key points. Do not write narration or final script copy.\n\n"
+            "Active stage: chapters. The only editable artifact is the visible chapter outline. "
+            "When the user asks to add, remove, reorder, expand, condense, or rewrite chapters, return the final visible "
+            "chapter outline only. Each chapter needs a title, purpose, and key points. Do not write narration or final "
+            "script copy. If the user asks only for research or advice, leave chapters empty and answer in assistant_message.\n\n"
             f"=== CURRENT STORY CONTEXT ===\n{compact_ideation_context(story)}\n\n"
             f"=== RECENT CHAT ===\n"
             + "\n".join(
@@ -118,6 +120,7 @@ class ChapterWriterAgent(ChapterStructureSkill):
             f"=== FRESH RESEARCH CONTEXT ===\n{fresh_research_context or 'No fresh research was fetched for this turn.'}\n\n"
             f"{reference_context}\n\n"
             f"User request: {user_message}\n\n"
+            "Do not change application UI text, navigation, page layout, hidden fields, credentials, or anything outside the visible chapter outline. "
             "Also keep or adjust the backend-decided tone and target duration as 5, 10, or 15 minutes."
         )
 

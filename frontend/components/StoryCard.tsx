@@ -19,9 +19,13 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
   const isFailed   = story.status === "failed";
   const isStopped  = isAngleSelectionExpired(story.status);
   const isRunning  = !isComplete && !isFailed && !isStopped;
-  const href = story.status === "ideating"
-    ? `/ideation/${story.id}/${story.ideation_stage === "hook" ? "hook" : story.ideation_stage === "chapters" || story.ideation_stage === "ready_for_script" ? "chapters" : "angles"}`
-    : `/stories?id=${story.id}`;
+  const scriptGenerationRunning = story.ideation_operation_data?.type === "script_generation"
+    && story.ideation_operation_data.status === "running";
+  const href = story.status === "completed" || scriptGenerationRunning
+    ? `/ideation/${story.id}/script`
+    : story.status === "ideating"
+      ? `/ideation/${story.id}/${story.ideation_stage === "hook" ? "hook" : story.ideation_stage === "chapters" || story.ideation_stage === "ready_for_script" ? "chapters" : "angles"}`
+      : `/stories?id=${story.id}`;
 
   const card = (
     <div

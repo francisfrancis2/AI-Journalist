@@ -504,7 +504,12 @@ class TestScriptwriterAgent:
         analysis = _make_analysis_result(sample_topic)
         analysis.key_findings[0].supporting_source_ids = [source_id]
 
-        with patch("backend.agents.scriptwriter.ChatAnthropic") as MockLLM:
+        with patch("backend.agents.scriptwriter.ChatAnthropic") as MockLLM, \
+                patch(
+                    "backend.agents.scriptwriter.enrich_if_gaps",
+                    new=AsyncMock(return_value=[]),
+                ), \
+                patch("backend.agents.scriptwriter.ResearchReportSynthesizer") as MockSynth:
             mock_structured = AsyncMock()
             mock_structured.ainvoke.return_value = ActOutput(
                 narration="AI spending is rising because demand is concentrated in a few suppliers.",
@@ -515,6 +520,7 @@ class TestScriptwriterAgent:
             mock_base = MagicMock()
             mock_base.with_structured_output.return_value = mock_structured
             MockLLM.return_value = mock_base
+            MockSynth.return_value.synthesize = AsyncMock(return_value=("", []))
 
             result = await ScriptwriterAgent().run({
                 "story_id": str(uuid.uuid4()),

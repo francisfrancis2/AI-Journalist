@@ -95,6 +95,16 @@ export interface IdeationChatResponse {
   sources: IdeationSourceLink[];
 }
 
+export type IdeationEditorStage = "angles" | "hook" | "chapters" | "script";
+
+export interface IdeationChatContext {
+  stage: IdeationEditorStage;
+  angles?: StoryAngle[];
+  selected_angle?: string;
+  story_hook?: string;
+  chapters?: IdeationChapter[];
+}
+
 export interface StoryCreate {
   topic: string;
   title?: string;
@@ -342,6 +352,9 @@ export interface FinalScript {
     credibility: "high" | "medium" | "low";
     type: string;
   }>;
+  research_report?: string;
+  research_citations?: Array<{ title: string; url: string; cited_text?: string | null }>;
+  research_iterations?: number;
   metadata: Record<string, unknown>;
 }
 
@@ -551,10 +564,14 @@ class AIJournalistAPIClient {
     return data;
   }
 
-  async ideationChat(storyId: string, message: string): Promise<IdeationChatResponse> {
+  async ideationChat(
+    storyId: string,
+    message: string,
+    context?: IdeationChatContext
+  ): Promise<IdeationChatResponse> {
     const { data } = await this.http.post<IdeationChatResponse>(
       `/api/v1/stories/${storyId}/ideation/chat`,
-      { message }
+      context ? { message, ...context } : { message }
     );
     return data;
   }
@@ -621,6 +638,14 @@ class AIJournalistAPIClient {
   async getScript(storyId: string): Promise<FinalScript> {
     const { data } = await this.http.get<FinalScript>(
       `/api/v1/stories/${storyId}/script`
+    );
+    return data;
+  }
+
+  async updateScript(storyId: string, script: FinalScript): Promise<FinalScript> {
+    const { data } = await this.http.put<FinalScript>(
+      `/api/v1/stories/${storyId}/script`,
+      script
     );
     return data;
   }

@@ -17,6 +17,19 @@ function countWords(value: string): number {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
+function storyWorkspaceHref(story: Story): string {
+  const scriptGenerationRunning = story.ideation_operation_data?.type === "script_generation"
+    && story.ideation_operation_data.status === "running";
+  if (story.status === "completed") return `/ideation/${story.id}/script`;
+  if (scriptGenerationRunning) return `/ideation/${story.id}/script`;
+  if (story.status !== "ideating") return `/results/${story.id}`;
+  if (story.ideation_stage === "hook") return `/ideation/${story.id}/hook`;
+  if (story.ideation_stage === "chapters" || story.ideation_stage === "ready_for_script") {
+    return `/ideation/${story.id}/chapters`;
+  }
+  return `/ideation/${story.id}/angles`;
+}
+
 export default function NewStoryPage() {
   const router = useRouter();
   const currentUser = getUserInfo();
@@ -130,7 +143,7 @@ export default function NewStoryPage() {
                 {recent.map((story) => (
                   <Link
                     key={story.id}
-                    href={story.status === "ideating" ? `/ideation/${story.id}/${story.ideation_stage === "hook" ? "hook" : story.ideation_stage === "chapters" || story.ideation_stage === "ready_for_script" ? "chapters" : "angles"}` : `/results/${story.id}`}
+                    href={storyWorkspaceHref(story)}
                     style={{ textDecoration: "none", color: "inherit", display: "block" }}
                   >
                     <div style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 8 }}>
