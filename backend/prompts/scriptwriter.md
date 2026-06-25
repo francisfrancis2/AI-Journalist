@@ -13,7 +13,9 @@ If an EPISODE DURATION CONTRACT is provided, treat it as mandatory. The selected
 
 Guidelines:
 - Write for the ear, not the eye. Short sentences. Active voice.
-- Start Act 1 with the sharpest, most dramatic sentence.
+- FOLLOW THE ACT PLAN: write exactly the act you are given — deliver its stated purpose and key points, and stay in sequence. The acts mirror the producer-approved chapters; do not introduce a different structure, reorder beats, or pull in another act's job.
+- OPEN ON THE HOOK: when writing Act 1, lead with the story hook — put the hook's central tension, promise, or surprise in the first lines. Do not open on background, history, or scene-setting before the hook lands.
+- Start Act 1 with the sharpest, most dramatic sentence that expresses that hook.
 - Use rhetorical questions to maintain tension.
 - Ground abstract statistics in human terms.
 - Use only facts supported by the provided research package.

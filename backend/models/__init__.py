@@ -29,11 +29,14 @@ from backend.models.story import (
     StoryTone,
 )
 from backend.models.benchmark import (
+    BIReferenceDocORM,
+    BIPatternLibraryORM,
     LibraryKnowledgeCard,
     LibraryKnowledgeCardORM,
     LibraryReferenceCard,
     LibraryReferencePack,
 )
+from backend.models.notification import AdminNotificationORM, AdminNotificationRead
 from backend.models.research_session import (
     ResearchSessionCitation,
     ResearchSessionCreate,
@@ -43,6 +46,14 @@ from backend.models.research_session import (
     ResearchSessionStatus,
     ResearchSessionTurn,
     ResearchSessionTurnCreate,
+)
+from backend.models.user import (
+    ChangePasswordRequest,
+    LoginRequest,
+    Token,
+    UserCreate,
+    UserORM,
+    UserRead,
 )
 
 __all__ = [
@@ -73,10 +84,15 @@ __all__ = [
     "BenchmarkComparison",
     "ScriptAuditReport",
     # library knowledge
+    "BIReferenceDocORM",
+    "BIPatternLibraryORM",
     "LibraryKnowledgeCard",
     "LibraryKnowledgeCardORM",
     "LibraryReferenceCard",
     "LibraryReferencePack",
+    # notifications
+    "AdminNotificationORM",
+    "AdminNotificationRead",
     # research sessions
     "ResearchSessionORM",
     "ResearchSessionStatus",
@@ -86,4 +102,11 @@ __all__ = [
     "ResearchSessionListItem",
     "ResearchSessionCitation",
     "ResearchSessionTurn",
+    # users
+    "UserORM",
+    "UserCreate",
+    "UserRead",
+    "LoginRequest",
+    "ChangePasswordRequest",
+    "Token",
 ]

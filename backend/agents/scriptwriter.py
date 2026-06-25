@@ -158,6 +158,7 @@ class ScriptwriterAgent:
         duration_contract: str = "",
         treatment_directive: str = "",
         plan_priority: str = "",
+        story_hook: str = "",
     ) -> ScriptSection:
         """Write narration for a single act."""
         relevant_quotes = "\n".join(
@@ -208,6 +209,22 @@ class ScriptwriterAgent:
                 "This is the frame the script must execute on. Every sentence of narration "
                 "in this act should advance or reinforce this angle.\n\n"
             )
+
+        hook_directive = ""
+        if story_hook:
+            is_opening_act = previous_act is None
+            hook_directive = (
+                "=== STORY HOOK (the spine of the whole script) ===\n"
+                f"{story_hook}\n"
+                + (
+                    "THIS IS THE OPENING ACT. Open on this hook: deliver its central tension, promise, "
+                    "or surprise in the very first lines. Do NOT begin with background, history, or "
+                    "scene-setting before the hook lands. The first 20 seconds must make the viewer feel "
+                    "the hook's question.\n\n"
+                    if is_opening_act
+                    else "Keep this hook's tension alive in this act; advance it toward the payoff.\n\n"
+                )
+            )
         plan_priority_directive = ""
         if plan_priority:
             plan_priority_directive = (
@@ -225,6 +242,7 @@ class ScriptwriterAgent:
             f"{duration_contract}"
             f"{treatment_directive}"
             f"{angle_directive}"
+            f"{hook_directive}"
             f"{plan_priority_directive}"
             f"{revision_goals}"
             f"=== FULL STORY ARC ===\n{act_arc}\n\n"
@@ -409,6 +427,7 @@ class ScriptwriterAgent:
                     duration_contract=duration_contract,
                     treatment_directive=treatment_directive,
                     plan_priority=plan_priority,
+                    story_hook=state.get("story_hook") or "",
                 )
                 for index, act_data in enumerate(act_plans)
             ]

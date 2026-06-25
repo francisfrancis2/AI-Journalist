@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Download,
   ExternalLink,
@@ -273,6 +274,9 @@ export default function ResearchPage() {
 
 function ResearchPageInner() {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const sessionIdFromUrl = searchParams.get("id");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [promptText, setPromptText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -280,6 +284,11 @@ function ResearchPageInner() {
   const [sessionRecoveryNotice, setSessionRecoveryNotice] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
+
+  const selectSession = useCallback((sessionId: string | null) => {
+    setActiveSessionId(sessionId);
+    router.replace(sessionId ? `/research?id=${encodeURIComponent(sessionId)}` : "/research", { scroll: false });
+  }, [router]);
 
   const sessionsQuery = useQuery<ResearchSessionSummary[]>({
     queryKey: ["research-sessions"],
@@ -315,7 +324,7 @@ function ResearchPageInner() {
       setTick(0);
     },
     onSuccess: (session) => {
-      setActiveSessionId(session.id);
+      selectSession(session.id);
       setPromptText("");
       setStatusNotice("Research accepted. The first report will appear in this session when it finishes.");
       queryClient.setQueryData(["research-session", session.id], session);
@@ -365,7 +374,7 @@ function ResearchPageInner() {
     mutationFn: (sessionId: string) => apiClient.deleteResearchSession(sessionId),
     onSuccess: (_, sessionId) => {
       if (activeSessionId === sessionId) {
-        setActiveSessionId(null);
+        selectSession(null);
       }
       queryClient.invalidateQueries({ queryKey: ["research-sessions"] });
     },
@@ -380,15 +389,22 @@ function ResearchPageInner() {
     if (activeSessionId) {
       queryClient.removeQueries({ queryKey: ["research-session", activeSessionId] });
     }
-    setActiveSessionId(null);
+    selectSession(null);
     setSessionRecoveryNotice(notice);
     queryClient.invalidateQueries({ queryKey: ["research-sessions"] });
-  }, [activeSessionId, queryClient]);
+  }, [activeSessionId, queryClient, selectSession]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
   }, []);
+
+  useEffect(() => {
+    setActiveSessionId((current) => current === sessionIdFromUrl ? current : sessionIdFromUrl);
+    if (sessionIdFromUrl) {
+      setSessionRecoveryNotice(null);
+    }
+  }, [sessionIdFromUrl]);
 
   useEffect(() => {
     if (!sessionsQuery.data) return;
@@ -398,13 +414,13 @@ function ResearchPageInner() {
       return;
     }
 
-    if (activeSessionId || !sessionsQuery.data.length) return;
+    if (activeSessionId || sessionIdFromUrl || !sessionsQuery.data.length) return;
     const running = sessionsQuery.data.find((session) => session.status === "running");
     if (running) {
       setSessionRecoveryNotice(null);
-      setActiveSessionId(running.id);
+      selectSession(running.id);
     }
-  }, [activeSessionId, recoverMissingSession, sessionsQuery.data]);
+  }, [activeSessionId, recoverMissingSession, selectSession, sessionIdFromUrl, sessionsQuery.data]);
 
   useEffect(() => {
     if (!activeSessionId || !sessionQuery.isError || !isMissingResearchSessionError(sessionQuery.error)) return;
@@ -497,7 +513,7 @@ function ResearchPageInner() {
               className="btn-secondary"
               onClick={() => {
                 setSessionRecoveryNotice(null);
-                setActiveSessionId(null);
+                selectSession(null);
               }}
               style={{ padding: "4px 10px", fontSize: 12 }}
             >
@@ -532,7 +548,7 @@ function ResearchPageInner() {
                     }}
                     onClick={() => {
                       setSessionRecoveryNotice(null);
-                      setActiveSessionId(session.id);
+                      selectSession(session.id);
                     }}
                   >
                     <div style={{ minWidth: 0, flex: 1 }}>

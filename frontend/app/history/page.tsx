@@ -1,41 +1,115 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Search, Download, ChevronRight, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  Download,
+  FileText,
+  Loader2,
+  Search,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
-import { apiClient, type Story, type StoryStatus } from "@/lib/api";
+import {
+  apiClient,
+  type ResearchSessionStatus,
+  type ResearchSessionSummary,
+  type Story,
+  type StoryStatus,
+} from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
 import { downloadScriptPdf } from "@/lib/script-export";
 import { isTerminalStoryStatus, storyStatusLabel } from "@/lib/story-status";
 
-const STATUS_FILTERS: { value: StoryStatus | "all"; label: string }[] = [
-  { value: "all",         label: "All" },
-  { value: "ideating",    label: "Drafts" },
-  { value: "completed",   label: "Completed" },
-  { value: "researching", label: "In progress" },
-  { value: "angle_selection_expired", label: "Stopped" },
-  { value: "failed",      label: "Failed" },
+type HistoryFilter =
+  | "all"
+  | "story"
+  | "research"
+  | "drafts"
+  | "completed"
+  | "in_progress"
+  | "stopped"
+  | "failed";
+
+type StoryHistoryItem = {
+  kind: "story";
+  id: string;
+  title: string;
+  subtitle: string;
+  createdAt: string;
+  updatedAt: string;
+  ownerEmail: string | null | undefined;
+  status: StoryStatus;
+  href: string;
+  searchText: string;
+  story: Story;
+};
+
+type ResearchHistoryItem = {
+  kind: "research";
+  id: string;
+  title: string;
+  subtitle: string;
+  createdAt: string;
+  updatedAt: string;
+  ownerEmail: string | null | undefined;
+  status: ResearchSessionStatus;
+  href: string;
+  searchText: string;
+  research: ResearchSessionSummary;
+};
+
+type HistoryItem = StoryHistoryItem | ResearchHistoryItem;
+
+const HISTORY_FILTERS: { value: HistoryFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "story", label: "New Stories" },
+  { value: "research", label: "Researches" },
+  { value: "drafts", label: "Drafts" },
+  { value: "completed", label: "Completed" },
+  { value: "in_progress", label: "In progress" },
+  { value: "stopped", label: "Stopped" },
+  { value: "failed", label: "Failed" },
 ];
 
-function ToneBadge({ tone }: { tone: string }) {
+function StoryStatusBadge({ status }: { status: StoryStatus }) {
+  if (status === "ideating") return <span className="badge badge-neutral" style={{ fontSize: 11 }}>Ideating</span>;
+  if (status === "completed") return <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>;
+  if (status === "failed") return <span className="badge badge-danger" style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>;
+  if (status === "angle_selection_expired") {
+    return <span className="badge badge-warning" style={{ fontSize: 11 }}><AlertTriangle size={10} /> Script writing stopped</span>;
+  }
+  return <span className="badge badge-active" style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> {storyStatusLabel(status)}</span>;
+}
+
+function ResearchStatusBadge({ status }: { status: ResearchSessionStatus }) {
+  if (status === "completed") return <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>;
+  if (status === "failed") return <span className="badge badge-danger" style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>;
+  if (status === "running") return <span className="badge badge-active" style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> Running</span>;
+  return <span className="badge badge-neutral" style={{ fontSize: 11 }}>Pending</span>;
+}
+
+function TypeBadge({ kind }: { kind: HistoryItem["kind"] }) {
+  const isStory = kind === "story";
   return (
     <span
-      className={`badge tone-${tone}`}
-      style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, border: "none" }}
+      className={isStory ? "badge badge-neutral" : "badge badge-active"}
+      style={{ fontSize: 11, whiteSpace: "nowrap" }}
     >
-      {tone}
+      {isStory ? <FileText size={10} /> : <Search size={10} />}
+      {isStory ? "New Story" : "Research"}
     </span>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === "ideating") return <span className="badge badge-neutral" style={{ fontSize: 11 }}>Ideating</span>;
-  if (status === "completed") return <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>;
-  if (status === "failed")    return <span className="badge badge-danger"  style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>;
-  if (status === "angle_selection_expired") return <span className="badge badge-warning" style={{ fontSize: 11 }}><AlertTriangle size={10} /> Script writing stopped</span>;
-  return <span className="badge badge-active" style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> {storyStatusLabel(status)}</span>;
+function HistoryStatusBadge({ item }: { item: HistoryItem }) {
+  if (item.kind === "story") return <StoryStatusBadge status={item.status} />;
+  return <ResearchStatusBadge status={item.status} />;
 }
 
 function storyHref(story: Story): string {
@@ -51,19 +125,97 @@ function storyHref(story: Story): string {
   return `/ideation/${story.id}/angles`;
 }
 
+function researchHref(session: ResearchSessionSummary): string {
+  return `/research?id=${encodeURIComponent(session.id)}`;
+}
+
+function researchStatusLabel(status: ResearchSessionStatus): string {
+  if (status === "running") return "Running";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function isItemInProgress(item: HistoryItem): boolean {
+  if (item.kind === "story") return !isTerminalStoryStatus(item.status);
+  return item.status === "pending" || item.status === "running";
+}
+
+function matchesHistoryFilter(item: HistoryItem, filter: HistoryFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "story") return item.kind === "story";
+  if (filter === "research") return item.kind === "research";
+  if (filter === "drafts") return item.kind === "story" && item.status === "ideating";
+  if (filter === "completed") return item.status === "completed";
+  if (filter === "in_progress") return isItemInProgress(item);
+  if (filter === "stopped") return item.kind === "story" && item.status === "angle_selection_expired";
+  if (filter === "failed") return item.status === "failed";
+  return true;
+}
+
+function storyToHistoryItem(story: Story): StoryHistoryItem {
+  return {
+    kind: "story",
+    id: story.id,
+    title: story.title,
+    subtitle: story.topic,
+    createdAt: story.created_at,
+    updatedAt: story.updated_at,
+    ownerEmail: story.owner_email,
+    status: story.status,
+    href: storyHref(story),
+    searchText: [story.title, story.topic, story.owner_email].filter(Boolean).join(" ").toLowerCase(),
+    story,
+  };
+}
+
+function researchToHistoryItem(session: ResearchSessionSummary): ResearchHistoryItem {
+  const statusText = researchStatusLabel(session.status);
+  return {
+    kind: "research",
+    id: session.id,
+    title: session.title,
+    subtitle: session.pending_prompt || `${statusText} research session`,
+    createdAt: session.created_at,
+    updatedAt: session.updated_at,
+    ownerEmail: session.owner_email,
+    status: session.status,
+    href: researchHref(session),
+    searchText: [session.title, session.pending_prompt, session.owner_email, statusText].filter(Boolean).join(" ").toLowerCase(),
+    research: session,
+  };
+}
+
 export default function HistoryPage() {
   const queryClient = useQueryClient();
   const currentUser = getUserInfo();
   const isAdmin = currentUser?.is_admin ?? false;
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StoryStatus | "all">("all");
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [downloading, setDownloading] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  const { data: stories, isLoading, error: storiesError, refetch } = useQuery<Story[]>({
+  const {
+    data: stories,
+    isLoading: storiesLoading,
+    error: storiesError,
+    refetch: refetchStories,
+  } = useQuery<Story[]>({
     queryKey: ["stories", "history"],
     queryFn: () => apiClient.listStories(100),
     refetchInterval: 15_000,
+  });
+
+  const {
+    data: researchSessions,
+    isLoading: researchLoading,
+    error: researchError,
+    refetch: refetchResearch,
+  } = useQuery<ResearchSessionSummary[]>({
+    queryKey: ["research-sessions"],
+    queryFn: () => apiClient.listResearchSessions(),
+    refetchInterval: (query) => {
+      const sessions = query.state.data ?? [];
+      return sessions.some((session) => session.status === "running") ? 3000 : false;
+    },
   });
 
   const deleteMutation = useMutation({
@@ -80,26 +232,41 @@ export default function HistoryPage() {
     try {
       const script = await apiClient.getScript(story.id);
       downloadScriptPdf(script);
-    } catch { /* silent */ } finally { setDownloading(null); }
+    } catch {
+      /* silent */
+    } finally {
+      setDownloading(null);
+    }
   };
 
-  const filtered = (stories ?? []).filter(s => {
-    const matchStatus = statusFilter === "all" ? true
-      : statusFilter === "researching" ? !isTerminalStoryStatus(s.status)
-      : s.status === statusFilter;
+  const historyItems = useMemo<HistoryItem[]>(() => {
+    return [
+      ...(stories ?? []).map(storyToHistoryItem),
+      ...(researchSessions ?? []).map(researchToHistoryItem),
+    ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [researchSessions, stories]);
+
+  const filtered = historyItems.filter((item) => {
     const q = search.trim().toLowerCase();
-    const matchSearch = !q || s.title.toLowerCase().includes(q) || s.topic.toLowerCase().includes(q);
-    return matchStatus && matchSearch;
+    return matchesHistoryFilter(item, historyFilter) && (!q || item.searchText.includes(q));
   });
 
-  const completed = stories?.filter(s => s.status === "completed") ?? [];
+  const completedCount = historyItems.filter((item) => item.status === "completed").length;
+  const inProgressCount = historyItems.filter(isItemInProgress).length;
+  const failedCount = historyItems.filter((item) => item.status === "failed").length;
   const tableColumns = isAdmin
-    ? "1fr 170px 110px 120px 80px"
-    : "1fr 110px 120px 80px";
+    ? "minmax(0, 1fr) 170px 112px 136px 84px"
+    : "minmax(0, 1fr) 112px 136px 84px";
+  const isLoading = storiesLoading || researchLoading;
+  const historyError = storiesError ?? researchError;
+
+  const refetchHistory = () => {
+    void refetchStories();
+    void refetchResearch();
+  };
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
-      {/* Topbar */}
       <div
         style={{
           height: 52,
@@ -112,22 +279,26 @@ export default function HistoryPage() {
         }}
       >
         <span style={{ fontSize: 18, fontWeight: 500 }}>History</span>
-        <Link href="/" className="btn-primary" style={{ textDecoration: "none" }}>
-          New story
-        </Link>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link href="/research" className="btn-secondary" style={{ textDecoration: "none" }}>
+            <Search size={13} /> Research
+          </Link>
+          <Link href="/" className="btn-primary" style={{ textDecoration: "none" }}>
+            New story
+          </Link>
+        </div>
       </div>
 
       <div style={{ padding: "28px" }}>
-
-        {/* Stats row */}
-        {stories && stories.length > 0 && (
-          <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+        {historyItems.length > 0 && (
+          <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
             {[
-              { label: "Total",     value: stories.length },
-              { label: "Drafts",    value: stories.filter(s => s.status === "ideating").length },
-              { label: "Completed", value: completed.length },
-              { label: "Stopped",   value: stories.filter(s => s.status === "angle_selection_expired").length },
-              { label: "Failed",    value: stories.filter(s => s.status === "failed").length },
+              { label: "Total", value: historyItems.length },
+              { label: "New Stories", value: stories?.length ?? 0 },
+              { label: "Researches", value: researchSessions?.length ?? 0 },
+              { label: "Completed", value: completedCount },
+              { label: "In progress", value: inProgressCount },
+              { label: "Failed", value: failedCount },
             ].map(({ label, value }) => (
               <div
                 key={label}
@@ -143,28 +314,25 @@ export default function HistoryPage() {
           </div>
         )}
 
-        {/* Filter bar */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-          {/* Search */}
-          <div style={{ position: "relative", flex: "0 0 260px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: "0 0 280px" }}>
             <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--color-text-tertiary)" }} />
             <input
               type="text"
               value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search stories…"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search history..."
               className="input"
               style={{ paddingLeft: 30, fontSize: 13 }}
             />
           </div>
 
-          {/* Status filter chips */}
-          <div style={{ display: "flex", gap: 4 }}>
-            {STATUS_FILTERS.map(opt => (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {HISTORY_FILTERS.map((opt) => (
               <button
                 key={opt.value}
-                onClick={() => setStatusFilter(opt.value)}
-                className={`chip ${statusFilter === opt.value ? "selected" : ""}`}
+                onClick={() => setHistoryFilter(opt.value)}
+                className={`chip ${historyFilter === opt.value ? "selected" : ""}`}
                 style={{ padding: "5px 12px", fontSize: 12 }}
               >
                 {opt.label}
@@ -173,12 +341,11 @@ export default function HistoryPage() {
           </div>
         </div>
 
-        {/* Table */}
         {isLoading ? (
           <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
             <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
           </div>
-        ) : storiesError ? (
+        ) : historyError ? (
           <div
             className="card"
             role="alert"
@@ -194,12 +361,12 @@ export default function HistoryPage() {
             <XCircle size={20} style={{ color: "var(--color-danger, #b42318)" }} />
             <p style={{ fontSize: 14, fontWeight: 500 }}>Could not load history</p>
             <p style={{ fontSize: 13, color: "var(--color-text-secondary)", maxWidth: 420 }}>
-              {storiesError instanceof Error ? storiesError.message : "Unknown error"}.
+              {historyError instanceof Error ? historyError.message : "Unknown error"}.
               {" "}If this keeps happening, try signing out and back in.
             </p>
             <button
               type="button"
-              onClick={() => refetch()}
+              onClick={refetchHistory}
               className="btn-secondary"
               style={{ marginTop: 4 }}
             >
@@ -230,22 +397,17 @@ export default function HistoryPage() {
                 marginBottom: 4,
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <rect x="2" y="2" width="5" height="12" rx="1" fill="var(--color-border-primary)" />
-                <rect x="9" y="2" width="5" height="6" rx="1" fill="var(--color-border-primary)" />
-                <rect x="9" y="10" width="5" height="4" rx="1" fill="var(--color-border-primary)" />
-              </svg>
+              <FileText size={16} style={{ color: "var(--color-text-tertiary)" }} />
             </div>
             <p style={{ fontSize: 14, fontWeight: 500 }}>
-              {stories?.length === 0 ? "No stories yet" : "No matches found"}
+              {historyItems.length === 0 ? "No history yet" : "No matches found"}
             </p>
             <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
-              {stories?.length === 0 ? "Create your first story to see it here." : "Try a different search or filter."}
+              {historyItems.length === 0 ? "Create a story or research session to see it here." : "Try a different search or filter."}
             </p>
           </div>
         ) : (
           <div className="card" style={{ overflow: "hidden" }}>
-            {/* Table header */}
             <div
               style={{
                 display: "grid",
@@ -263,18 +425,17 @@ export default function HistoryPage() {
             >
               <span>Title</span>
               {isAdmin && <span>User</span>}
-              <span>Tone</span>
+              <span>Type</span>
               <span>Status</span>
               <span style={{ textAlign: "right" }}>Actions</span>
             </div>
 
-            {/* Rows */}
-            {filtered.map((story, idx) => {
+            {filtered.map((item, idx) => {
               const isLast = idx === filtered.length - 1;
-              const isComplete = story.status === "completed";
+              const isCompleteStory = item.kind === "story" && item.status === "completed";
               return (
                 <div
-                  key={story.id}
+                  key={`${item.kind}-${item.id}`}
                   className="table-row"
                   style={{
                     display: "grid",
@@ -285,10 +446,9 @@ export default function HistoryPage() {
                     borderBottom: isLast ? "none" : "0.5px solid var(--color-border-tertiary)",
                   }}
                 >
-                  {/* Title */}
                   <div style={{ minWidth: 0 }}>
                     <Link
-                      href={storyHref(story)}
+                      href={item.href}
                       style={{
                         fontSize: 13,
                         color: "var(--color-text-primary)",
@@ -299,7 +459,7 @@ export default function HistoryPage() {
                         display: "block",
                       }}
                     >
-                      {story.title}
+                      {item.title}
                     </Link>
                     <p
                       style={{
@@ -311,7 +471,7 @@ export default function HistoryPage() {
                         marginTop: 2,
                       }}
                     >
-                      {format(new Date(story.created_at), "MMM d, yyyy")}
+                      {format(new Date(item.updatedAt), "MMM d, yyyy")} · {item.subtitle}
                     </p>
                   </div>
 
@@ -327,48 +487,46 @@ export default function HistoryPage() {
                           display: "block",
                         }}
                       >
-                        {story.owner_email ?? "Unassigned"}
+                        {item.ownerEmail ?? "Unassigned"}
                       </span>
                     </div>
                   )}
 
-                  {/* Tone */}
-                  <div><ToneBadge tone={story.tone} /></div>
+                  <div><TypeBadge kind={item.kind} /></div>
+                  <div><HistoryStatusBadge item={item} /></div>
 
-                  {/* Status */}
-                  <div><StatusBadge status={story.status} /></div>
-
-                  {/* Actions — visible on row hover via opacity trick */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
-                    <Link href={storyHref(story)} className="btn-ghost" style={{ padding: "5px 8px" }} title="Open">
+                    <Link href={item.href} className="btn-ghost" style={{ padding: "5px 8px" }} title="Open">
                       <ChevronRight size={13} />
                     </Link>
-                    {isComplete && (
+                    {isCompleteStory && (
                       <button
-                        onClick={() => handleDownload(story)}
-                        disabled={downloading === story.id}
+                        type="button"
+                        onClick={() => handleDownload(item.story)}
+                        disabled={downloading === item.id}
                         className="btn-ghost"
                         style={{ padding: "5px 8px" }}
                         title="Download PDF"
                       >
-                        {downloading === story.id
+                        {downloading === item.id
                           ? <Loader2 size={13} className="animate-spin" />
                           : <Download size={13} />
                         }
                       </button>
                     )}
-                    <button
-                      onClick={() => setDeleteConfirm(story.id)}
-                      className="btn-ghost"
-                      style={{ padding: "5px 8px", color: "var(--color-text-tertiary)" }}
-                      title="Delete"
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-danger)"; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-tertiary)"; }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <path d="M2 3.5h10M5.5 3.5V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M12 3.5l-.7 8a1 1 0 0 1-1 .9H3.7a1 1 0 0 1-1-.9L2 3.5" />
-                      </svg>
-                    </button>
+                    {item.kind === "story" && (
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirm(item.id)}
+                        className="btn-ghost"
+                        style={{ padding: "5px 8px", color: "var(--color-text-tertiary)" }}
+                        title="Delete"
+                        onMouseEnter={(event) => { event.currentTarget.style.color = "var(--color-danger)"; }}
+                        onMouseLeave={(event) => { event.currentTarget.style.color = "var(--color-text-tertiary)"; }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -377,7 +535,6 @@ export default function HistoryPage() {
         )}
       </div>
 
-      {/* Delete modal */}
       {deleteConfirm && (
         <div
           style={{
@@ -401,7 +558,7 @@ export default function HistoryPage() {
                 Cancel
               </button>
               <button
-                onClick={() => deleteMutation.mutate(deleteConfirm!)}
+                onClick={() => deleteMutation.mutate(deleteConfirm)}
                 disabled={deleteMutation.isPending}
                 style={{
                   flex: 1,

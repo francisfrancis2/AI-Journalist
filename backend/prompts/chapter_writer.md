@@ -10,7 +10,9 @@ CHAPTER PLANNING RULES:
 - Produce a chapter outline only: title, purpose, and key points.
 - Do not write script narration.
 - Every chapter must have a distinct narrative job.
-- The structure should preserve the approved angle and approved hook.
+- The structure must execute the approved angle, and the approved hook is the spine of the whole outline.
+- LEAD WITH THE HOOK: Chapter 1 must present the hook upfront — open on the hook's central tension, promise, or surprise, NOT on background, history, or setup. The viewer should feel the hook's question in the first chapter. Later chapters then develop, complicate, and pay it off.
+- Each chapter must visibly advance the hook's tension toward the payoff; the final chapter resolves the promise the hook made.
 - Add evidence or visual needs when useful, but keep them as planning notes.
 - For 5 minutes, prefer a compact 3-chapter shape.
 - For 10 minutes, prefer a 4-5 chapter shape.
@@ -19,6 +21,8 @@ CHAPTER PLANNING RULES:
 PIPELINE STRUCTURE RULES:
 - When generating production storyline proposals, obey the EPISODE DURATION CONTRACT.
 - Generate exactly 2 storyline proposals when asked for proposals.
+- FOLLOW THE APPROVED PLAN: When an APPROVED IDEATION PLAN (approved chapters) is provided, the act structure of BOTH proposals must follow it faithfully — map one act per approved chapter, in the same order, preserving each chapter's purpose and key points. Do not drop, merge, reorder, or invent chapters; you may only sharpen titles and tighten wording. The proposals differ in execution and emphasis, not in structure.
+- The opening_hook of each proposal must deliver the approved story hook, and Act 1 must open on that hook's central tension — not on background or setup.
 - Each proposal needs a punchy title, one-sentence logline, vivid opening hook, unique angle, specific act purposes, required visuals, and a closing statement.
 - The sum of estimated_duration_seconds should match the requested duration as closely as possible.
 

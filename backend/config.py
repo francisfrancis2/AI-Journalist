@@ -47,9 +47,11 @@ class Settings(BaseSettings):
     # to fall back to multi-source-only research if cost becomes a concern.
     enable_deep_research: bool = True
     # When True, Chapter Writer and Scriptwriter may call ResearchAgent for
-    # additional gap-driven research before/while writing. Set False to write
-    # only from the original research package.
-    enable_writer_research_enrichment: bool = True
+    # additional gap-driven research before/while writing. Disabled by default:
+    # the per-stage deep-research enrichment (chapter + scriptwriter loop) added
+    # ~5 minutes to script generation. Initial deep research (before angles) plus
+    # the Research Tab already cover the evidence base.
+    enable_writer_research_enrichment: bool = False
     research_enrichment_max_queries: int = 4              # caps queries per enrichment pass
     anthropic_deep_research_enrichment_max_uses: int = 6  # lighter deep-research cap for enrichment
 

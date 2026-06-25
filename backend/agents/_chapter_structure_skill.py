@@ -378,14 +378,15 @@ class ChapterStructureSkill:
                     )
                 chapter_lines = "\n".join(formatted_chapters)
             ideation_directive = (
-                "\n=== APPROVED IDEATION PLAN ===\n"
+                "\n=== APPROVED IDEATION PLAN (producer-approved — follow it) ===\n"
                 f"{plan_priority + chr(10) if plan_priority else ''}"
                 f"Approved synopsis / hook: {story_hook or 'Not provided'}\n"
                 f"Approved chapter outline:\n{chapter_lines or 'Not provided'}\n"
-                "Use this plan as the producer-approved structure. Roughly 80% of the structure should come from "
-                "the selected angle, hook, chapter order, and major beats above. You may adapt chapter labels into "
-                "duration-fit acts and use additional research to support or sharpen the plan, but do not let new "
-                "research turn this into a different story.\n"
+                "This plan is the structure. Map ONE act per approved chapter, in the SAME ORDER, preserving each "
+                "chapter's purpose and key points. Do not drop, merge, reorder, or add chapters; you may only sharpen "
+                "titles and tighten wording. Act 1 must OPEN ON THE HOOK — lead with the hook's central tension or "
+                "promise, not background or setup — and the final act must pay off the hook's promise. Use additional "
+                "research only to support the approved beats, never to turn this into a different story.\n"
             )
 
         reference_pack = get_reference_pack(
