@@ -472,9 +472,33 @@ def _ideation_operation(
         "status": status_value,
         "message": message,
         "started_at": now,
+        "last_heartbeat_at": now,
         "completed_at": None if status_value == "running" else now,
         "error_message": error_message,
     }
+
+
+async def _touch_running_ideation_operation(story_id: str, *, message: str | None = None) -> None:
+    from backend.db.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(StoryORM.ideation_operation_data).where(StoryORM.id == uuid.UUID(story_id))
+        )
+        operation = result.scalar_one_or_none()
+        if not isinstance(operation, dict) or operation.get("status") != "running":
+            return
+
+        next_operation = dict(operation)
+        next_operation["last_heartbeat_at"] = datetime.now(timezone.utc).isoformat()
+        if message:
+            next_operation["message"] = message
+        await db.execute(
+            update(StoryORM)
+            .where(StoryORM.id == uuid.UUID(story_id))
+            .values(ideation_operation_data=next_operation)
+        )
+        await db.commit()
 
 
 async def _run_story_planning_agent(
@@ -979,6 +1003,11 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
                 log.info("pipeline.node_complete", story_id=story_id, node=node_name, status=new_status)
             elif new_status:
                 log.info("pipeline.script_generation_node_complete", story_id=story_id, node=node_name)
+            if ideation_script_generation:
+                await _touch_running_ideation_operation(
+                    story_id,
+                    message=f"Generating the final script ({node_name.replace('_', ' ')} complete).",
+                )
 
     except Exception as exc:
         log.error("pipeline.failed", story_id=story_id, error=str(exc))

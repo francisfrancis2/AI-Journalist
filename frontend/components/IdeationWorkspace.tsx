@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type DragEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -12,6 +12,7 @@ import {
   Edit3,
   ExternalLink,
   FileText,
+  GripVertical,
   Loader2,
   Plus,
   Save,
@@ -359,6 +360,9 @@ function ChapterEditor({
   chapters: IdeationChapter[];
   onChange: (chapters: IdeationChapter[]) => void;
 }) {
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   const updateChapter = (index: number, next: Partial<IdeationChapter>) => {
     onChange(chapters.map((chapter, chapterIndex) => (
       chapterIndex === index ? { ...chapter, ...next } : chapter
@@ -381,20 +385,75 @@ function ChapterEditor({
     onChange(normalizeChapterDrafts(chapters.filter((_, chapterIndex) => chapterIndex !== index)));
   };
 
+  const reorderChapter = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    if (fromIndex >= chapters.length || toIndex >= chapters.length) return;
+    const next = [...chapters];
+    const [moved] = next.splice(fromIndex, 1);
+    if (!moved) return;
+    next.splice(toIndex, 0, moved);
+    onChange(normalizeChapterDrafts(next));
+  };
+
+  const handleDragStart = (event: DragEvent<HTMLButtonElement>, index: number) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+    setDraggedIndex(index);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>, index: number) => {
+    event.preventDefault();
+    const transferredIndex = Number(event.dataTransfer.getData("text/plain"));
+    const fromIndex = Number.isInteger(transferredIndex) ? transferredIndex : draggedIndex;
+    if (fromIndex !== null) reorderChapter(fromIndex, index);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {chapters.map((chapter, index) => (
         <div
           key={`chapter-editor-${index}`}
+          onDragOver={(event) => {
+            if (draggedIndex === null || draggedIndex === index) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setDragOverIndex(index);
+          }}
+          onDrop={(event) => handleDrop(event, index)}
+          onDragEnd={() => {
+            setDraggedIndex(null);
+            setDragOverIndex(null);
+          }}
           style={{
             padding: "12px 14px",
-            border: "0.5px solid var(--color-border-tertiary)",
+            border: dragOverIndex === index
+              ? "1px solid var(--color-action)"
+              : "0.5px solid var(--color-border-tertiary)",
             borderRadius: "var(--border-radius-md)",
-            background: "#fff",
+            background: draggedIndex === index ? "var(--color-background-secondary)" : "#fff",
+            opacity: draggedIndex === index ? 0.72 : 1,
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 9 }}>
-            <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Chapter {index + 1}</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                draggable
+                onDragStart={(event) => handleDragStart(event, index)}
+                onDragEnd={() => {
+                  setDraggedIndex(null);
+                  setDragOverIndex(null);
+                }}
+                aria-label={`Drag chapter ${index + 1} to reorder`}
+                style={{ padding: "4px 7px", fontSize: 11, cursor: "grab" }}
+              >
+                <GripVertical size={13} /> Drag
+              </button>
+              <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Chapter {index + 1}</p>
+            </div>
             <button
               type="button"
               className="btn-secondary"

@@ -161,3 +161,56 @@ async def test_watchdog_fails_stale_ideation_operation(db_session, monkeypatch):
     assert story.ideation_operation_data["status"] == "failed"
     assert story.ideation_operation_data["error_message"] == watchdog._STALE_IDEATION_MESSAGE
     assert story.ideation_chat_data[-1]["status"] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_watchdog_keeps_script_generation_inside_extended_window(db_session, monkeypatch):
+    monkeypatch.setattr(watchdog, "AsyncSessionLocal", lambda: _SessionContext(db_session))
+    started_at = datetime.now(timezone.utc) - timedelta(minutes=45)
+    story = _story(StoryStatus.IDEATING, started_at)
+    story.ideation_operation_data = {
+        "type": "script_generation",
+        "status": "running",
+        "message": "Generating the final script.",
+        "started_at": started_at.isoformat(),
+        "last_heartbeat_at": started_at.isoformat(),
+        "completed_at": None,
+        "error_message": None,
+    }
+    db_session.add(story)
+    await db_session.commit()
+
+    affected = await watchdog.mark_stale_pipelines_failed()
+    await db_session.refresh(story)
+
+    assert affected == 0
+    assert story.status == StoryStatus.IDEATING.value
+    assert story.ideation_operation_data["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_watchdog_fails_script_generation_after_extended_window(db_session, monkeypatch):
+    monkeypatch.setattr(watchdog, "AsyncSessionLocal", lambda: _SessionContext(db_session))
+    started_at = datetime.now(timezone.utc) - timedelta(
+        minutes=watchdog.SCRIPT_GENERATION_STALE_THRESHOLD_MINUTES + 1
+    )
+    story = _story(StoryStatus.IDEATING, started_at)
+    story.ideation_operation_data = {
+        "type": "script_generation",
+        "status": "running",
+        "message": "Generating the final script.",
+        "started_at": started_at.isoformat(),
+        "last_heartbeat_at": started_at.isoformat(),
+        "completed_at": None,
+        "error_message": None,
+    }
+    db_session.add(story)
+    await db_session.commit()
+
+    affected = await watchdog.mark_stale_pipelines_failed()
+    await db_session.refresh(story)
+
+    assert affected == 1
+    assert story.status == StoryStatus.IDEATING.value
+    assert story.ideation_operation_data["status"] == "failed"
+    assert story.ideation_operation_data["error_message"] == watchdog._STALE_SCRIPT_GENERATION_MESSAGE

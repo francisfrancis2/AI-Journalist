@@ -31,6 +31,7 @@ from backend.models.story import StoryORM, StoryStatus
 log = structlog.get_logger(__name__)
 
 STALE_THRESHOLD_MINUTES = 30
+SCRIPT_GENERATION_STALE_THRESHOLD_MINUTES = 180
 ANGLE_SELECTION_TIMEOUT_HOURS = 6
 WATCHDOG_INTERVAL_SECONDS = 300
 
@@ -53,6 +54,10 @@ _STALE_RESEARCH_MESSAGE = (
 _STALE_IDEATION_MESSAGE = (
     "This ideation request was interrupted before completing. Please try again."
 )
+_STALE_SCRIPT_GENERATION_MESSAGE = (
+    "Script generation was interrupted before completing. Please try again."
+)
+_SCRIPT_GENERATION_OPERATION = "script_generation"
 
 ANGLE_SELECTION_EXPIRED_MESSAGE = (
     "Script writing was stopped, as no angle was approved to proceed."
@@ -72,6 +77,25 @@ def _parse_operation_started_at(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _operation_last_activity_at(operation: dict) -> datetime | None:
+    return (
+        _parse_operation_started_at(operation.get("last_heartbeat_at"))
+        or _parse_operation_started_at(operation.get("started_at"))
+    )
+
+
+def _ideation_stale_threshold(now: datetime, operation: dict) -> datetime:
+    if operation.get("type") == _SCRIPT_GENERATION_OPERATION:
+        return now - timedelta(minutes=SCRIPT_GENERATION_STALE_THRESHOLD_MINUTES)
+    return now - timedelta(minutes=STALE_THRESHOLD_MINUTES)
+
+
+def _stale_ideation_error_message(operation: dict) -> str:
+    if operation.get("type") == _SCRIPT_GENERATION_OPERATION:
+        return _STALE_SCRIPT_GENERATION_MESSAGE
+    return _STALE_IDEATION_MESSAGE
 
 
 def _mark_latest_research_turn_failed(turns: object, error_message: str, completed_at: datetime) -> list:
@@ -161,20 +185,22 @@ async def mark_stale_pipelines_failed() -> int:
             operation = story.ideation_operation_data
             if not isinstance(operation, dict) or operation.get("status") != "running":
                 continue
-            started_at = _parse_operation_started_at(operation.get("started_at"))
-            if started_at is not None and started_at >= stale_pipeline_threshold:
+            activity_at = _operation_last_activity_at(operation)
+            stale_ideation_threshold = _ideation_stale_threshold(now, operation)
+            if activity_at is not None and activity_at >= stale_ideation_threshold:
                 continue
+            error_message = _stale_ideation_error_message(operation)
             completed_operation = dict(operation)
             completed_operation["status"] = "failed"
             completed_operation["completed_at"] = now.isoformat()
-            completed_operation["error_message"] = _STALE_IDEATION_MESSAGE
+            completed_operation["error_message"] = error_message
             story.ideation_operation_data = completed_operation
             story.ideation_chat_data = _mark_latest_ideation_message_failed(
                 story.ideation_chat_data,
-                _STALE_IDEATION_MESSAGE,
+                error_message,
                 now,
             )
-            story.error_message = _STALE_IDEATION_MESSAGE
+            story.error_message = error_message
             stale_ideation_count += 1
 
         await session.commit()

@@ -17,6 +17,7 @@ import {
   type ResearchSessionSummary,
 } from "@/lib/api";
 import { downloadResearchSessionReport } from "@/lib/research-report-export";
+import { cleanResearchReportBody } from "@/lib/research-report-format";
 import { downloadSourceListPdf } from "@/lib/script-export";
 import { ReportMarkdown } from "@/components/ReportMarkdown";
 
@@ -134,49 +135,34 @@ function ResearchReportThread({ session }: { session: ResearchSession }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 18, padding: "18px 18px 20px" }}>
         {session.turns.map((turn, index) => {
           const turnReportMarkdown = reportForTurn(turn, index, session.turns, session.report_markdown);
-          const hasTurnReport = Boolean(turnReportMarkdown.trim());
+          const cleanedTurnReportMarkdown = cleanResearchReportBody(turnReportMarkdown);
+          const hasTurnReport = Boolean(cleanedTurnReportMarkdown.trim());
           return (
             <article
               key={`${turn.created_at}-${index}`}
               style={{ display: "flex", flexDirection: "column", gap: 10 }}
             >
-              <div style={{ alignSelf: "flex-end", maxWidth: "min(82%, 720px)" }}>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: 0 }}>
-                    Query {index + 1}
-                  </span>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: 0 }}>
+                  Report update {index + 1}
+                </span>
+                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                  <TurnStatusLabel status={turn.status} />
+                </span>
+                {turn.completed_at && (
                   <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                    <TurnStatusLabel status={turn.status} />
+                    {formatDistanceToNow(new Date(turn.completed_at), { addSuffix: true })}
                   </span>
-                  {turn.completed_at && (
-                    <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                      {formatDistanceToNow(new Date(turn.completed_at), { addSuffix: true })}
-                    </span>
-                  )}
-                  {turn.web_search_requests > 0 && (
-                    <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                      {turn.web_search_requests} web {turn.web_search_requests === 1 ? "search" : "searches"}
-                    </span>
-                  )}
-                </div>
-                <p
-                  style={{
-                    fontSize: 13,
-                    color: "var(--color-text-primary)",
-                    lineHeight: 1.55,
-                    whiteSpace: "pre-wrap",
-                    background: "var(--color-background-secondary)",
-                    border: "0.5px solid var(--color-border-tertiary)",
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                  }}
-                >
-                  {turn.prompt}
-                </p>
+                )}
+                {turn.web_search_requests > 0 && (
+                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                    {turn.web_search_requests} web {turn.web_search_requests === 1 ? "search" : "searches"}
+                  </span>
+                )}
                 {turn.error_message && (
-                  <p style={{ fontSize: 12, color: "var(--color-danger)", marginTop: 6 }}>
+                  <span style={{ fontSize: 11, color: "var(--color-danger)" }}>
                     {turn.error_message}
-                  </p>
+                  </span>
                 )}
               </div>
 
@@ -191,7 +177,7 @@ function ResearchReportThread({ session }: { session: ResearchSession }) {
                     padding: "16px 18px",
                   }}
                 >
-                  <ReportMarkdown markdown={turnReportMarkdown} />
+                  <ReportMarkdown markdown={cleanedTurnReportMarkdown} />
                 </div>
               ) : turn.status === "running" ? (
                 <div

@@ -145,9 +145,10 @@ Return a single Markdown report with these sections (omit a section only when no
 
 Rules:
 - Merge the two inputs; prefer primary sources, official data, and recent reporting.
-- Cite factual claims inline with source titles and URLs drawn from the inputs above.
+- Refer to source titles or publication names in prose when useful, but do not include raw URLs or Markdown links in the report body. The app shows links separately in the citation list.
 - Separate confirmed findings from leads that still need verification.
 - Be concrete: prefer numbers, dates, and named sources over generalities.
+- Do not repeat the user's prompt or follow-up instruction in the report.
 - Do not invent sources or citations. Do not include commentary outside the report."""
 
         try:

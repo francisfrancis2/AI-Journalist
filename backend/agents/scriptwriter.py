@@ -9,6 +9,7 @@ Responsibilities:
 """
 
 import asyncio
+import time
 import uuid
 
 import structlog
@@ -259,6 +260,7 @@ class ScriptwriterAgent:
         )
 
     async def run(self, state: dict) -> dict:
+        started_at = time.monotonic()
         storyline: StorylineProposal = state["selected_storyline"]
         analysis: AnalysisResult = state["analysis_result"]
         topic: str = state["topic"]
@@ -412,27 +414,54 @@ class ScriptwriterAgent:
             ]
             return list(await asyncio.gather(*act_tasks))
 
+        phase_started_at = time.monotonic()
         sections: list[ScriptSection] = await _write_acts(source_lookup)
+        log.info(
+            "scriptwriter.phase_complete",
+            story_id=story_id,
+            phase="initial_acts",
+            acts=len(sections),
+            duration_s=round(time.monotonic() - phase_started_at, 1),
+        )
 
         # Iterative gap-driven deepening: after each draft, the Research Agent
         # checks the script for missing evidence and, if any, runs another
         # targeted research pass; the affected acts are then rewritten against
         # the enriched evidence. Bounded by settings.max_research_iterations.
-        for _ in range(settings.max_research_iterations):
+        for cycle_index in range(settings.max_research_iterations):
             draft_context = "\n\n".join(
                 f"Act {section.section_number} — {section.title}\n{section.narration[:600]}"
                 for section in sections
             )
+            phase_started_at = time.monotonic()
             new_sources = await enrich_if_gaps(
                 state,
                 package=package,
                 draft_context=draft_context,
                 label="scriptwriter",
             )
+            log.info(
+                "scriptwriter.phase_complete",
+                story_id=story_id,
+                phase="research_enrichment",
+                cycle=cycle_index + 1,
+                new_sources=len(new_sources),
+                research_iterations=package.research_iterations,
+                duration_s=round(time.monotonic() - phase_started_at, 1),
+            )
             if not new_sources:
                 break
             source_lookup = _build_source_lookup()
+            phase_started_at = time.monotonic()
             sections = await _write_acts(source_lookup)
+            log.info(
+                "scriptwriter.phase_complete",
+                story_id=story_id,
+                phase="rewrite_acts",
+                cycle=cycle_index + 1,
+                acts=len(sections),
+                duration_s=round(time.monotonic() - phase_started_at, 1),
+            )
 
         total_words = sum(len(s.narration.split()) for s in sections)
         duration_minutes = total_words / _WORDS_PER_MINUTE
@@ -452,6 +481,7 @@ class ScriptwriterAgent:
         # synthesized from the accumulated deep-research narrative + sources.
         research_report = ""
         research_citations: list[dict] = []
+        phase_started_at = time.monotonic()
         try:
             report_md, citations = await self._synthesizer.synthesize(
                 prompt=state.get("selected_angle") or topic,
@@ -461,6 +491,14 @@ class ScriptwriterAgent:
             research_citations = [c.model_dump(mode="json") for c in citations]
         except Exception as exc:
             log.warning("scriptwriter.research_dossier_failed", error=str(exc))
+        finally:
+            log.info(
+                "scriptwriter.phase_complete",
+                story_id=story_id,
+                phase="research_dossier",
+                citations=len(research_citations),
+                duration_s=round(time.monotonic() - phase_started_at, 1),
+            )
 
         final_script = FinalScript(
             story_id=uuid.UUID(story_id),
@@ -499,6 +537,7 @@ class ScriptwriterAgent:
             word_count=total_words,
             duration_min=f"{duration_minutes:.1f}",
             research_iterations=package.research_iterations,
+            duration_s=round(time.monotonic() - started_at, 1),
         )
 
         return {

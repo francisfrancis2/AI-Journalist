@@ -159,9 +159,10 @@ Return a Markdown report with these sections (omit a section only when nothing a
 ## Recommended Next Steps
 
 Rules:
-- Cite factual claims with source titles and URLs inline.
+- Refer to source titles or publication names in prose when useful, but do not include raw URLs or Markdown links in the report body. The app shows links separately in the citation list.
 - Separate confirmed findings from leads that still need verification.
 - Be concrete: prefer numbers, dates, named sources over generalities.
+- Do not repeat the user's prompt in the report.
 - Do not invent sources or citations."""
         return await self._call(instructions, max_uses=max_uses)
 
@@ -206,7 +207,8 @@ User follow-up instruction:
 Output requirements:
 - Return the FULL updated report in Markdown — not a diff, not just the new section. The output replaces the existing report verbatim.
 - Preserve the existing section structure where it still applies. Add or remove sections as needed.
-- Cite new factual claims with source titles and URLs inline.
+- Refer to source titles or publication names in prose when useful, but do not include raw URLs or Markdown links in the report body. The app shows links separately in the citation list.
+- Do not repeat the user's follow-up instruction in the report.
 - Do not invent sources or citations.
 - Do not include preamble or commentary outside the report itself."""
         return await self._call(instructions)

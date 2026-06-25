@@ -1,4 +1,5 @@
 import type { ResearchSession } from "@/lib/api";
+import { cleanResearchReportBody } from "@/lib/research-report-format";
 
 type PdfLine = {
   text: string;
@@ -39,9 +40,7 @@ function formatSessionMarkdown(session: ResearchSession): string {
   const citationList = session.citations
     .map((citation, index) => `${index + 1}. ${citation.title}\n   ${citation.url}`)
     .join("\n\n");
-  const promptHistory = session.turns
-    .map((turn, index) => `${index + 1}. ${turn.prompt}`)
-    .join("\n");
+  const reportBody = cleanResearchReportBody(session.report_markdown.trim());
 
   return [
     `# ${session.title}`,
@@ -50,11 +49,7 @@ function formatSessionMarkdown(session: ResearchSession): string {
     session.model ? `Model: ${session.model}` : "",
     `Web searches: ${session.web_search_requests}`,
     "",
-    promptHistory ? "## Prompt history\n\n" + promptHistory : "",
-    "",
-    "---",
-    "",
-    session.report_markdown.trim(),
+    reportBody,
     citationList ? "\n---\n\n## Citation Index\n\n" + citationList : "",
     "",
   ]
