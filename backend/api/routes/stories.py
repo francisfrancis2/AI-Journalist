@@ -18,7 +18,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.agents.angles_and_hooks import AnglesAndHooksAgent, IdeationOutput
+from backend.agents.angles_and_hooks import (
+    AnglesAndHooksAgent,
+    IdeationOutput,
+    fallback_ideation_output,
+)
 from backend.agents.chapter_writer import ChapterWriterAgent
 from backend.agents.chief_editor_evaluator import ChiefEditorEvaluatorAgent
 from backend.agents.scriptwriter import ScriptwriterAgent
@@ -154,6 +158,7 @@ _IDEATION_EDITABLE_STATUSES = {
 }
 
 _SCRIPT_GENERATION_OPERATION = "script_generation"
+_ANGLE_GENERATION_OPERATIONS = {"initial_angles", "generate_angles"}
 
 
 def _ensure_ideation_editable(story: StoryORM, action: str) -> None:
@@ -523,6 +528,36 @@ def _merge_hook_options(existing: list | None, generated: list[str]) -> list[str
     return merged[:8]
 
 
+def _ensure_generated_angles(
+    *,
+    story: StoryORM,
+    output: IdeationOutput,
+    operation_type: str,
+) -> IdeationOutput:
+    """Button-driven angle generation must never complete with an empty canvas."""
+    if operation_type not in _ANGLE_GENERATION_OPERATIONS or output.angles:
+        return output
+
+    fallback = fallback_ideation_output(
+        topic=story.topic,
+        stage=IdeationStage.ANGLES,
+        selected_angle=story.selected_angle,
+        hook=story.story_hook,
+    )
+    output.angles = fallback.angles
+    output.assistant_message = (
+        f"{output.assistant_message.strip()}\n\n"
+        "I also drafted a starting set of broad angle options so the workspace can keep moving. "
+        "We can sharpen them once you add a more specific focus, character, place, or source."
+    ).strip()
+    log.warning(
+        "ideation_operation.used_angle_fallback",
+        story_id=str(story.id),
+        operation_type=operation_type,
+    )
+    return output
+
+
 async def _run_ideation_operation(
     *,
     story_id: str,
@@ -557,6 +592,12 @@ async def _run_ideation_operation(
             stage=stage,
             fresh_research_context=fresh_context,
         )
+        if stage == IdeationStage.ANGLES:
+            output = _ensure_generated_angles(
+                story=story,
+                output=output,
+                operation_type=operation_type,
+            )
         values: dict[str, Any] = {
             "ideation_chat_data": _complete_pending_ideation_message(
                 story.ideation_chat_data,
@@ -1675,7 +1716,7 @@ async def create_ideation_story(
     background_tasks.add_task(
         _run_ideation_operation,
         story_id=str(story.id),
-        user_message=prompt,
+        user_message=f"Generate the first set of producer-selectable documentary angles for this story idea: {prompt}",
         stage_value=IdeationStage.ANGLES.value,
         operation_type="initial_angles",
         fetch_research=True,

@@ -171,6 +171,8 @@ class AnglesAndHooksAgent:
                 "Active stage: angles. The only editable artifact is the visible angle list. "
                 "When the user asks to add, remove, reorder, or rewrite angles, return the final visible list of 3-8 "
                 "producer-selectable angles. They must differ by framing, not just wording, and each angle should be one sentence. "
+                "For initial story creation or explicit requests to generate angle options, always return angle options; "
+                "if research is weak, make the angles provisional and explain what extra specificity would sharpen them. "
                 "If the user asks only for research or advice, leave angles empty and answer in assistant_message."
             ),
             IdeationStage.HOOK: (

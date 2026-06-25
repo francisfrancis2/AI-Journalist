@@ -1171,6 +1171,10 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                   <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
                     Angles are being generated. You can leave this page and come back; the draft will keep updating here.
                   </p>
+                ) : (story.angles_data ?? []).length === 0 ? (
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                    No angle options are ready yet.
+                  </p>
                 ) : (story.angles_data ?? []).map((angle) => (
                   <AngleCard
                     key={angle.angle}
