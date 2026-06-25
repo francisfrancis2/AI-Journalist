@@ -439,6 +439,7 @@ export interface ResearchSession {
   operation_completed_at: string | null;
   created_at: string;
   updated_at: string;
+  owner_email?: string | null;
 }
 
 export interface ResearchSessionSummary {
@@ -451,6 +452,7 @@ export interface ResearchSessionSummary {
   operation_started_at: string | null;
   updated_at: string;
   created_at: string;
+  owner_email?: string | null;
 }
 
 // ── Client ────────────────────────────────────────────────────────────────────

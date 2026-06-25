@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -49,6 +49,10 @@ function formatResearchDuration(totalSeconds: number): string {
 
 function getStage(percent: number): string {
   return RESEARCH_STAGES.filter((stage) => percent >= stage.at).at(-1)?.label ?? RESEARCH_STAGES[0].label;
+}
+
+function isMissingResearchSessionError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes("research session not found");
 }
 
 // ── Minimal markdown renderer for the report (headings, bullets, paragraphs, inline links) ──
@@ -283,13 +287,11 @@ export default function ResearchPage() {
 
 function ResearchPageInner() {
   const queryClient = useQueryClient();
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
-  });
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [promptText, setPromptText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  const [sessionRecoveryNotice, setSessionRecoveryNotice] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -307,6 +309,10 @@ function ResearchPageInner() {
     queryKey: ["research-session", activeSessionId],
     queryFn: () => apiClient.getResearchSession(activeSessionId as string),
     enabled: !!activeSessionId,
+    retry: (failureCount, error) => {
+      if (isMissingResearchSessionError(error)) return false;
+      return failureCount < 2;
+    },
     refetchOnWindowFocus: true,
     refetchInterval: (query) => {
       return query.state.data?.status === "running" ? 3000 : false;
@@ -318,6 +324,7 @@ function ResearchPageInner() {
     onMutate: () => {
       setError(null);
       setStatusNotice(null);
+      setSessionRecoveryNotice(null);
       setStartedAt(Date.now());
       setTick(0);
     },
@@ -342,6 +349,7 @@ function ResearchPageInner() {
     onMutate: () => {
       setError(null);
       setStatusNotice(null);
+      setSessionRecoveryNotice(null);
       setStartedAt(Date.now());
       setTick(0);
     },
@@ -378,23 +386,44 @@ function ResearchPageInner() {
   });
 
   const activeSession = sessionQuery.data ?? null;
+  const sessionErrorMessage = sessionQuery.error instanceof Error ? sessionQuery.error.message : null;
   const isPersistedWorking = activeSession?.status === "running";
   const isWorking = createSession.isPending || addTurn.isPending || isPersistedWorking;
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  const recoverMissingSession = useCallback((notice: string) => {
     if (activeSessionId) {
-      window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, activeSessionId);
-    } else {
-      window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+      queryClient.removeQueries({ queryKey: ["research-session", activeSessionId] });
     }
-  }, [activeSessionId]);
+    setActiveSessionId(null);
+    setSessionRecoveryNotice(notice);
+    queryClient.invalidateQueries({ queryKey: ["research-sessions"] });
+  }, [activeSessionId, queryClient]);
 
   useEffect(() => {
-    if (activeSessionId || !sessionsQuery.data?.length) return;
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+  }, []);
+
+  useEffect(() => {
+    if (!sessionsQuery.data) return;
+
+    if (activeSessionId && !sessionsQuery.data.some((session) => session.id === activeSessionId)) {
+      recoverMissingSession("The research session saved in this browser is no longer available. Pick another session or start a new one.");
+      return;
+    }
+
+    if (activeSessionId || !sessionsQuery.data.length) return;
     const running = sessionsQuery.data.find((session) => session.status === "running");
-    if (running) setActiveSessionId(running.id);
-  }, [activeSessionId, sessionsQuery.data]);
+    if (running) {
+      setSessionRecoveryNotice(null);
+      setActiveSessionId(running.id);
+    }
+  }, [activeSessionId, recoverMissingSession, sessionsQuery.data]);
+
+  useEffect(() => {
+    if (!activeSessionId || !sessionQuery.isError || !isMissingResearchSessionError(sessionQuery.error)) return;
+    recoverMissingSession("The selected research session is no longer available. Pick another session or start a new one.");
+  }, [activeSessionId, recoverMissingSession, sessionQuery.error, sessionQuery.isError]);
 
   useEffect(() => {
     if (!isWorking) return;
@@ -480,7 +509,10 @@ function ResearchPageInner() {
             <button
               type="button"
               className="btn-secondary"
-              onClick={() => setActiveSessionId(null)}
+              onClick={() => {
+                setSessionRecoveryNotice(null);
+                setActiveSessionId(null);
+              }}
               style={{ padding: "4px 10px", fontSize: 12 }}
             >
               <Plus size={12} /> New
@@ -512,7 +544,10 @@ function ResearchPageInner() {
                       background: isActive ? "var(--color-background-secondary)" : "transparent",
                       cursor: "pointer",
                     }}
-                    onClick={() => setActiveSessionId(session.id)}
+                    onClick={() => {
+                      setSessionRecoveryNotice(null);
+                      setActiveSessionId(session.id);
+                    }}
                   >
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <p
@@ -535,6 +570,11 @@ function ResearchPageInner() {
                         )}
                         {session.status === "failed" && <span style={{ color: "var(--color-danger)" }}>Failed</span>}
                         <span>{formatDistanceToNow(new Date(session.updated_at), { addSuffix: true })}</span>
+                        {session.owner_email && (
+                          <span style={{ color: "var(--color-action)" }} title="Session owner">
+                            · {session.owner_email}
+                          </span>
+                        )}
                       </p>
                     </div>
                     <button
@@ -566,9 +606,23 @@ function ResearchPageInner() {
               isWorking={isWorking}
               progress={progress}
               error={error}
-              statusNotice={statusNotice}
+              statusNotice={statusNotice ?? sessionRecoveryNotice}
               onSubmit={handleSubmit}
             />
+          ) : sessionQuery.isError ? (
+            <div style={{ maxWidth: 620, margin: "0 auto", padding: "56px 0", display: "flex", flexDirection: "column", gap: 12, alignItems: "center", textAlign: "center" }}>
+              <p style={{ fontSize: 16, fontWeight: 500 }}>Research session could not be opened</p>
+              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                {sessionErrorMessage || "This saved session is unavailable. Pick another session or start a new one."}
+              </p>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => recoverMissingSession("Pick another saved session or start a new research request.")}
+              >
+                <Plus size={14} /> Start another research session
+              </button>
+            </div>
           ) : sessionQuery.isLoading || !activeSession ? (
             <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
               <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
@@ -837,6 +891,27 @@ function ActiveSessionView({
         </p>
       )}
 
+      <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <textarea
+          value={promptText}
+          onChange={(event) => setPromptText(event.target.value)}
+          className="input"
+          rows={4}
+          placeholder="Refine, extend, or remove. Try 'extend to cover Asia', 'add 2025 data', or 'remove the regulatory section'."
+          style={{ resize: "vertical", minHeight: 100, lineHeight: 1.6, fontSize: 13 }}
+          disabled={isWorking}
+        />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+            Follow-ups merge into the consolidated report — no need to repeat the original prompt.
+          </p>
+          <button type="submit" className="btn-primary" disabled={!promptText.trim() || isWorking}>
+            {isWorking ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+            Run follow-up
+          </button>
+        </div>
+      </form>
+
       {isRunning && (
         <ProgressIndicator
           progress={progress}
@@ -880,28 +955,6 @@ function ActiveSessionView({
           {error || session.error_message}
         </p>
       )}
-
-      <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <textarea
-          value={promptText}
-          onChange={(event) => setPromptText(event.target.value)}
-          className="input"
-          rows={4}
-          placeholder="Refine, extend, or remove. Try 'extend to cover Asia', 'add 2025 data', or 'remove the regulatory section'."
-          style={{ resize: "vertical", minHeight: 100, lineHeight: 1.6, fontSize: 13 }}
-          disabled={isWorking}
-        />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
-            Follow-ups merge into the consolidated report — no need to repeat the original prompt.
-          </p>
-          <button type="submit" className="btn-primary" disabled={!promptText.trim() || isWorking}>
-            {isWorking ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
-            Run follow-up
-          </button>
-        </div>
-      </form>
-
     </div>
   );
 }

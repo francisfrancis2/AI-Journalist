@@ -132,8 +132,9 @@ def _mark_latest_turn(
     return [*cleaned[:-1], latest]
 
 
-def _to_read_model(session: ResearchSessionORM) -> ResearchSessionRead:
+def _to_read_model(session: ResearchSessionORM, owner_email: Optional[str] = None) -> ResearchSessionRead:
     return ResearchSessionRead(
+        owner_email=owner_email,
         id=session.id,
         title=session.title,
         report_markdown=session.report_markdown,
@@ -170,12 +171,19 @@ async def _get_session_for_user(
         select(ResearchSessionORM).where(ResearchSessionORM.id == session_id)
     )
     session = result.scalar_one_or_none()
-    if session is None or session.user_id != current_user.id:
+    # Admins may read/operate on any user's session; everyone else is scoped to
+    # their own. Mirrors the story access model (_apply_story_access_scope).
+    if session is None or (session.user_id != current_user.id and not current_user.is_admin):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Research session not found",
         )
     return session
+
+
+async def _owner_email(db: AsyncSession, user_id: uuid.UUID) -> Optional[str]:
+    result = await db.execute(select(UserORM.email).where(UserORM.id == user_id))
+    return result.scalar_one_or_none()
 
 
 async def _run_initial_research_session(session_id: uuid.UUID) -> None:
@@ -326,12 +334,16 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> list[ResearchSessionListItem]:
-    result = await db.execute(
-        select(ResearchSessionORM)
-        .where(ResearchSessionORM.user_id == current_user.id)
+    # Admins see every user's research history (attributed by owner email);
+    # everyone else sees only their own sessions.
+    stmt = (
+        select(ResearchSessionORM, UserORM.email)
+        .outerjoin(UserORM, ResearchSessionORM.user_id == UserORM.id)
         .order_by(ResearchSessionORM.updated_at.desc())
     )
-    sessions = result.scalars().all()
+    if not current_user.is_admin:
+        stmt = stmt.where(ResearchSessionORM.user_id == current_user.id)
+    result = await db.execute(stmt)
     return [
         ResearchSessionListItem(
             id=session.id,
@@ -343,8 +355,9 @@ async def list_sessions(
             operation_started_at=session.operation_started_at,
             updated_at=session.updated_at,
             created_at=session.created_at,
+            owner_email=owner_email if current_user.is_admin else None,
         )
-        for session in sessions
+        for session, owner_email in result.all()
     ]
 
 
@@ -385,7 +398,8 @@ async def get_session(
     current_user: UserORM = Depends(get_current_user),
 ) -> ResearchSessionRead:
     session = await _get_session_for_user(db, session_id=session_id, current_user=current_user)
-    return _to_read_model(session)
+    owner_email = await _owner_email(db, session.user_id) if current_user.is_admin else None
+    return _to_read_model(session, owner_email=owner_email)
 
 
 @router.post("/sessions/{session_id}/turns", response_model=ResearchSessionRead)

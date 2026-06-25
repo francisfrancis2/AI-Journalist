@@ -119,6 +119,8 @@ class ResearchSessionRead(BaseModel):
     operation_completed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    # Owner email — populated so admins can attribute sessions across users.
+    owner_email: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -133,5 +135,7 @@ class ResearchSessionListItem(BaseModel):
     operation_started_at: Optional[datetime] = None
     updated_at: datetime
     created_at: datetime
+    # Owner email — populated so admins can attribute sessions across users.
+    owner_email: Optional[str] = None
 
     model_config = {"from_attributes": True}
