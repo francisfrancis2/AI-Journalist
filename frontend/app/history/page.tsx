@@ -44,7 +44,7 @@ type StoryHistoryItem = {
   createdAt: string;
   updatedAt: string;
   ownerEmail: string | null | undefined;
-  status: StoryStatus;
+  status: StoryStatus | string;
   href: string;
   searchText: string;
   story: Story;
@@ -58,7 +58,7 @@ type ResearchHistoryItem = {
   createdAt: string;
   updatedAt: string;
   ownerEmail: string | null | undefined;
-  status: ResearchSessionStatus;
+  status: ResearchSessionStatus | string;
   href: string;
   searchText: string;
   research: ResearchSessionSummary;
@@ -77,7 +77,38 @@ const HISTORY_FILTERS: { value: HistoryFilter; label: string }[] = [
   { value: "failed", label: "Failed" },
 ];
 
-function StoryStatusBadge({ status }: { status: StoryStatus }) {
+function safeText(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim().length > 0 ? value : fallback;
+}
+
+function safeDateString(primary: unknown, fallback?: unknown): string {
+  for (const value of [primary, fallback]) {
+    if (typeof value !== "string" || value.trim().length === 0) continue;
+    const timestamp = new Date(value).getTime();
+    if (Number.isFinite(timestamp)) return value;
+  }
+  return "";
+}
+
+function dateSortValue(value: string): number {
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function formatHistoryDate(value: string): string {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? format(date, "MMM d, yyyy") : "Date unavailable";
+}
+
+function normalizeStoryStatus(status: unknown): StoryStatus | string {
+  return safeText(status, "ideating");
+}
+
+function normalizeResearchStatus(status: unknown): ResearchSessionStatus | string {
+  return safeText(status, "pending");
+}
+
+function StoryStatusBadge({ status }: { status: StoryStatus | string }) {
   if (status === "ideating") return <span className="badge badge-neutral" style={{ fontSize: 11 }}>Ideating</span>;
   if (status === "completed") return <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>;
   if (status === "failed") return <span className="badge badge-danger" style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>;
@@ -87,7 +118,7 @@ function StoryStatusBadge({ status }: { status: StoryStatus }) {
   return <span className="badge badge-active" style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> {storyStatusLabel(status)}</span>;
 }
 
-function ResearchStatusBadge({ status }: { status: ResearchSessionStatus }) {
+function ResearchStatusBadge({ status }: { status: ResearchSessionStatus | string }) {
   if (status === "completed") return <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>;
   if (status === "failed") return <span className="badge badge-danger" style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>;
   if (status === "running") return <span className="badge badge-active" style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> Running</span>;
@@ -113,25 +144,29 @@ function HistoryStatusBadge({ item }: { item: HistoryItem }) {
 }
 
 function storyHref(story: Story): string {
+  const storyId = safeText(story.id, "");
+  if (!storyId) return "/history";
   const scriptGenerationRunning = story.ideation_operation_data?.type === "script_generation"
     && story.ideation_operation_data.status === "running";
-  if (story.status === "completed") return `/ideation/${story.id}/script`;
-  if (scriptGenerationRunning) return `/ideation/${story.id}/script`;
-  if (story.status !== "ideating") return `/results/${story.id}`;
-  if (story.ideation_stage === "hook") return `/ideation/${story.id}/hook`;
+  if (story.status === "completed") return `/ideation/${storyId}/script`;
+  if (scriptGenerationRunning) return `/ideation/${storyId}/script`;
+  if (story.status !== "ideating") return `/results/${storyId}`;
+  if (story.ideation_stage === "hook") return `/ideation/${storyId}/hook`;
   if (story.ideation_stage === "chapters" || story.ideation_stage === "ready_for_script") {
-    return `/ideation/${story.id}/chapters`;
+    return `/ideation/${storyId}/chapters`;
   }
-  return `/ideation/${story.id}/angles`;
+  return `/ideation/${storyId}/angles`;
 }
 
 function researchHref(session: ResearchSessionSummary): string {
-  return `/research?id=${encodeURIComponent(session.id)}`;
+  const sessionId = safeText(session.id, "");
+  return sessionId ? `/research?id=${encodeURIComponent(sessionId)}` : "/research";
 }
 
-function researchStatusLabel(status: ResearchSessionStatus): string {
+function researchStatusLabel(status: ResearchSessionStatus | string): string {
   if (status === "running") return "Running";
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  const normalized = safeText(status, "pending").replace(/_/g, " ");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
 function isItemInProgress(item: HistoryItem): boolean {
@@ -152,34 +187,46 @@ function matchesHistoryFilter(item: HistoryItem, filter: HistoryFilter): boolean
 }
 
 function storyToHistoryItem(story: Story): StoryHistoryItem {
+  const title = safeText(story.title, "Untitled story");
+  const subtitle = safeText(story.topic, "No topic");
+  const status = normalizeStoryStatus(story.status);
+  const createdAt = safeDateString(story.created_at, story.updated_at);
+  const updatedAt = safeDateString(story.updated_at, story.created_at);
+  const ownerEmail = typeof story.owner_email === "string" ? story.owner_email : null;
   return {
     kind: "story",
-    id: story.id,
-    title: story.title,
-    subtitle: story.topic,
-    createdAt: story.created_at,
-    updatedAt: story.updated_at,
-    ownerEmail: story.owner_email,
-    status: story.status,
+    id: safeText(story.id, `story-${title}`),
+    title,
+    subtitle,
+    createdAt,
+    updatedAt,
+    ownerEmail,
+    status,
     href: storyHref(story),
-    searchText: [story.title, story.topic, story.owner_email].filter(Boolean).join(" ").toLowerCase(),
+    searchText: [title, subtitle, ownerEmail].filter(Boolean).join(" ").toLowerCase(),
     story,
   };
 }
 
 function researchToHistoryItem(session: ResearchSessionSummary): ResearchHistoryItem {
-  const statusText = researchStatusLabel(session.status);
+  const title = safeText(session.title, "Untitled research");
+  const status = normalizeResearchStatus(session.status);
+  const statusText = researchStatusLabel(status);
+  const pendingPrompt = safeText(session.pending_prompt, "");
+  const createdAt = safeDateString(session.created_at, session.updated_at);
+  const updatedAt = safeDateString(session.updated_at, session.created_at);
+  const ownerEmail = typeof session.owner_email === "string" ? session.owner_email : null;
   return {
     kind: "research",
-    id: session.id,
-    title: session.title,
-    subtitle: session.pending_prompt || `${statusText} research session`,
-    createdAt: session.created_at,
-    updatedAt: session.updated_at,
-    ownerEmail: session.owner_email,
-    status: session.status,
+    id: safeText(session.id, `research-${title}`),
+    title,
+    subtitle: pendingPrompt || `${statusText} research session`,
+    createdAt,
+    updatedAt,
+    ownerEmail,
+    status,
     href: researchHref(session),
-    searchText: [session.title, session.pending_prompt, session.owner_email, statusText].filter(Boolean).join(" ").toLowerCase(),
+    searchText: [title, pendingPrompt, ownerEmail, statusText].filter(Boolean).join(" ").toLowerCase(),
     research: session,
   };
 }
@@ -243,7 +290,7 @@ export default function HistoryPage() {
     return [
       ...(stories ?? []).map(storyToHistoryItem),
       ...(researchSessions ?? []).map(researchToHistoryItem),
-    ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    ].sort((a, b) => dateSortValue(b.updatedAt) - dateSortValue(a.updatedAt));
   }, [researchSessions, stories]);
 
   const filtered = historyItems.filter((item) => {
@@ -471,7 +518,7 @@ export default function HistoryPage() {
                         marginTop: 2,
                       }}
                     >
-                      {format(new Date(item.updatedAt), "MMM d, yyyy")} · {item.subtitle}
+                      {formatHistoryDate(item.updatedAt)} · {item.subtitle}
                     </p>
                   </div>
 

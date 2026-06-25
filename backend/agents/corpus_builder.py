@@ -13,9 +13,10 @@ Workflow:
 
 import json
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import structlog
 from langchain_anthropic import ChatAnthropic
@@ -107,6 +108,7 @@ class CorpusBuilderAgent:
 
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
+        self._session_factory = AsyncSessionLocal
         self._fetcher = YouTubeFetcher()
         self._haiku = ChatAnthropic(
             model=settings.claude_model,
@@ -120,6 +122,17 @@ class CorpusBuilderAgent:
             max_tokens=2048,
             temperature=0.1,
         ).with_structured_output(_PatternSynthesisOutput)
+
+    @asynccontextmanager
+    async def _fresh_session(self) -> AsyncIterator[AsyncSession]:
+        """Use a fresh production session, or the injected session in tests."""
+        session_factory = getattr(self, "_session_factory", None)
+        if session_factory is None:
+            yield self._db
+            return
+
+        async with session_factory() as fresh_db:
+            yield fresh_db
 
     async def _extract_structure(self, title: str, transcript: str) -> Optional[DocStructure]:
         """Extract structural features from a single transcript using Haiku."""
@@ -179,7 +192,7 @@ class CorpusBuilderAgent:
     async def _get_next_version(self, library_key: str) -> int:
         # Fresh session — called at the end of long builds where self._db
         # may have been idled out.
-        async with AsyncSessionLocal() as fresh_db:
+        async with self._fresh_session() as fresh_db:
             result = await fresh_db.execute(
                 select(BIPatternLibraryORM)
                 .where(BIPatternLibraryORM.library_key == library_key)
@@ -213,7 +226,7 @@ class CorpusBuilderAgent:
         )
         # Fresh session — _save_library runs at the end of a long build
         # where self._db may have been idled out by Neon.
-        async with AsyncSessionLocal() as fresh_db:
+        async with self._fresh_session() as fresh_db:
             fresh_db.add(orm)
             await fresh_db.commit()
 
@@ -406,7 +419,7 @@ class CorpusBuilderAgent:
 
         # Fresh session — refresh runs after slow LLM extraction; self._db
         # may have been idled out by Neon during that time.
-        async with AsyncSessionLocal() as fresh_db:
+        async with self._fresh_session() as fresh_db:
             for doc in docs_to_replace:
                 merged = await fresh_db.merge(doc)
                 await fresh_db.delete(merged)
@@ -543,7 +556,7 @@ class CorpusBuilderAgent:
                 # Use a fresh session for each persist — the held self._db
                 # session sits idle during the (slow) LLM extraction call
                 # above and gets killed by Neon's idle-connection timeout.
-                async with AsyncSessionLocal() as fresh_db:
+                async with self._fresh_session() as fresh_db:
                     fresh_db.add(doc)
                     await fresh_db.commit()
 

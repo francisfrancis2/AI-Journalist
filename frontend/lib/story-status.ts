@@ -17,18 +17,19 @@ export function isAngleSelectionExpired(status: string | undefined): boolean {
   return status === "angle_selection_expired";
 }
 
-export function storyStatusLabel(status: StoryStatus | string): string {
+export function storyStatusLabel(status: StoryStatus | string | null | undefined): string {
+  if (!status) return "Unknown";
   if (status === "ideating") return "Ideating";
   if (status === "angle_selection_expired") return "Script writing stopped";
   return status.replace(/_/g, " ");
 }
 
-export function storyStatusTitle(status: StoryStatus | string): string {
+export function storyStatusTitle(status: StoryStatus | string | null | undefined): string {
   const label = storyStatusLabel(status);
   return label.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-export function storyStatusBadgeClass(status: StoryStatus | string): string {
+export function storyStatusBadgeClass(status: StoryStatus | string | null | undefined): string {
   if (status === "completed") return "badge-success";
   if (status === "failed") return "badge-danger";
   if (status === "angle_selection_expired") return "badge-warning";
