@@ -318,6 +318,9 @@ class ResearchAgent:
             duration_target=duration_target,
             deep=True,
             deep_prompt=self._deep_prompt(topic, state),
+            # Pipeline research uses a lighter deep-research cap than the
+            # Research Tab (run_report) to control per-story cost/latency.
+            deep_max_uses=settings.anthropic_deep_research_pipeline_max_uses,
         )
 
         package.research_duration_seconds = time.monotonic() - start
@@ -487,13 +490,17 @@ class ResearchAgent:
         prompt: str,
         existing_report: str | None = None,
         existing_citations: list[DeepResearchCitation] | None = None,
+        deep: bool = True,
     ) -> ConsolidatedResearch:
         """
-        Run the full multi-source + deep-research gather for a free-form prompt,
-        then synthesize ONE consolidated Markdown report + merged citations.
+        Run the full multi-source (and optionally deep-research) gather for a
+        free-form prompt, then synthesize ONE consolidated Markdown report +
+        merged citations.
 
         Used by the Research Tab. When ``existing_report`` is provided this is a
-        follow-up turn (extend / remove / refine the prior report).
+        follow-up turn (extend / remove / refine the prior report). Pass
+        ``deep=False`` on follow-ups so deep research runs only on the first
+        query of a session (cost control).
         """
         topic = prompt.strip()
         state = {"topic": topic}
@@ -521,7 +528,7 @@ class ResearchAgent:
             financial_symbols=plan.financial_symbols,
             use_sources=use_sources,
             duration_target=duration_target,
-            deep=True,
+            deep=deep,
             deep_prompt=topic,
         )
         package.research_duration_seconds = time.monotonic() - start

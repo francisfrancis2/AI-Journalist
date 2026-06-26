@@ -270,10 +270,14 @@ async def _run_research_session_turn(session_id: uuid.UUID) -> None:
         existing_citations = _orm_to_citations(session.citations)
 
     try:
+        # Deep research runs only on a session's first query. Follow-up turns
+        # refine via multi-source search only; start a new session for deep
+        # research again.
         result = await _get_research_agent().run_report(
             prompt=prompt,
             existing_report=existing_report,
             existing_citations=existing_citations,
+            deep=False,
         )
     except Exception as exc:
         log.error("research_session.turn.failed", session_id=str(session_id), error=str(exc))

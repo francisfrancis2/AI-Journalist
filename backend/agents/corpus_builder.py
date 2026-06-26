@@ -119,7 +119,10 @@ class CorpusBuilderAgent:
         self._sonnet = ChatAnthropic(
             model=settings.claude_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=2048,
+            # 2048 truncates the structured output when synthesising a full
+            # 125-doc corpus (the trailing key_observations field gets cut),
+            # which fails validation. 8192 leaves headroom for large corpora.
+            max_tokens=8192,
             temperature=0.1,
         ).with_structured_output(_PatternSynthesisOutput)
 

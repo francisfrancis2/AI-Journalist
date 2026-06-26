@@ -544,7 +544,15 @@ class TestScriptwriterAgent:
         ]
         assert all(section.source_ids == [source_id] for section in script.sections)
         assert script.sources[0]["source_id"] == source_id
-        prompt = mock_structured.ainvoke.call_args_list[0].args[0][1].content
+        # Shared craft/research context lives in the cached system block (a list
+        # of content blocks); the per-act spec is in the human message.
+        messages = mock_structured.ainvoke.call_args_list[0].args[0]
+        def _text(message):
+            content = message.content
+            if isinstance(content, list):
+                return " ".join(b.get("text", "") for b in content if isinstance(b, dict))
+            return content
+        prompt = _text(messages[0]) + "\n" + _text(messages[1])
         assert "CHIEF EDITOR RECOMMENDATIONS TO APPLY WHILE WRITING" in prompt
         assert "mandatory editorial direction" in prompt
         assert "Requested duration: 15 minutes" in prompt

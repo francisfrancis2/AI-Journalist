@@ -21,6 +21,7 @@ from backend.agents._research_enrichment import enrich_if_gaps
 from backend.config import settings
 from backend.models.research import AnalysisResult, StorylineProposal
 from backend.models.story import FinalScript, ScriptSection
+from backend.services.llm_cache import cached_system
 from backend.services.research_report import ResearchReportSynthesizer
 from backend.services.duration_targets import (
     WORDS_PER_MINUTE,
@@ -234,7 +235,11 @@ class ScriptwriterAgent:
                 "and act plan. Use research to verify and enrich claims, not to redirect the story into a new premise.\n\n"
             )
 
-        prompt = (
+        # Everything below the per-act continuity/spec is identical for every
+        # act of this story (craft rules, story context, the full research). Put
+        # it in a single cached system block so act 1 writes the cache and the
+        # remaining acts read it at ~0.1x input cost (see _write_acts warming).
+        shared_context = (
             f"Documentary: {storyline.title}\n"
             f"Logline: {storyline.logline}\n"
             f"Overall tone: {storyline.tone}\n\n"
@@ -246,9 +251,16 @@ class ScriptwriterAgent:
             f"{plan_priority_directive}"
             f"{revision_goals}"
             f"=== FULL STORY ARC ===\n{act_arc}\n\n"
-            f"=== CONTINUITY CONTEXT ===\n{previous_context}{next_context}\n"
             f"{library_reference}"
             f"{voice_section}"
+            f"=== RELEVANT RESEARCH ===\n"
+            f"Key facts:\n{relevant_findings or '  No verified findings were extracted; keep factual claims minimal.'}\n\n"
+            f"Source lookup:\n{source_brief or '  No source lookup available.'}\n\n"
+            f"Notable quotes:\n{relevant_quotes or '  (none available)'}\n"
+        )
+        system_text = load_prompt("scriptwriter") + "\n\n" + shared_context
+        per_act = (
+            f"=== CONTINUITY CONTEXT ===\n{previous_context}{next_context}\n"
             f"=== ACT TO WRITE ===\n"
             f"Act {act_data['act_number']}: {act_data['act_title']}\n"
             f"Purpose: {act_data['purpose']}\n"
@@ -256,17 +268,13 @@ class ScriptwriterAgent:
             + "\n".join(f"  - {kp}" for kp in act_data.get("key_points", []))
             + f"\nTarget duration: {act_data['estimated_duration_seconds']} seconds\n"
             f"Target word count: {int(act_data['estimated_duration_seconds'] / 60 * _WORDS_PER_MINUTE)}\n\n"
-            f"=== RELEVANT RESEARCH ===\n"
-            f"Key facts:\n{relevant_findings or '  No verified findings were extracted; keep factual claims minimal.'}\n\n"
-            f"Source lookup:\n{source_brief or '  No source lookup available.'}\n\n"
-            f"Notable quotes:\n{relevant_quotes or '  (none available)'}\n\n"
             "Return source_ids containing only IDs from the source lookup that support this act. "
             "If a factual claim is not supported by a listed source ID, do not include that claim."
         )
 
         output: ActOutput = await self._structured_llm.ainvoke([
-            SystemMessage(content=load_prompt("scriptwriter")),
-            HumanMessage(content=prompt),
+            SystemMessage(content=cached_system(system_text)),
+            HumanMessage(content=per_act),
         ])
 
         return ScriptSection(
@@ -407,31 +415,40 @@ class ScriptwriterAgent:
                 + "\n=== END TEAM VOICE PROFILE ===\n\n"
             )
 
-        # Write all acts in parallel, giving each the full arc for continuity.
+        # Write acts giving each the full arc for continuity. Act 1 runs first
+        # to warm the shared cached system prefix; acts 2..N then run in parallel
+        # and read that cache instead of re-sending the whole prefix each time.
+        def _make_act(index: int, lookup: dict[str, dict]):
+            return self._write_act(
+                act_data=act_plans[index],
+                storyline=storyline,
+                analysis=analysis,
+                source_lookup=lookup,
+                topic=topic,
+                target_audience=target_audience,
+                rewrite_recommendations=rewrite_recommendations,
+                act_arc=act_arc,
+                previous_act=act_plans[index - 1] if index > 0 else None,
+                next_act=act_plans[index + 1] if index + 1 < len(act_plans) else None,
+                selected_angle=selected_angle,
+                library_reference=library_reference,
+                voice_section=voice_section,
+                duration_contract=duration_contract,
+                treatment_directive=treatment_directive,
+                plan_priority=plan_priority,
+                story_hook=state.get("story_hook") or "",
+            )
+
         async def _write_acts(lookup: dict[str, dict]) -> list[ScriptSection]:
-            act_tasks = [
-                self._write_act(
-                    act_data=act_data,
-                    storyline=storyline,
-                    analysis=analysis,
-                    source_lookup=lookup,
-                    topic=topic,
-                    target_audience=target_audience,
-                    rewrite_recommendations=rewrite_recommendations,
-                    act_arc=act_arc,
-                    previous_act=act_plans[index - 1] if index > 0 else None,
-                    next_act=act_plans[index + 1] if index + 1 < len(act_plans) else None,
-                    selected_angle=selected_angle,
-                    library_reference=library_reference,
-                    voice_section=voice_section,
-                    duration_contract=duration_contract,
-                    treatment_directive=treatment_directive,
-                    plan_priority=plan_priority,
-                    story_hook=state.get("story_hook") or "",
-                )
-                for index, act_data in enumerate(act_plans)
-            ]
-            return list(await asyncio.gather(*act_tasks))
+            if not act_plans:
+                return []
+            first = await _make_act(0, lookup)
+            if len(act_plans) == 1:
+                return [first]
+            rest = await asyncio.gather(
+                *[_make_act(i, lookup) for i in range(1, len(act_plans))]
+            )
+            return [first, *rest]
 
         phase_started_at = time.monotonic()
         sections: list[ScriptSection] = await _write_acts(source_lookup)

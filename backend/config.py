@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     anthropic_search_max_uses_per_query: int = 3   # caps cost per query call
     anthropic_search_max_queries: int = 4          # caps how many planned queries we send
     anthropic_deep_research_max_uses: int = 12     # caps Research Workspace deep research searches
+    anthropic_deep_research_pipeline_max_uses: int = 5  # lighter cap for the story pipeline research node (Research Tab keeps the full cap)
 
     # ── Unified Research Agent (deep research always-on + writer enrichment) ───
     # When True, ResearchAgent.run always folds an Anthropic deep-research report
