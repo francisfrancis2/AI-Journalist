@@ -141,6 +141,7 @@ class StoryORM(Base):
     ideation_chat_data: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     ideation_research_data: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     ideation_operation_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    attachment_data: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     story_hook: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     hook_options_data: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     chapters_data: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
@@ -227,6 +228,7 @@ class StoryRead(BaseModel):
     ideation_chat_data: Optional[list] = None
     ideation_research_data: Optional[list] = None
     ideation_operation_data: Optional[dict] = None
+    attachment_data: Optional[list] = None
     story_hook: Optional[str] = None
     hook_options_data: Optional[list] = None
     chapters_data: Optional[list] = None

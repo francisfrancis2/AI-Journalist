@@ -10,11 +10,11 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,6 +52,12 @@ from backend.models.story import (
     StoryStatus,
 )
 from backend.models.user import UserORM
+from backend.services.attachment_ingest import (
+    AttachmentExtractionError,
+    extract_attachment_sources,
+    format_attachment_sources_for_prompt,
+    raw_sources_from_json,
+)
 from backend.services.duration_targets import WORDS_PER_MINUTE
 from backend.tools.anthropic_search import AnthropicSearchTool
 from backend.tools.news_api import NewsAPITool
@@ -319,6 +325,16 @@ def _source_links_from_sources(sources: list[RawSource], limit: int = 12) -> lis
     return links
 
 
+def _attachment_sources_for_story(story: StoryORM) -> list[RawSource]:
+    return raw_sources_from_json(story.attachment_data)
+
+
+def _merged_fresh_context(live_context: str, attachment_context: str) -> str:
+    return "\n\n".join(
+        part for part in [attachment_context.strip(), live_context.strip()] if part
+    )
+
+
 async def _fresh_research_pack(message: str, topic: str) -> tuple[str, list[RawSource], list[IdeationSourceLink]]:
     """Run lightweight live search and return prompt context plus source links."""
     query = f"{topic} {message}".strip()
@@ -524,6 +540,45 @@ async def _run_story_planning_agent(
     )
 
 
+async def _parse_ideation_create_request(
+    request: Request,
+) -> tuple[IdeationCreateRequest, list[RawSource]]:
+    """Accept either legacy JSON or multipart prompt + attachments."""
+    content_type = request.headers.get("content-type", "").lower()
+    if "multipart/form-data" not in content_type:
+        try:
+            payload = IdeationCreateRequest.model_validate(await request.json())
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=json.loads(exc.json()),
+            ) from exc
+        return payload, []
+
+    form = await request.form()
+    prompt_value = form.get("prompt")
+    upload_values = [
+        value
+        for key, value in form.multi_items()
+        if key in {"attachments", "files"} and hasattr(value, "filename") and hasattr(value, "read")
+    ]
+    try:
+        payload = IdeationCreateRequest(prompt=str(prompt_value or ""))
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=json.loads(exc.json()),
+        ) from exc
+    try:
+        attachment_sources = await extract_attachment_sources(upload_values)
+    except AttachmentExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return payload, attachment_sources
+
+
 def _merge_angle_options(existing: list | None, generated: list[dict[str, Any]]) -> list[dict[str, Any]]:
     merged: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -607,8 +662,16 @@ async def _run_ideation_operation(
         stage = IdeationStage(stage_value)
         fresh_context = ""
         sources: list[IdeationSourceLink] = []
+        attachment_sources = _attachment_sources_for_story(story)
+        attachment_context = format_attachment_sources_for_prompt(attachment_sources)
+        if attachment_sources:
+            sources.extend(_source_links_from_sources(attachment_sources, limit=6))
         if fetch_research:
-            fresh_context, _, sources = await _fresh_research_pack(user_message, story.topic)
+            live_context, _, live_sources = await _fresh_research_pack(user_message, story.topic)
+            fresh_context = _merged_fresh_context(live_context, attachment_context)
+            sources.extend(live_sources)
+        else:
+            fresh_context = attachment_context
 
         output = await _run_story_planning_agent(
             story=story,
@@ -798,6 +861,11 @@ def _build_chat_system_prompt(story: StoryORM, fresh_research_context: str = "")
                 )
             source_context = "\n".join(source_lines)
 
+    attachment_context = format_attachment_sources_for_prompt(
+        _attachment_sources_for_story(story),
+        limit=6,
+    )
+
     bench_context = ""
     if story.benchmark_data:
         bd = story.benchmark_data
@@ -831,6 +899,9 @@ CURRENT SCRIPT:
 
 SAVED RESEARCH SOURCES:
 {source_context or "  Saved source pack not yet available."}
+
+UPLOADED ATTACHMENTS:
+{attachment_context or "  No uploaded attachments."}
 
 FRESH RESEARCH RESULTS FOR THIS REQUEST:
 {fresh_research_context or "  No fresh search results were fetched for this message."}
@@ -1140,6 +1211,7 @@ async def _run_pipeline(
     tone: str,
     target_duration_minutes: int,
     target_audience: Optional[str],
+    attachment_sources: Optional[list[dict[str, Any]]] = None,
 ) -> None:
     """Fresh-start path. Build initial state and drive the pipeline; may pause at angle selection."""
     log.info("pipeline.started", story_id=story_id)
@@ -1150,6 +1222,7 @@ async def _run_pipeline(
         target_duration_minutes=target_duration_minutes,
         target_audience=target_audience,
     )
+    initial_state["attachment_sources"] = attachment_sources or []
     await _drive_pipeline(story_id, initial_state)
 
 
@@ -1185,6 +1258,7 @@ async def _run_pipeline_from_ideation(story_id: str) -> None:
         target_duration_minutes=story.target_duration_minutes,
         target_audience=story.target_audience,
     )
+    state["attachment_sources"] = story.attachment_data or []
     if story.research_data:
         try:
             state["research_package"] = ResearchPackage(**story.research_data)
@@ -1226,6 +1300,7 @@ def _hydrate_state_for_angle_resume(story: StoryORM, selected_angle: str) -> dic
         target_duration_minutes=story.target_duration_minutes,
         target_audience=story.target_audience,
     )
+    state["attachment_sources"] = story.attachment_data or []
     state["research_package"] = ResearchPackage(**story.research_data)
     state["analysis_result"] = AnalysisResult(**story.analysis_data)
     state["generated_angles"] = list(story.angles_data or [])
@@ -1326,6 +1401,7 @@ def _hydrate_existing_story_state(story: StoryORM) -> dict[str, Any]:
         ),
         "analysis_result": AnalysisResult(**story.analysis_data),
         "research_package": ResearchPackage(**story.research_data),
+        "attachment_sources": story.attachment_data or [],
         "selected_storyline": (
             StorylineProposal(**story.storyline_data)
             if story.storyline_data else None
@@ -1382,6 +1458,7 @@ async def _clone_story_for_revision(
         word_count=source.word_count if carry_outputs else None,
         estimated_duration_minutes=source.estimated_duration_minutes if carry_outputs else None,
         iteration_count=source.iteration_count,
+        attachment_data=source.attachment_data,
         parent_story_id=root_id,
         revision=new_revision,
     )
@@ -1478,6 +1555,7 @@ async def _run_implement_recommendations(story_id: str, source_story_id: str, re
                 target_audience=source_story.target_audience,
             )
             state["research_package"] = ResearchPackage(**source_story.research_data)
+            state["attachment_sources"] = source_story.attachment_data or []
             state["analysis_result"] = (
                 AnalysisResult(**source_story.analysis_data)
                 if source_story.analysis_data else None
@@ -1606,6 +1684,7 @@ async def _run_script_regeneration(story_id: str) -> None:
                     target_audience=story.target_audience,
                 ),
                 "research_package": ResearchPackage(**story.research_data),
+                "attachment_sources": story.attachment_data or [],
                 "analysis_result": AnalysisResult(**story.analysis_data) if story.analysis_data else None,
                 "evaluation_report": EvaluationReport(**story.evaluation_data) if story.evaluation_data else None,
                 "benchmark_report": BenchmarkReport(**story.benchmark_data) if story.benchmark_data else None,
@@ -1716,14 +1795,16 @@ async def _get_story_for_user(
 
 @router.post("/ideation", response_model=IdeationChatResponse, status_code=status.HTTP_201_CREATED)
 async def create_ideation_story(
-    payload: IdeationCreateRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> IdeationChatResponse:
     """Create a draft story and queue the first set of editorial angles."""
+    payload, attachment_sources = await _parse_ideation_create_request(request)
     validate_user_input(payload.prompt, field="prompt")
     prompt = payload.prompt.strip()
+    attachment_data = [source.model_dump(mode="json") for source in attachment_sources]
     story = StoryORM(
         title=f"Story: {prompt[:80]}",
         topic=prompt,
@@ -1733,7 +1814,11 @@ async def create_ideation_story(
         owner_user_id=current_user.id,
         ideation_stage=IdeationStage.ANGLES.value,
         ideation_chat_data=_append_pending_ideation_message([], user_message=prompt),
-        ideation_research_data=[],
+        ideation_research_data=[
+            link.model_dump(mode="json")
+            for link in _source_links_from_sources(attachment_sources, limit=6)
+        ],
+        attachment_data=attachment_data,
         ideation_operation_data=_ideation_operation(
             "initial_angles",
             "Researching the first set of angles.",
@@ -1754,7 +1839,7 @@ async def create_ideation_story(
     return IdeationChatResponse(
         story=StoryRead.model_validate(story),
         content="Researching the first set of angles.",
-        sources=[],
+        sources=_source_links_from_sources(attachment_sources, limit=6),
     )
 
 

@@ -113,6 +113,27 @@ export interface StoryCreate {
   target_audience?: string | null;
 }
 
+export interface StoryAttachmentSource {
+  source_id?: string;
+  source_type: "user_attachment" | string;
+  url: string | null;
+  title: string;
+  content: string;
+  author: string | null;
+  published_at: string | null;
+  credibility: "high" | "medium" | "low";
+  relevance_score: number;
+  metadata: {
+    filename?: string;
+    content_type?: string;
+    size_bytes?: number;
+    extraction_note?: string;
+    provider?: string;
+    user_provided?: boolean;
+    [key: string]: unknown;
+  };
+}
+
 export interface EvaluationCriteria {
   factual_accuracy: number;
   narrative_coherence: number;
@@ -314,6 +335,7 @@ export interface Story {
   ideation_chat_data: ChatMessage[] | null;
   ideation_research_data: IdeationSourceLink[] | null;
   ideation_operation_data: IdeationOperationData | null;
+  attachment_data?: StoryAttachmentSource[] | null;
   story_hook: string | null;
   hook_options_data: string[] | null;
   chapters_data: IdeationChapter[] | null;
@@ -473,6 +495,9 @@ class AIJournalistAPIClient {
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
+      if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+        delete config.headers["Content-Type"];
+      }
       return config;
     });
 
@@ -558,7 +583,18 @@ class AIJournalistAPIClient {
     return data;
   }
 
-  async createIdeationStory(prompt: string): Promise<IdeationChatResponse> {
+  async createIdeationStory(prompt: string, attachments: File[] = []): Promise<IdeationChatResponse> {
+    if (attachments.length > 0) {
+      const formData = new FormData();
+      formData.append("prompt", prompt);
+      attachments.forEach((file) => formData.append("attachments", file));
+      const { data } = await this.http.post<IdeationChatResponse>(
+        "/api/v1/stories/ideation",
+        formData
+      );
+      return data;
+    }
+
     const { data } = await this.http.post<IdeationChatResponse>(
       "/api/v1/stories/ideation",
       { prompt }

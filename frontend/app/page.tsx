@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2, MessageSquareText, ChevronRight, AlertTriangle } from "lucide-react";
+import { Loader2, MessageSquareText, ChevronRight, AlertTriangle, FileText, Paperclip, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
@@ -11,10 +11,28 @@ import { getUserInfo } from "@/lib/auth";
 import { storyStatusBadgeClass, storyStatusLabel } from "@/lib/story-status";
 
 const PROMPT_MAX_WORDS = 200;
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_ACCEPT = ".pdf,.docx,.jpg,.jpeg,.xls,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg";
+const ATTACHMENT_EXTENSIONS = new Set(["pdf", "docx", "jpg", "jpeg", "xls", "xlsx"]);
 
 function countWords(value: string): number {
   const trimmed = value.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileKey(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function isAllowedAttachment(file: File): boolean {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return ATTACHMENT_EXTENSIONS.has(extension);
 }
 
 function storyWorkspaceHref(story: Story): string {
@@ -35,6 +53,9 @@ export default function NewStoryPage() {
   const currentUser = getUserInfo();
   const isAdmin = currentUser?.is_admin ?? false;
   const [prompt, setPrompt] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { data: stories } = useQuery<Story[]>({
     queryKey: ["stories", "list"],
@@ -43,15 +64,43 @@ export default function NewStoryPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => apiClient.createIdeationStory(prompt.trim()),
+    mutationFn: () => apiClient.createIdeationStory(prompt.trim(), attachments),
     onSuccess: ({ story }) => {
       setPrompt("");
+      setAttachments([]);
+      setAttachmentError(null);
       router.push(`/ideation/${story.id}/angles`);
     },
   });
 
   const wordCount = countWords(prompt);
   const recent = (stories ?? []).slice(0, 6);
+
+  function handleAttachmentChange(files: FileList | null) {
+    if (!files?.length) return;
+    const selected = Array.from(files);
+    const valid: File[] = [];
+    const rejected: string[] = [];
+
+    selected.forEach((file) => {
+      if (!isAllowedAttachment(file)) {
+        rejected.push(`${file.name} is not a supported type`);
+      } else if (file.size > MAX_ATTACHMENT_BYTES) {
+        rejected.push(`${file.name} is larger than 10 MB`);
+      } else {
+        valid.push(file);
+      }
+    });
+
+    const byKey = new Map(attachments.map((file) => [fileKey(file), file]));
+    valid.forEach((file) => byKey.set(fileKey(file), file));
+    const next = Array.from(byKey.values()).slice(0, MAX_ATTACHMENTS);
+    if (byKey.size > MAX_ATTACHMENTS) {
+      rejected.push(`Only ${MAX_ATTACHMENTS} attachments can be added`);
+    }
+    setAttachments(next);
+    setAttachmentError(rejected.length ? rejected.join(". ") : null);
+  }
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
@@ -93,6 +142,76 @@ export default function NewStoryPage() {
               <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Tone and duration are decided by the backend.</span>
             </div>
 
+            <div style={{ marginTop: 14 }}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ATTACHMENT_ACCEPT}
+                multiple
+                onChange={(event) => {
+                  handleAttachmentChange(event.target.files);
+                  event.target.value = "";
+                }}
+                style={{ display: "none" }}
+                disabled={createMutation.isPending}
+              />
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={createMutation.isPending || attachments.length >= MAX_ATTACHMENTS}
+              >
+                <Paperclip size={13} />
+                Attach sources
+              </button>
+              <span style={{ marginLeft: 10, fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                PDF, DOCX, JPEG, XLS/XLSX
+              </span>
+
+              {attachments.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+                  {attachments.map((file) => (
+                    <div
+                      key={fileKey(file)}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "16px minmax(0, 1fr) auto 28px",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "7px 0",
+                        borderTop: "0.5px solid var(--color-border-tertiary)",
+                      }}
+                    >
+                      <FileText size={14} style={{ color: "var(--color-text-secondary)" }} />
+                      <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {file.name}
+                      </span>
+                      <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                        {formatFileSize(file.size)}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        aria-label={`Remove ${file.name}`}
+                        title={`Remove ${file.name}`}
+                        onClick={() => setAttachments((current) => current.filter((item) => fileKey(item) !== fileKey(file)))}
+                        disabled={createMutation.isPending}
+                        style={{ width: 28, height: 28, padding: 0 }}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {attachmentError && (
+                <p role="alert" style={{ marginTop: 8, fontSize: 12, color: "var(--color-danger)" }}>
+                  {attachmentError}.
+                </p>
+              )}
+            </div>
+
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
               <button
                 type="button"
@@ -105,7 +224,7 @@ export default function NewStoryPage() {
               </button>
               {createMutation.isPending && (
                 <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-                  Researching the first set of angles...
+                  {attachments.length ? "Uploading sources and researching angles..." : "Researching the first set of angles..."}
                 </span>
               )}
             </div>

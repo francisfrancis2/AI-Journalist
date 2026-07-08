@@ -48,3 +48,6 @@ structlog==24.4.0
 tenacity==9.0.0
 aiofiles==24.1.0
 orjson==3.10.12
+pypdf==5.1.0
+xlrd==2.0.1
+Pillow==11.0.0

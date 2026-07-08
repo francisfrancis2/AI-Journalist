@@ -6,6 +6,7 @@ The LangGraph pipeline is NOT invoked in these tests — we test the API layer o
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 import uuid
 
 import pytest
@@ -135,6 +136,47 @@ class TestStoriesCreate:
         data = response.json()
         assert data["owner_user_id"] is not None
         assert data["owner_email"] == "test@example.com"
+
+    @pytest.mark.asyncio
+    async def test_create_ideation_story_accepts_attachment(self, api_client, mocker):
+        mocker.patch("backend.api.routes.stories._run_ideation_operation", new=AsyncMock())
+        workbook = b"""<?xml version="1.0"?>
+        <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet">
+          <Worksheet ss:Name="Summary" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+            <Table>
+              <Row>
+                <Cell><Data ss:Type="String">Metric</Data></Cell>
+                <Cell><Data ss:Type="String">Value</Data></Cell>
+              </Row>
+              <Row>
+                <Cell><Data ss:Type="String">Customer churn</Data></Cell>
+                <Cell><Data ss:Type="String">18%</Data></Cell>
+              </Row>
+            </Table>
+          </Worksheet>
+        </Workbook>"""
+
+        response = await api_client.post(
+            "/api/v1/stories/ideation",
+            data={"prompt": "Investigate the customer churn trend in this uploaded data"},
+            files={
+                "attachments": (
+                    "churn.xls",
+                    workbook,
+                    "application/vnd.ms-excel",
+                )
+            },
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["story"]["status"] == StoryStatus.IDEATING
+        assert data["story"]["attachment_data"]
+        attachment = data["story"]["attachment_data"][0]
+        assert attachment["source_type"] == "user_attachment"
+        assert attachment["metadata"]["filename"] == "churn.xls"
+        assert "Customer churn" in attachment["content"]
+        assert data["sources"][0]["provider"] == "user_attachment"
 
 
 class TestStoriesList:

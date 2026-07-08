@@ -21,6 +21,7 @@ class SourceType(str, Enum):
     NEWS_API = "news_api"
     FINANCIAL_DATA = "financial_data"
     RSS_FEED = "rss_feed"
+    USER_ATTACHMENT = "user_attachment"
 
 
 class SourceCredibility(str, Enum):

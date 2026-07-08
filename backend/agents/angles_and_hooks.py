@@ -17,6 +17,10 @@ from pydantic import BaseModel, Field
 from backend.agents._angle_synthesis_skill import AngleSynthesisSkill
 from backend.config import settings
 from backend.models.story import IdeationStage, StoryORM
+from backend.services.attachment_ingest import (
+    format_attachment_sources_for_prompt,
+    raw_sources_from_json,
+)
 from backend.services.library_knowledge import format_reference_pack, get_reference_pack
 from backend.services.prompt_loader import load_prompt
 
@@ -70,6 +74,10 @@ def compact_ideation_context(story: StoryORM) -> str:
     angles = story.angles_data or []
     chapters = story.chapters_data or []
     hook_options = story.hook_options_data or []
+    attachment_context = format_attachment_sources_for_prompt(
+        raw_sources_from_json(story.attachment_data),
+        limit=5,
+    )
     return "\n".join(
         [
             f"Topic: {story.topic}",
@@ -85,6 +93,8 @@ def compact_ideation_context(story: StoryORM) -> str:
             str(hook_options)[:2500] if hook_options else "[]",
             "Current chapters:",
             str(chapters)[:2500] if chapters else "[]",
+            "Uploaded attachment context:",
+            attachment_context[:5000] if attachment_context else "No uploaded attachments.",
         ]
     )
 

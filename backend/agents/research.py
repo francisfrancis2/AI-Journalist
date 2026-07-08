@@ -26,6 +26,7 @@ from backend.models.research import (
     SourceCredibility,
     SourceType,
 )
+from backend.services.attachment_ingest import raw_sources_from_json
 from backend.services.prompt_loader import load_prompt
 from backend.services.duration_targets import duration_prompt_block, duration_target_for
 from backend.services.library_knowledge import (
@@ -293,6 +294,8 @@ class ResearchAgent:
         )
 
         package = ResearchPackage(topic=topic)
+        for attachment_source in raw_sources_from_json(state.get("attachment_sources")):
+            package.add_source(attachment_source)
         package.queries_issued = [
             ResearchQuery(query_text=q, target_source_types=[SourceType.WEB_SEARCH])
             for q in all_archetype_queries
