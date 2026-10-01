@@ -336,7 +336,7 @@ export default function ResultsPage() {
                 <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 600, color: "var(--color-danger)", marginBottom: 4 }}>
                   AI Journalist could not complete the script cleanly
                 </p>
-                <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
                   {story.pipeline_failure_summary}
                 </p>
                 <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 6 }}>
@@ -606,7 +606,7 @@ function ScriptPanel({
                   <p
                     style={{
                       marginTop: 8,
-                      fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
+                      fontSize: "var(--text-xs)",
                       lineHeight: 1.5,
                       color: exportNotice.tone === "success" ? "var(--color-success)" : "var(--color-danger)",
                     }}
@@ -625,13 +625,13 @@ function ScriptPanel({
           {/* Logline */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Logline</span></div>
-            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.7 }}>{script.logline}</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{script.logline}</p>
           </div>
 
           {/* Opening hook */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Opening Hook</span></div>
-            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.7 }}>{script.opening_hook}</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{script.opening_hook}</p>
           </div>
 
           {/* Acts */}
@@ -684,7 +684,7 @@ function ScriptPanel({
 
 	              {open.includes(i) && (
 	                <div style={{ padding: "16px 20px 20px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-	                  <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.8 }}>{section.narration}</p>
+	                  <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.8 }}>{section.narration}</p>
                     {sectionSources.length > 0 && (
                       <div style={{ marginTop: 14, display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {sectionSources.map((source, sourceIndex) => (
@@ -714,7 +714,7 @@ function ScriptPanel({
           {/* Closing */}
           <div className="card" style={{ padding: "18px 20px" }}>
             <div className="section-rule"><span>Closing Statement</span></div>
-            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.7 }}>{script.closing_statement}</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{script.closing_statement}</p>
           </div>
         </div>
       </div>

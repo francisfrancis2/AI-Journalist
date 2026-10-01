@@ -254,7 +254,7 @@ export default function NewStoryPage() {
           <aside className="card" style={{ padding: 16 }}>
             <p className="section-label" style={{ marginBottom: 10 }}>Recent stories</p>
             {recent.length === 0 ? (
-              <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+              <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
                 Your drafts and scripts will appear here.
               </p>
             ) : (

@@ -58,7 +58,7 @@ const SCRIPT_READ_ONLY_STYLE: CSSProperties = {
   borderRadius: "var(--border-radius-md)",
   background: "#fff",
   padding: "10px 12px",
-  fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
+  fontSize: "var(--text-sm)",
   lineHeight: 1.6,
   whiteSpace: "pre-wrap",
   color: "var(--color-text-primary)",
@@ -166,7 +166,7 @@ function OperationNotice({ operation }: { operation: IdeationOperationData }) {
           color: "var(--color-danger)",
           borderRadius: "var(--border-radius-md)",
           padding: "10px 12px",
-          fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
+          fontSize: "var(--text-xs)",
           lineHeight: 1.5,
         }}
       >
@@ -255,7 +255,7 @@ function AngleCard({
         {selected && <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-action)" }} />}
       </div>
       <div style={{ minWidth: 0 }}>
-        <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.5, color: "var(--color-text-primary)", marginBottom: 6 }}>
+        <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.5, color: "var(--color-text-primary)", marginBottom: 6 }}>
           {angle.angle}
         </p>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -313,7 +313,7 @@ function HookCard({
       >
         {selected && <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-action)" }} />}
       </div>
-      <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.55, color: "var(--color-text-primary)" }}>
+      <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.55, color: "var(--color-text-primary)" }}>
         {hook}
       </p>
     </button>
@@ -340,11 +340,11 @@ function ChapterList({ chapters }: { chapters: IdeationChapter[] }) {
             Chapter {chapter.chapter_number}
           </p>
           <h2 style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", margin: "0 0 5px" }}>{chapter.title}</h2>
-          <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.5, marginBottom: 8 }}>
+          <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.5, marginBottom: 8 }}>
             {chapter.purpose}
           </p>
           {chapter.key_points.length > 0 && (
-            <ul style={{ margin: 0, paddingLeft: 18, color: "var(--color-text-primary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", lineHeight: 1.6 }}>
+            <ul style={{ margin: 0, paddingLeft: 18, color: "var(--color-text-primary)", fontSize: "var(--text-xs)", lineHeight: 1.6 }}>
               {chapter.key_points.map((point) => <li key={point}>{point}</li>)}
             </ul>
           )}
@@ -641,7 +641,7 @@ function EditableScriptStep({
             color: "var(--color-danger)",
             borderRadius: "var(--border-radius-md)",
             padding: "10px 12px",
-            fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
+            fontSize: "var(--text-xs)",
             lineHeight: 1.5,
           }}
         >
@@ -843,7 +843,7 @@ function ResearchSignalsPanel({
       </div>
 
       {signalSources.length === 0 ? (
-        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+        <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
           Source links appear here when research is used to guide the direction.
         </p>
       ) : (
@@ -860,25 +860,25 @@ function ResearchSignalsPanel({
                     href={source.url}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 500, lineHeight: 1.4, color: "var(--color-action)", textDecoration: "underline", overflowWrap: "anywhere" }}
+                    style={{ fontSize: "var(--text-xs)", fontWeight: 500, lineHeight: 1.4, color: "var(--color-action)", textDecoration: "underline", overflowWrap: "anywhere" }}
                   >
                     {source.title}
                     <ExternalLink size={10} style={{ marginLeft: 4, verticalAlign: "-1px" }} />
                   </a>
                 ) : (
-                  <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 500, lineHeight: 1.4 }}>{source.title}</p>
+                  <p style={{ fontSize: "var(--text-xs)", fontWeight: 500, lineHeight: 1.4 }}>{source.title}</p>
                 )}
               </div>
               <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 3 }}>{source.provider}</p>
               {source.preview && (
-                <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginTop: 4, lineHeight: 1.45 }}>
+                <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", marginTop: 4, lineHeight: 1.45 }}>
                   {source.preview}
                 </p>
               )}
             </div>
           ))}
           {!expanded && signalSources.length > visibleSources.length && (
-            <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+            <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
               {signalSources.length - visibleSources.length} more referenced links and snippets are available when expanded.
             </p>
           )}
@@ -889,7 +889,7 @@ function ResearchSignalsPanel({
         <p
           style={{
             marginTop: 9,
-            fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
+            fontSize: "var(--text-xs)",
             lineHeight: 1.5,
             color: exportNotice.tone === "success" ? "var(--color-success)" : "var(--color-danger)",
           }}
@@ -1172,7 +1172,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
           )}
           {stage === "angles" && (
             <ArtifactShell title="Choose the story angle" kicker="Stage 1">
-              <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
+              <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
                 Select the framing you want to carry forward. You can return here later, generate more options, edit the selected angle, and restart hook generation.
               </p>
               <div
@@ -1228,11 +1228,11 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
               </button>
               <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
                 {(story.angles_data ?? []).length === 0 && operationRunning ? (
-                  <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                  <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
                     Angles are being generated. You can leave this page and come back; the draft will keep updating here.
                   </p>
                 ) : (story.angles_data ?? []).length === 0 ? (
-                  <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                  <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
                     No angle options are ready yet.
                   </p>
                 ) : (story.angles_data ?? []).map((angle) => (
@@ -1272,7 +1272,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                       disabled={operationRunning}
                     />
                   ) : (
-                    <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-primary)", lineHeight: 1.55 }}>{angleDraft}</p>
+                    <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-primary)", lineHeight: 1.55 }}>{angleDraft}</p>
                   )}
                 </div>
               )}
@@ -1281,7 +1281,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
 
           {stage === "hook" && (
             <ArtifactShell title="Shape the story hook" kicker="Stage 2">
-              <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", marginBottom: 12, lineHeight: 1.5 }}>
+              <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", marginBottom: 12, lineHeight: 1.5 }}>
                 Choose one hook example, edit it if needed, then approve it to regenerate the chapter outline.
               </p>
               {story.selected_angle && (
@@ -1356,11 +1356,11 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
               </button>
               <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
                 {hookOptions.length === 0 && operationRunning ? (
-                  <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                  <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
                     Hook examples are being generated. You can leave this page and come back to choose one.
                   </p>
                 ) : hookOptions.length === 0 ? (
-                  <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                  <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
                     No hook examples yet. Generate hooks after selecting an angle.
                   </p>
                 ) : hookOptions.map((hook, index) => (
@@ -1405,7 +1405,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                       disabled={operationRunning}
                     />
                   ) : (
-                    <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-primary)", lineHeight: 1.55 }}>{hookDraft}</p>
+                    <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-primary)", lineHeight: 1.55 }}>{hookDraft}</p>
                   )}
                 </div>
               )}
@@ -1414,7 +1414,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
 
           {stage === "chapters" && (
             <ArtifactShell title="Build the chapter structure" kicker="Stage 3">
-              <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
+              <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
                 Edit the outline before approving. If you change the angle or hook later, this outline will be regenerated from that new choice.
               </p>
               {story.story_hook && (
@@ -1478,7 +1478,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                 </div>
               </div>
               {chaptersDraft.length === 0 && operationRunning ? (
-                <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
                   The chapter outline is being drafted. You can leave this page and come back to the result.
                 </p>
               ) : chaptersEditMode ? (
@@ -1499,7 +1499,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                 </button>
               </div>
               {planDirty && (
-                <p style={{ marginTop: 9, fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+                <p style={{ marginTop: 9, fontSize: "var(--text-xs)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
                   Save the edited chapter outline before generating the script.
                 </p>
               )}
@@ -1526,7 +1526,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                     </div>
                   ) : readyForScript ? (
                     <>
-                      <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                      <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
                         Your angle, hook, and chapters are approved. Generate the script, then edit and save the final text here.
                       </p>
                       <button
@@ -1543,7 +1543,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                     </>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                      <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
                         Approve the angle, hook, and chapters before generating the script.
                       </p>
                       <Link href={stagePath(storyId, "chapters")} className="btn-secondary" style={{ textDecoration: "none", alignSelf: "flex-start" }}>
@@ -1566,7 +1566,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                     color: "var(--color-danger)",
                     borderRadius: "var(--border-radius-md)",
                     padding: "10px 12px",
-                    fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
+                    fontSize: "var(--text-xs)",
                     lineHeight: 1.5,
                   }}
                 >
@@ -1591,7 +1591,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                 <FileText size={15} style={{ color: "var(--color-action)" }} />
                 <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500 }}>Script editing</p>
               </div>
-              <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+              <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
                 Changes in the script editor stay local until you click Save script.
               </p>
             </section>
@@ -1599,7 +1599,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
             <section className="card" style={{ padding: 16 }}>
               <div style={{ maxHeight: 390, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, paddingRight: 4 }}>
                 {messages.length === 0 ? (
-                  <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                  <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
                     use this chat so I can help you improve the story
                   </p>
                 ) : (
@@ -1617,7 +1617,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
                         {item.role === "user" ? "You" : "Assistant"}
                         {item.status === "running" ? " · running" : item.status === "failed" ? " · failed" : ""}
                       </p>
-                      <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-primary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                      <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-primary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
                         {item.content}
                       </p>
                       {item.error_message && (
@@ -1658,7 +1658,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
           {readyForScript && (
             <div className="card" style={{ padding: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>
               <CheckCircle2 size={15} style={{ color: "var(--color-success)", marginTop: 2, flexShrink: 0 }} />
-              <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+              <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
                 The ideation plan is approved. The script will start only when you click Generate script.
               </p>
             </div>

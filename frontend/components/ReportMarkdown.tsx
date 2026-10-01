@@ -44,7 +44,7 @@ export function ReportMarkdown({ markdown }: { markdown: string }) {
     blocks.push(
       <ul key={`ul-${blocks.length}`} style={{ paddingLeft: 20, margin: "8px 0", display: "flex", flexDirection: "column", gap: 4 }}>
         {listBuf.map((item, idx) => (
-          <li key={idx} style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.7, color: "var(--color-text-primary)" }}>
+          <li key={idx} style={{ fontSize: "var(--text-sm)", lineHeight: 1.7, color: "var(--color-text-primary)" }}>
             {renderInline(item)}
           </li>
         ))}
@@ -59,7 +59,7 @@ export function ReportMarkdown({ markdown }: { markdown: string }) {
     blocks.push(
       <p
         key={`p-${blocks.length}`}
-        style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.75, margin: "6px 0", color: "var(--color-text-primary)" }}
+        style={{ fontSize: "var(--text-sm)", lineHeight: 1.75, margin: "6px 0", color: "var(--color-text-primary)" }}
       >
         {renderInline(text)}
       </p>

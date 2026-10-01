@@ -232,7 +232,7 @@ function ResearchLinksList({ citations }: { citations: ResearchCitation[] }) {
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
+                fontSize: "var(--text-xs)",
                 color: "var(--color-action)",
                 display: "flex",
                 gap: 6,
@@ -249,7 +249,7 @@ function ResearchLinksList({ citations }: { citations: ResearchCitation[] }) {
           ))}
         </div>
       ) : (
-        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+        <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
           Links will appear here when research returns citations.
         </p>
       )}
@@ -526,7 +526,7 @@ function ResearchPageInner() {
               <Loader2 size={16} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
             </div>
           ) : (sessionsQuery.data?.length ?? 0) === 0 ? (
-            <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+            <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
               No saved research yet. Start one on the right.
             </p>
           ) : (
@@ -616,7 +616,7 @@ function ResearchPageInner() {
           ) : sessionQuery.isError ? (
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "56px 0", display: "flex", flexDirection: "column", gap: 12, alignItems: "center", textAlign: "center" }}>
               <p style={{ fontSize: "var(--text-md)", lineHeight: "var(--text-md-lh)", fontWeight: 500 }}>Research session could not be opened</p>
-              <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+              <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
                 {sessionErrorMessage || "This saved session is unavailable. Pick another session or start a new one."}
               </p>
               <button
@@ -692,7 +692,7 @@ function ProgressIndicator({
           <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-primary)", fontWeight: 500 }}>{label}</p>
           <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>{progress.percent}%</p>
         </div>
-        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", lineHeight: 1.6, marginBottom: 8, color: "var(--color-text-secondary)" }}>
+        <p style={{ fontSize: "var(--text-xs)", lineHeight: 1.6, marginBottom: 8, color: "var(--color-text-secondary)" }}>
           {description}
         </p>
         <div
@@ -718,7 +718,7 @@ function ProgressIndicator({
             }}
           />
         </div>
-        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", lineHeight: 1.6, marginBottom: 6 }}>{progress.stage}</p>
+        <p style={{ fontSize: "var(--text-xs)", lineHeight: 1.6, marginBottom: 6 }}>{progress.stage}</p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
             Estimated total {formatResearchDuration(RESEARCH_ESTIMATE_SECONDS)}
@@ -758,7 +758,7 @@ function EmptyStatePrompt({
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "32px 0", display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ textAlign: "center" }}>
         <p style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500, marginBottom: 6 }}>Start a new research session</p>
-        <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+        <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
           Ask anything. You can follow up to extend the research, refine it, or remove parts you don&apos;t need.
         </p>
       </div>
@@ -790,11 +790,11 @@ function EmptyStatePrompt({
           className="input"
           rows={5}
           placeholder="e.g., Latest trends in EV battery recycling in Europe — who's leading, what's the regulatory landscape, and what's still unresolved."
-          style={{ resize: "vertical", minHeight: 140, lineHeight: 1.6, fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)" }}
+          style={{ resize: "vertical", minHeight: 140, lineHeight: 1.6, fontSize: "var(--text-sm)" }}
           disabled={isWorking}
         />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+          <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
             Be specific about geography, time window, and angle for sharper sources.
           </p>
           <button type="submit" className="btn-primary" disabled={!promptText.trim() || isWorking}>
@@ -892,7 +892,7 @@ function ActiveSessionView({
         <p
           role="status"
           style={{
-            fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
+            fontSize: "var(--text-xs)",
             lineHeight: 1.5,
             color: linkExportNotice.tone === "success" ? "var(--color-success)" : "var(--color-danger)",
           }}
@@ -908,11 +908,11 @@ function ActiveSessionView({
           className="input"
           rows={4}
           placeholder="Refine, extend, or remove. Try 'extend to cover Asia', 'add 2025 data', or 'remove the regulatory section'."
-          style={{ resize: "vertical", minHeight: 100, lineHeight: 1.6, fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)" }}
+          style={{ resize: "vertical", minHeight: 100, lineHeight: 1.6, fontSize: "var(--text-sm)" }}
           disabled={isWorking}
         />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+          <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
             Follow-ups merge into the consolidated report — no need to repeat the original prompt.
           </p>
           <button type="submit" className="btn-primary" disabled={!promptText.trim() || isWorking}>
@@ -950,7 +950,7 @@ function ActiveSessionView({
             borderRadius: 10,
             padding: "20px 24px",
             color: "var(--color-text-secondary)",
-            fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
+            fontSize: "var(--text-sm)",
             lineHeight: 1.6,
           }}
         >

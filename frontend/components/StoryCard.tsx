@@ -43,7 +43,7 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
         <p
           style={{
-            fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
+            fontSize: "var(--text-sm)",
             fontWeight: 500,
             color: "var(--color-text-primary)",
             lineHeight: 1.4,

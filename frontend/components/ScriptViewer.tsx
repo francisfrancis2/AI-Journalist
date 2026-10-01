@@ -93,13 +93,13 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
           {/* Logline */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Logline</span></div>
-            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.7 }}>{script.logline}</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{script.logline}</p>
           </div>
 
           {/* Opening hook */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Opening Hook</span></div>
-            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.7 }}>{script.opening_hook}</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{script.opening_hook}</p>
           </div>
 
           {/* Acts */}
@@ -115,7 +115,7 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
           {/* Closing */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Closing Statement</span></div>
-            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.7 }}>{script.closing_statement}</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{script.closing_statement}</p>
           </div>
 
           {/* Research Dossier */}
@@ -194,7 +194,7 @@ function ActCard({
 
       {isOpen && (
         <div style={{ padding: "16px 20px 20px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-          <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", lineHeight: 1.8 }}>{section.narration}</p>
+          <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.8 }}>{section.narration}</p>
         </div>
       )}
     </div>

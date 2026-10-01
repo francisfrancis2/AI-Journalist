@@ -139,14 +139,14 @@ function NotificationsPanel() {
                   <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginLeft: "auto" }}>{formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}</span>
                 </div>
                 <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500, marginBottom: 6 }}>{n.title}</p>
-                <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{n.message}</p>
+                <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{n.message}</p>
                 {n.technical_detail && (
                   <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 6, fontFamily: "monospace", background: "var(--color-background-tertiary)", padding: "6px 8px", borderRadius: 6, whiteSpace: "pre-wrap" }}>{n.technical_detail}</p>
                 )}
                 {n.suggested_fix && (
                   <div style={{ marginTop: 8, padding: "8px 10px", background: "#f0fdf4", border: "0.5px solid #86efac", borderRadius: 6 }}>
                     <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 600, color: "#16a34a", marginBottom: 2 }}>Suggested fix</p>
-                    <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{n.suggested_fix}</p>
+                    <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{n.suggested_fix}</p>
                   </div>
                 )}
               </div>
