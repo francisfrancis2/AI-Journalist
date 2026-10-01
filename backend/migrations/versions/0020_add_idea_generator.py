@@ -46,6 +46,13 @@ def upgrade() -> None:
     )
     op.create_index("ix_idea_generation_runs_user_id", "idea_generation_runs", ["user_id"])
     op.create_index("ix_idea_generation_runs_status", "idea_generation_runs", ["status"])
+    op.create_index(
+        "uq_idea_generation_runs_one_active_user",
+        "idea_generation_runs",
+        ["user_id"],
+        unique=True,
+        postgresql_where=sa.text("status IN ('queued', 'running')"),
+    )
 
     op.create_table(
         "generated_ideas",

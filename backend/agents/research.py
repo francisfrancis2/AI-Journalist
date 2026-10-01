@@ -405,6 +405,7 @@ class ResearchAgent:
         deep_prompt: str,
         deep_max_uses: int | None = None,
         include_vidiq: bool = True,
+        rss_country: str = "US",
     ) -> None:
         """Dispatch all routed providers in parallel into ``package`` and scrape."""
         fetch_tasks: dict[str, Any] = {}
@@ -428,6 +429,7 @@ class ResearchAgent:
             fetch_tasks["rss"] = self._rss.fetch_all_default_feeds(
                 max_entries_per_feed=duration_target.rss_entries_per_feed,
                 keyword_filter=rss_keyword,
+                google_news_country=rss_country,
             )
 
         if "newsapi" in use_sources:
@@ -511,6 +513,7 @@ class ResearchAgent:
         prompt: str,
         deep: bool = True,
         include_vidiq: bool = True,
+        rss_country: str = "US",
     ) -> ResearchPackage:
         """Gather the shared evidence package without generating a prose report."""
         topic = prompt.strip()
@@ -542,6 +545,7 @@ class ResearchAgent:
             deep=deep,
             deep_prompt=topic,
             include_vidiq=include_vidiq,
+            rss_country=rss_country,
         )
         package.research_duration_seconds = time.monotonic() - start
         return package

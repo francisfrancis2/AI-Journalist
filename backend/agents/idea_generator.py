@@ -364,7 +364,12 @@ class IdeaGeneratorAgent:
             "or constructive; reject a topic if compliance would require hiding or distorting evidence."
         )
         package, vidiq_raw = await asyncio.gather(
-            self._research.gather_package(prompt=research_prompt, deep=True, include_vidiq=False),
+            self._research.gather_package(
+                prompt=research_prompt,
+                deep=True,
+                include_vidiq=False,
+                rss_country="AE",
+            ),
             VidIQTool().fetch_idea_trends(window_days=30),
         )
         sources = _prepare_sources(package)
@@ -385,8 +390,8 @@ class IdeaGeneratorAgent:
             "least two SOURCE_IDs from different independent domains, including one current reliable "
             "UAE-relevant source. Use vidIQ only as YouTube opportunity evidence; never treat it as factual "
             "corroboration and never claim channelCountry proves UAE audience location. Do not invent facts, "
-            "experts, access, metrics, or source IDs. Do not output recommendations, recommended next steps, "
-            "next steps, workflow advice, or call-to-action copy. Keep UAE government, rulers, and institutions "
+            "experts, access, metrics, or source IDs. Return only the requested idea fields. Keep UAE "
+            "government, rulers, and institutions "
             "neutral or constructive. If truthful use of a topic conflicts with that policy, omit the topic "
             "rather than sanitizing its evidence. Ensure sector diversity. For documentary ideas, format_details "
             "should contain protagonist_or_system, access_path, visual_world, and story_arc. For expert interviews, "

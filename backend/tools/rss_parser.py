@@ -72,7 +72,12 @@ def _get_entry_content(entry: feedparser.FeedParserDict) -> str:
     return getattr(entry, "summary", "") or getattr(entry, "description", "")
 
 
-def _build_google_news_search_feed(keyword_filter: Optional[str]) -> Optional[str]:
+def _build_google_news_search_feed(
+    keyword_filter: Optional[str],
+    *,
+    country: str = "US",
+    language: str = "en",
+) -> Optional[str]:
     """Return a topic-specific Google News RSS URL when a keyword is available."""
     if not keyword_filter:
         return None
@@ -82,7 +87,13 @@ def _build_google_news_search_feed(keyword_filter: Optional[str]) -> Optional[st
         return None
 
     encoded_query = quote_plus(query)
-    return f"{GOOGLE_NEWS_SEARCH_RSS_BASE}?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
+    normalized_country = country.strip().upper() or "US"
+    normalized_language = language.strip().lower() or "en"
+    return (
+        f"{GOOGLE_NEWS_SEARCH_RSS_BASE}?q={encoded_query}"
+        f"&hl={normalized_language}-{normalized_country}"
+        f"&gl={normalized_country}&ceid={normalized_country}:{normalized_language}"
+    )
 
 
 def _is_local_hostname(hostname: str) -> bool:
@@ -238,6 +249,8 @@ class RSSParserTool:
         max_entries_per_feed: int = 10,
         keyword_filter: Optional[str] = None,
         concurrency: int = 5,
+        google_news_country: str = "US",
+        google_news_language: str = "en",
     ) -> list[RawSource]:
         """
         Concurrently poll all feeds registered in this instance.
@@ -260,7 +273,11 @@ class RSSParserTool:
 
         feeds = dict(self._feeds)
         google_news_search_feed = (
-            _build_google_news_search_feed(keyword_filter)
+            _build_google_news_search_feed(
+                keyword_filter,
+                country=google_news_country,
+                language=google_news_language,
+            )
             if self._uses_default_feeds
             else None
         )
