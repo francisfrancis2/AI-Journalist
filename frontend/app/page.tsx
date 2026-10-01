@@ -150,7 +150,7 @@ export default function NewStoryPage() {
             </div>
 
             {handoffNotice && (
-              <div style={{ marginBottom: 12, padding: "9px 11px", borderRadius: 8, background: "#f4f5ff", color: "var(--color-text-secondary)", fontSize: 12 }}>
+              <div style={{ marginBottom: 12, padding: "9px 11px", borderRadius: 8, background: "#f4f5ff", color: "var(--color-text-secondary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
                 {handoffNotice}
               </div>
             )}

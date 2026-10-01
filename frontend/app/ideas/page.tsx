@@ -65,19 +65,19 @@ function IdeaCard({
       <div style={{ display: "flex", gap: 14, justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 7, alignItems: "center", marginBottom: 7 }}>
-            <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>#{idea.rank}</span>
+            <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>#{idea.rank}</span>
             <span className="chip" style={{ padding: "3px 9px", cursor: "default" }}>{idea.sector}</span>
-            <span style={{ fontSize: 11, color: "var(--color-success)" }}>{idea.strength} · {Math.round(idea.confidence * 100)}% confidence</span>
+            <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-success)" }}>{idea.strength} · {Math.round(idea.confidence * 100)}% confidence</span>
           </div>
-          <h2 style={{ fontSize: 18, margin: 0 }}>{idea.title}</h2>
+          <h2 style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", margin: 0 }}>{idea.title}</h2>
         </div>
         <div style={{ minWidth: 54, textAlign: "right" }}>
-          <strong style={{ fontSize: 20, fontWeight: 500 }}>{Math.round(idea.score)}</strong>
-          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>/100</div>
+          <strong style={{ fontSize: "var(--text-xl)", lineHeight: "var(--text-xl-lh)", fontWeight: 500 }}>{Math.round(idea.score)}</strong>
+          <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>/100</div>
         </div>
       </div>
 
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65 }}>{idea.premise}</p>
+      <p style={{ margin: 0, fontSize: "var(--text-sm)", lineHeight: 1.65 }}>{idea.premise}</p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
         {[
@@ -87,8 +87,8 @@ function IdeaCard({
           ["Business significance", idea.business_significance],
         ].map(([label, value]) => (
           <div key={label} style={{ padding: 11, borderRadius: 8, background: "var(--color-background-secondary)" }}>
-            <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
-            <div style={{ fontSize: 12, lineHeight: 1.55 }}>{value}</div>
+            <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: "var(--text-xs)", lineHeight: 1.55 }}>{value}</div>
           </div>
         ))}
       </div>
@@ -98,7 +98,7 @@ function IdeaCard({
           <div className="section-label" style={{ marginBottom: 7 }}>Format treatment</div>
           <div style={{ display: "grid", gap: 7 }}>
             {details.map(([label, value]) => (
-              <div key={label} style={{ fontSize: 12 }}>
+              <div key={label} style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
                 <strong style={{ fontWeight: 500 }}>{titleCase(label)}:</strong>{" "}
                 {Array.isArray(value) ? value.join(" · ") : typeof value === "object" ? JSON.stringify(value) : String(value)}
               </div>
@@ -123,7 +123,7 @@ function IdeaCard({
             <div className="section-label" style={{ marginBottom: 7 }}>Factual sources</div>
             <div style={{ display: "grid", gap: 8 }}>
               {idea.sources.map((source) => (
-                <div key={source.id} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                <div key={source.id} style={{ fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
                   {source.url ? (
                     <a href={source.url} target="_blank" rel="noreferrer" style={{ color: "var(--color-action)" }}>
                       {source.title} <ExternalLink size={10} style={{ display: "inline" }} />
@@ -143,7 +143,7 @@ function IdeaCard({
             {idea.signals.length ? (
               <div style={{ display: "grid", gap: 8 }}>
                 {idea.signals.map((signal) => (
-                  <div key={signal.id} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                  <div key={signal.id} style={{ fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
                     <strong style={{ fontWeight: 500 }}>{signal.topic}</strong>
                     <div><SignalSummary values={signal.values} /></div>
                     {signal.geography_meaning && (
@@ -153,11 +153,11 @@ function IdeaCard({
                 ))}
               </div>
             ) : (
-              <p style={{ margin: 0, color: "var(--color-text-tertiary)", fontSize: 12 }}>No vidIQ signal was available for this idea.</p>
+              <p style={{ margin: 0, color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>No vidIQ signal was available for this idea.</p>
             )}
           </div>
           {idea.verification_gaps.length > 0 && (
-            <div style={{ fontSize: 12, color: "var(--color-warning)" }}>
+            <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-warning)" }}>
               Verification gaps: {idea.verification_gaps.join(" · ")}
             </div>
           )}
@@ -258,8 +258,8 @@ export default function IdeaGeneratorPage() {
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
       <header style={{ height: 52, display: "flex", alignItems: "center", padding: "0 28px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
         <Lightbulb size={17} style={{ marginRight: 8, color: "var(--color-action)" }} />
-        <span style={{ fontSize: 18, fontWeight: 500 }}>Idea Generator</span>
-        <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 9 }}>V2 · UAE business</span>
+        <span style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500 }}>Idea Generator</span>
+        <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginLeft: 9 }}>V2 · UAE business</span>
       </header>
 
       <div style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", minHeight: "calc(100vh - 52px)" }}>
@@ -273,15 +273,15 @@ export default function IdeaGeneratorPage() {
                   onClick={() => { setSelectedRunId(item.id); setFormat(item.format); }}
                   style={{ flex: 1, textAlign: "left", border: selectedRunId === item.id ? "0.5px solid var(--color-action)" : "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: selectedRunId === item.id ? "#f4f5ff" : "#fff", padding: "9px 10px", cursor: "pointer" }}
                 >
-                  <div style={{ fontSize: 12 }}>{FORMAT_LABEL[item.format]}</div>
-                  <div style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{titleCase(item.status)} · {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</div>
+                  <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>{FORMAT_LABEL[item.format]}</div>
+                  <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>{titleCase(item.status)} · {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</div>
                 </button>
                 {!(["queued", "running"] as string[]).includes(item.status) && (
                   <button type="button" className="btn-ghost" aria-label="Delete run" onClick={() => removeRun.mutate(item.id)} style={{ padding: 6 }}><Trash2 size={12} /></button>
                 )}
               </div>
             ))}
-            {!runsQuery.isLoading && !(runsQuery.data ?? []).length && <p style={{ color: "var(--color-text-tertiary)", fontSize: 12 }}>No idea runs yet.</p>}
+            {!runsQuery.isLoading && !(runsQuery.data ?? []).length && <p style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>No idea runs yet.</p>}
           </div>
         </aside>
 
@@ -297,7 +297,7 @@ export default function IdeaGeneratorPage() {
                     </button>
                   ))}
                 </div>
-                <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                <p style={{ margin: "10px 0 0", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)" }}>
                   Fixed scope: UAE · business · English · last 30 days · exactly five verified ideas.
                 </p>
               </div>
@@ -320,11 +320,11 @@ export default function IdeaGeneratorPage() {
                       {run.status === "completed" ? <CheckCircle2 size={14} style={{ color: "var(--color-success)" }} /> : isActive ? <Loader2 size={14} className="animate-spin" style={{ color: "var(--color-action)" }} /> : <X size={14} style={{ color: "var(--color-danger)" }} />}
                       <strong style={{ fontWeight: 500 }}>{titleCase(run.stage)}</strong>
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+                    <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 4 }}>
                       Coverage: {titleCase(run.coverage_level)} · Google Trends not configured in V2
                     </div>
                   </div>
-                  <span style={{ fontSize: 12 }}>{run.stage_progress}%</span>
+                  <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>{run.stage_progress}%</span>
                 </div>
                 <div style={{ height: 4, background: "var(--color-background-tertiary)", borderRadius: 4, marginTop: 10, overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${run.stage_progress}%`, background: run.status === "failed" ? "var(--color-danger)" : "var(--color-action)" }} />
@@ -348,7 +348,7 @@ export default function IdeaGeneratorPage() {
 
               {run.status === "completed" && (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{ideas.length} visible ideas</div>
+                  <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)" }}>{ideas.length} visible ideas</div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button type="button" className="btn-ghost" onClick={() => setShowDismissed((value) => !value)}>{showDismissed ? "Hide dismissed" : "Show dismissed"}</button>
                     <button type="button" className="btn-secondary" onClick={() => generate.mutate({ requestedFormat: run.format, previousRunId: run.id })} disabled={generate.isPending}>
