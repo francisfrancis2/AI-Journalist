@@ -82,7 +82,7 @@ function StoriesListView() {
               background: "var(--color-danger-bg)",
               border: "0.5px solid #fecaca",
               borderRadius: "var(--border-radius-md)",
-              fontSize: 13,
+              fontSize: 14,
               color: "var(--color-danger)",
             }}
           >
@@ -91,7 +91,7 @@ function StoriesListView() {
         )}
 
         {stories && stories.length === 0 && (
-          <div style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "var(--color-text-secondary)" }}>
+          <div style={{ textAlign: "center", padding: "60px 0", fontSize: 14, color: "var(--color-text-secondary)" }}>
             No stories found. Go to the dashboard to create one.
           </div>
         )}
@@ -146,7 +146,7 @@ function StoryDetailView({
 
   if (!story) {
     return (
-      <div style={{ textAlign: "center", padding: "60px 0", fontSize: 13, color: "var(--color-text-secondary)" }}>
+      <div style={{ textAlign: "center", padding: "60px 0", fontSize: 14, color: "var(--color-text-secondary)" }}>
         Story not found.
       </div>
     );
@@ -174,7 +174,7 @@ function StoryDetailView({
           <ArrowLeft size={13} /> Back to Stories
         </button>
         <h1 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>{story.title}</h1>
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{story.topic}</p>
+        <p style={{ fontSize: 14, color: "var(--color-text-secondary)" }}>{story.topic}</p>
       </div>
 
       <div style={{ padding: 28, maxWidth: 800 }}>
@@ -187,7 +187,7 @@ function StoryDetailView({
               background: "var(--color-danger-bg)",
               border: "0.5px solid #fecaca",
               borderRadius: "var(--border-radius-md)",
-              fontSize: 13,
+              fontSize: 14,
               color: "var(--color-danger)",
             }}
           >
@@ -202,7 +202,7 @@ function StoryDetailView({
               background: "var(--color-warning-bg)",
               border: "0.5px solid #fed7aa",
               borderRadius: "var(--border-radius-md)",
-              fontSize: 13,
+              fontSize: 14,
               color: "var(--color-warning)",
             }}
           >

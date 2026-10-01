@@ -138,8 +138,8 @@ export default function NewStoryPage() {
               disabled={createMutation.isPending}
             />
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 8 }}>
-              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{wordCount}/{PROMPT_MAX_WORDS} words</span>
-              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>Tone and duration are decided by the backend.</span>
+              <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{wordCount}/{PROMPT_MAX_WORDS} words</span>
+              <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Tone and duration are decided by the backend.</span>
             </div>
 
             <div style={{ marginTop: 14 }}>
@@ -164,7 +164,7 @@ export default function NewStoryPage() {
                 <Paperclip size={13} />
                 Attach sources
               </button>
-              <span style={{ marginLeft: 10, fontSize: 11, color: "var(--color-text-tertiary)" }}>
+              <span style={{ marginLeft: 10, fontSize: 12, color: "var(--color-text-tertiary)" }}>
                 PDF, DOCX, JPEG, XLS/XLSX
               </span>
 
@@ -186,7 +186,7 @@ export default function NewStoryPage() {
                       <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {file.name}
                       </span>
-                      <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                      <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
                         {formatFileSize(file.size)}
                       </span>
                       <button
@@ -238,7 +238,7 @@ export default function NewStoryPage() {
                   borderRadius: "var(--border-radius-md)",
                   background: "var(--color-danger-bg)",
                   color: "var(--color-danger)",
-                  fontSize: 13,
+                  fontSize: 14,
                   display: "flex",
                   gap: 8,
                 }}
@@ -270,13 +270,13 @@ export default function NewStoryPage() {
                         {story.title}
                       </p>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span className={`badge ${storyStatusBadgeClass(story.status)}`} style={{ fontSize: 10 }}>
+                        <span className={`badge ${storyStatusBadgeClass(story.status)}`} style={{ fontSize: 11 }}>
                           {storyStatusLabel(story.status)}
                         </span>
                         {isAdmin && story.owner_email && (
-                          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{story.owner_email}</span>
+                          <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{story.owner_email}</span>
                         )}
-                        <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                        <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
                           {formatDistanceToNow(new Date(story.created_at), { addSuffix: true })}
                         </span>
                       </div>

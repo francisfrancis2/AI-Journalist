@@ -85,7 +85,7 @@ export default function ChangePasswordPage() {
           <h1 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>
             {isForced ? "Change your password" : "Change password"}
           </h1>
-          <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
+          <p style={{ fontSize: 14, color: "var(--color-text-secondary)" }}>
             {isForced
               ? "Your account was set up with a temporary password."
               : "Update your account password."}
@@ -169,7 +169,7 @@ export default function ChangePasswordPage() {
               padding: "8px",
               border: "none",
               background: "none",
-              fontSize: 13,
+              fontSize: 14,
               color: "var(--color-text-secondary)",
               cursor: "pointer",
               fontFamily: "var(--font-sans)",

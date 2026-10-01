@@ -226,7 +226,7 @@ export default function ResultsPage() {
   if (!story) {
     return (
       <div style={{ display: "flex", height: "100%", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>Story not found.</p>
+        <p style={{ fontSize: 14, color: "var(--color-text-secondary)" }}>Story not found.</p>
         <button onClick={() => router.push("/")} className="btn-secondary">Go home</button>
       </div>
     );
@@ -273,17 +273,17 @@ export default function ResultsPage() {
             <div style={{ flex: 1, minWidth: 0 }}>
               {/* Status + tone row */}
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                {isComplete && <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>}
-                {isFailed   && <span className="badge badge-danger"  style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>}
-                {isStopped  && <span className="badge badge-warning" style={{ fontSize: 11 }}><AlertTriangle size={10} /> Script writing stopped</span>}
-                {isRunning  && <span className="badge badge-active"  style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> {storyStatusLabel(story.status)}</span>}
-                <span className={`badge tone-${story.tone}`} style={{ fontSize: 11, border: "none" }}>{story.tone}</span>
+                {isComplete && <span className="badge badge-success" style={{ fontSize: 12 }}><CheckCircle2 size={10} /> Completed</span>}
+                {isFailed   && <span className="badge badge-danger"  style={{ fontSize: 12 }}><XCircle size={10} /> Failed</span>}
+                {isStopped  && <span className="badge badge-warning" style={{ fontSize: 12 }}><AlertTriangle size={10} /> Script writing stopped</span>}
+                {isRunning  && <span className="badge badge-active"  style={{ fontSize: 12 }}><Loader2 size={10} className="animate-spin" /> {storyStatusLabel(story.status)}</span>}
+                <span className={`badge tone-${story.tone}`} style={{ fontSize: 12, border: "none" }}>{story.tone}</span>
               </div>
 
               <h1 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>{story.title}</h1>
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>{story.topic}</p>
+              <p style={{ fontSize: 14, color: "var(--color-text-secondary)" }}>{story.topic}</p>
               {isAdmin && story.owner_email && (
-                <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+                <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 4 }}>
                   Created by {story.owner_email}
                 </p>
               )}
@@ -336,10 +336,10 @@ export default function ResultsPage() {
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--color-danger)", marginBottom: 4 }}>
                   AI Journalist could not complete the script cleanly
                 </p>
-                <p style={{ fontSize: 11, color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                <p style={{ fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
                   {story.pipeline_failure_summary}
                 </p>
-                <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
+                <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 6 }}>
                   The latest available script is shown below.
                 </p>
               </div>
@@ -379,7 +379,7 @@ export default function ResultsPage() {
                   onClick={() => setTab(tid)}
                   style={{
                     padding: "9px 14px",
-                    fontSize: 13,
+                    fontSize: 14,
                     fontWeight: tab === tid ? 500 : 400,
                     color: tab === tid ? "var(--color-text-primary)" : "var(--color-text-secondary)",
                     background: "none",
@@ -606,7 +606,7 @@ function ScriptPanel({
                   <p
                     style={{
                       marginTop: 8,
-                      fontSize: 11,
+                      fontSize: 12,
                       lineHeight: 1.5,
                       color: exportNotice.tone === "success" ? "var(--color-success)" : "var(--color-danger)",
                     }}
@@ -625,13 +625,13 @@ function ScriptPanel({
           {/* Logline */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Logline</span></div>
-            <p style={{ fontSize: 13, lineHeight: 1.7 }}>{script.logline}</p>
+            <p style={{ fontSize: 14, lineHeight: 1.7 }}>{script.logline}</p>
           </div>
 
           {/* Opening hook */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Opening Hook</span></div>
-            <p style={{ fontSize: 13, lineHeight: 1.7 }}>{script.opening_hook}</p>
+            <p style={{ fontSize: 14, lineHeight: 1.7 }}>{script.opening_hook}</p>
           </div>
 
           {/* Acts */}
@@ -664,7 +664,7 @@ function ScriptPanel({
                       background: "var(--color-action)",
                       color: "#fff",
                       borderRadius: 4,
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 500,
                       display: "flex",
                       alignItems: "center",
@@ -674,17 +674,17 @@ function ScriptPanel({
                   >
                     {section.section_number}
                   </span>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>{section.title}</span>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)" }}>{section.title}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{Math.round(section.estimated_seconds / 60)} min</span>
+                  <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{Math.round(section.estimated_seconds / 60)} min</span>
                   {open.includes(i) ? <ChevronUp size={14} style={{ color: "var(--color-text-tertiary)" }} /> : <ChevronDown size={14} style={{ color: "var(--color-text-tertiary)" }} />}
                 </div>
               </button>
 
 	              {open.includes(i) && (
 	                <div style={{ padding: "16px 20px 20px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-	                  <p style={{ fontSize: 13, lineHeight: 1.8 }}>{section.narration}</p>
+	                  <p style={{ fontSize: 14, lineHeight: 1.8 }}>{section.narration}</p>
                     {sectionSources.length > 0 && (
                       <div style={{ marginTop: 14, display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {sectionSources.map((source, sourceIndex) => (
@@ -714,7 +714,7 @@ function ScriptPanel({
           {/* Closing */}
           <div className="card" style={{ padding: "18px 20px" }}>
             <div className="section-rule"><span>Closing Statement</span></div>
-            <p style={{ fontSize: 13, lineHeight: 1.7 }}>{script.closing_statement}</p>
+            <p style={{ fontSize: 14, lineHeight: 1.7 }}>{script.closing_statement}</p>
           </div>
         </div>
       </div>

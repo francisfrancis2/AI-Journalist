@@ -34,10 +34,10 @@ function ServiceRow({ svc }: { svc: ServiceHealth }) {
       <div style={{ marginTop: 3, width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
       <div style={{ flex: 1 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>{svc.label}</span>
+          <span style={{ fontSize: 14, fontWeight: 500 }}>{svc.label}</span>
           <span style={{ fontSize: 12, fontWeight: 600, color }}>{STATUS_LABEL[svc.status]}{svc.latency_ms != null ? ` · ${svc.latency_ms}ms` : ""}</span>
         </div>
-        {svc.detail && <p style={{ fontSize: 11, color: "var(--color-danger)", margin: 0 }}>{svc.detail}</p>}
+        {svc.detail && <p style={{ fontSize: 12, color: "var(--color-danger)", margin: 0 }}>{svc.detail}</p>}
       </div>
     </div>
   );
@@ -58,7 +58,7 @@ function APIHealthPanel() {
           <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
             <Activity size={14} /> Research Source Health
           </h2>
-          {checkedAt && <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 3 }}>Last checked {checkedAt} · includes NewsAPI, Google News RSS, and other external services</p>}
+          {checkedAt && <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 3 }}>Last checked {checkedAt} · includes NewsAPI, Google News RSS, and other external services</p>}
         </div>
         <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary" style={{ padding: "5px 10px", fontSize: 12 }}>
           <RefreshCw size={11} className={isFetching ? "animate-spin" : ""} /> {isFetching ? "Checking…" : "Refresh"}
@@ -100,7 +100,7 @@ function NotificationsPanel() {
             <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
               <Bell size={14} /> Pipeline Notifications
               {unreadCount > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-danger)", background: "var(--color-danger-bg)", padding: "1px 6px", borderRadius: 10 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-danger)", background: "var(--color-danger-bg)", padding: "1px 6px", borderRadius: 10 }}>
                   {unreadCount} unread
                 </span>
               )}
@@ -122,7 +122,7 @@ function NotificationsPanel() {
       {isLoading && <div style={{ padding: 32, textAlign: "center" }}><Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} /></div>}
 
       {!isLoading && (!notifications || notifications.length === 0) && (
-        <div style={{ textAlign: "center", padding: "48px 0", color: "var(--color-text-tertiary)", fontSize: 13 }}>
+        <div style={{ textAlign: "center", padding: "48px 0", color: "var(--color-text-tertiary)", fontSize: 14 }}>
           <Bell size={28} style={{ margin: "0 auto 10px", opacity: 0.4 }} />
           <p>No notifications</p>
         </div>
@@ -134,24 +134,24 @@ function NotificationsPanel() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: LEVEL_COLOR[n.level], textTransform: "uppercase" }}>{n.level}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: LEVEL_COLOR[n.level], textTransform: "uppercase" }}>{n.level}</span>
                   {!n.is_read && <span style={{ width: 6, height: 6, borderRadius: "50%", background: LEVEL_COLOR[n.level] }} />}
-                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: "auto" }}>{formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}</span>
+                  <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginLeft: "auto" }}>{formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}</span>
                 </div>
-                <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{n.title}</p>
+                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 6 }}>{n.title}</p>
                 <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{n.message}</p>
                 {n.technical_detail && (
-                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6, fontFamily: "monospace", background: "var(--color-background-tertiary)", padding: "6px 8px", borderRadius: 6, whiteSpace: "pre-wrap" }}>{n.technical_detail}</p>
+                  <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 6, fontFamily: "monospace", background: "var(--color-background-tertiary)", padding: "6px 8px", borderRadius: 6, whiteSpace: "pre-wrap" }}>{n.technical_detail}</p>
                 )}
                 {n.suggested_fix && (
                   <div style={{ marginTop: 8, padding: "8px 10px", background: "#f0fdf4", border: "0.5px solid #86efac", borderRadius: 6 }}>
-                    <p style={{ fontSize: 11, fontWeight: 600, color: "#16a34a", marginBottom: 2 }}>Suggested fix</p>
-                    <p style={{ fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{n.suggested_fix}</p>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: "#16a34a", marginBottom: 2 }}>Suggested fix</p>
+                    <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{n.suggested_fix}</p>
                   </div>
                 )}
               </div>
               {!n.is_read && (
-                <button onClick={() => markReadMutation.mutate(n.id)} disabled={markReadMutation.isPending} className="btn-secondary" style={{ fontSize: 11, padding: "4px 8px", flexShrink: 0 }}>
+                <button onClick={() => markReadMutation.mutate(n.id)} disabled={markReadMutation.isPending} className="btn-secondary" style={{ fontSize: 12, padding: "4px 8px", flexShrink: 0 }}>
                   Mark read
                 </button>
               )}
@@ -212,7 +212,7 @@ export default function AdminConsolePage() {
     padding: "6px 16px",
     borderRadius: 6,
     border: "none",
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: active ? 500 : 400,
     background: active ? "var(--color-background-primary)" : "transparent",
     color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
@@ -271,14 +271,14 @@ export default function AdminConsolePage() {
               </button>
             </div>
             {usersLoading && <div style={{ padding: 32, textAlign: "center" }}><Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} /></div>}
-            {usersError && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--color-danger)" }}>Failed to load users.</div>}
-            {users && users.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--color-text-tertiary)" }}>No users yet.</div>}
+            {usersError && <div style={{ padding: 24, textAlign: "center", fontSize: 14, color: "var(--color-danger)" }}>Failed to load users.</div>}
+            {users && users.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 14, color: "var(--color-text-tertiary)" }}>No users yet.</div>}
             {users && users.length > 0 && (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                 <thead>
                   <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                     {["Email", "Role", "Status", "Created", ""].map(h => (
-                      <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: 11, fontWeight: 500, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                      <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: 12, fontWeight: 500, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -288,16 +288,16 @@ export default function AdminConsolePage() {
                       <td style={{ padding: "12px 20px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           {u.email}
-                          {u.must_change_password && <span style={{ fontSize: 10, padding: "2px 6px", background: "#fef9c3", color: "#854d0e", borderRadius: 4, fontWeight: 500 }}>pwd reset</span>}
+                          {u.must_change_password && <span style={{ fontSize: 11, padding: "2px 6px", background: "#fef9c3", color: "#854d0e", borderRadius: 4, fontWeight: 500 }}>pwd reset</span>}
                         </div>
                       </td>
                       <td style={{ padding: "12px 20px" }}>
                         {u.is_admin
-                          ? <span style={{ fontSize: 11, padding: "2px 8px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 500 }}>Admin</span>
-                          : <span style={{ fontSize: 11, padding: "2px 8px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", borderRadius: 4 }}>User</span>}
+                          ? <span style={{ fontSize: 12, padding: "2px 8px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 500 }}>Admin</span>
+                          : <span style={{ fontSize: 12, padding: "2px 8px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", borderRadius: 4 }}>User</span>}
                       </td>
                       <td style={{ padding: "12px 20px" }}>
-                        <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, fontWeight: 500, background: u.is_active ? "#f0fdf4" : "var(--color-danger-bg)", color: u.is_active ? "#16a34a" : "var(--color-danger)" }}>
+                        <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 4, fontWeight: 500, background: u.is_active ? "#f0fdf4" : "var(--color-danger-bg)", color: u.is_active ? "#16a34a" : "var(--color-danger)" }}>
                           {u.is_active ? "Active" : "Disabled"}
                         </span>
                       </td>

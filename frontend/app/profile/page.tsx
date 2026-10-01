@@ -61,7 +61,7 @@ export default function ProfilePage() {
 
       {/* Account details */}
       <div className="card" style={{ padding: 20, marginBottom: 24 }}>
-        <h2 style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 16, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
           Account
         </h2>
 
@@ -74,15 +74,15 @@ export default function ProfilePage() {
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <Mail size={14} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
               <div>
-                <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 2 }}>Email</div>
-                <div style={{ fontSize: 13, color: "var(--color-text-primary)", fontWeight: 500 }}>{user?.email ?? "—"}</div>
+                <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 2 }}>Email</div>
+                <div style={{ fontSize: 14, color: "var(--color-text-primary)", fontWeight: 500 }}>{user?.email ?? "—"}</div>
               </div>
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <ShieldCheck size={14} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
               <div>
-                <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 2 }}>Role</div>
+                <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 2 }}>Role</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   {user?.is_admin ? (
                     <span style={{ fontSize: 12, padding: "2px 8px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 500 }}>
@@ -101,8 +101,8 @@ export default function ProfilePage() {
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <Calendar size={14} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
                 <div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 2 }}>Member since</div>
-                  <div style={{ fontSize: 13, color: "var(--color-text-primary)" }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 2 }}>Member since</div>
+                  <div style={{ fontSize: 14, color: "var(--color-text-primary)" }}>
                     {new Date(me.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
                   </div>
                 </div>
@@ -114,7 +114,7 @@ export default function ProfilePage() {
 
       {/* Change password */}
       <div className="card" style={{ padding: 20 }}>
-        <h2 style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+        <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 16, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
           <KeyRound size={13} />
           Change Password
         </h2>

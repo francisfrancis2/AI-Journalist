@@ -52,7 +52,7 @@ export function YouTubeResearchPanel({
     return (
       <section className="card" style={{ padding: 16 }}>
         <p className="section-label" style={{ marginBottom: 4 }}>YouTube research and analysis</p>
-        <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+        <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
           No YouTube demand data for this story. It is gathered during research when vidIQ is
           configured and available.
         </p>
@@ -93,7 +93,7 @@ export function YouTubeResearchPanel({
             <Youtube size={13} style={{ color: "var(--color-action)" }} />
             YouTube research and analysis
           </p>
-          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+          <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
             {report.keywords.length} keywords · {report.videos.length} videos · searched
             {" "}&ldquo;{report.search_seed}&rdquo;
           </p>
@@ -103,7 +103,7 @@ export function YouTubeResearchPanel({
           className="btn-secondary"
           onClick={handleDownload}
           disabled={downloading}
-          style={{ padding: "5px 9px", fontSize: 11, flexShrink: 0 }}
+          style={{ padding: "5px 9px", fontSize: 12, flexShrink: 0 }}
         >
           {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
           Download PDF
@@ -111,13 +111,13 @@ export function YouTubeResearchPanel({
       </div>
 
       {notice && (
-        <p style={{ fontSize: 11, color: notice.tone === "success" ? "var(--color-success, #1baf7a)" : "var(--color-danger, #e34948)" }}>
+        <p style={{ fontSize: 12, color: notice.tone === "success" ? "var(--color-success, #1baf7a)" : "var(--color-danger, #e34948)" }}>
           {notice.text}
         </p>
       )}
 
       {report.seed_keyword && (
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 11, color: "var(--color-text-secondary)" }}>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: "var(--color-text-secondary)" }}>
           <span><b style={{ color: "var(--color-text-primary)" }}>{formatCount(report.seed_keyword.estimated_monthly_search)}</b> searches/mo</span>
           <span>volume <b style={{ color: "var(--color-text-primary)" }}>{Math.round(report.seed_keyword.volume)}</b>/100</span>
           {report.seed_keyword.competition !== null && report.seed_keyword.competition !== undefined && (
@@ -130,12 +130,12 @@ export function YouTubeResearchPanel({
       {/* ── Keywords ── */}
       {report.keywords.length > 0 && (
         <div>
-          <p style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--color-text-tertiary)", marginBottom: 6 }}>
+          <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--color-text-tertiary)", marginBottom: 6 }}>
             Top keywords by search volume
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {keywords.map((kw) => (
-              <div key={kw.keyword} style={{ display: "grid", gridTemplateColumns: "1fr 58px 44px", gap: 8, alignItems: "center", fontSize: 11 }}>
+              <div key={kw.keyword} style={{ display: "grid", gridTemplateColumns: "1fr 58px 44px", gap: 8, alignItems: "center", fontSize: 12 }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kw.keyword}</div>
                   <div style={{ height: 4, background: "var(--color-border, #e9eef6)", borderRadius: 3, marginTop: 3, overflow: "hidden" }}>
@@ -165,7 +165,7 @@ export function YouTubeResearchPanel({
               className="btn-ghost"
               onClick={() => setExpandedKeywords((v) => !v)}
               aria-expanded={expandedKeywords}
-              style={{ padding: "4px 0", fontSize: 11, marginTop: 4 }}
+              style={{ padding: "4px 0", fontSize: 12, marginTop: 4 }}
             >
               <ChevronDown size={12} style={{ transform: expandedKeywords ? "rotate(180deg)" : "none", transition: "transform 0.12s ease" }} />
               {expandedKeywords ? "Show fewer" : `Show all ${report.keywords.length}`}
@@ -177,12 +177,12 @@ export function YouTubeResearchPanel({
       {/* ── Videos ── */}
       {report.videos.length > 0 && (
         <div>
-          <p style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--color-text-tertiary)", marginBottom: 6 }}>
+          <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--color-text-tertiary)", marginBottom: 6 }}>
             Top long-form videos
           </p>
           <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
             {videos.map((video, index) => (
-              <li key={video.video_id} style={{ display: "flex", gap: 8, fontSize: 11 }}>
+              <li key={video.video_id} style={{ display: "flex", gap: 8, fontSize: 12 }}>
                 <span style={{ color: "var(--color-text-tertiary)", fontVariantNumeric: "tabular-nums", minWidth: 14 }}>
                   {index + 1}
                 </span>
@@ -209,7 +209,7 @@ export function YouTubeResearchPanel({
               className="btn-ghost"
               onClick={() => setExpandedVideos((v) => !v)}
               aria-expanded={expandedVideos}
-              style={{ padding: "4px 0", fontSize: 11, marginTop: 4 }}
+              style={{ padding: "4px 0", fontSize: 12, marginTop: 4 }}
             >
               <ChevronDown size={12} style={{ transform: expandedVideos ? "rotate(180deg)" : "none", transition: "transform 0.12s ease" }} />
               {expandedVideos ? "Show fewer" : `Show all ${report.videos.length}`}
