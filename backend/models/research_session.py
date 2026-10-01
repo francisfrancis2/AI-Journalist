@@ -41,6 +41,8 @@ class ResearchSessionORM(Base):
         nullable=False,
         index=True,
     )
+    origin_idea_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    seed_evidence_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     report_markdown: Mapped[str] = mapped_column(Text, nullable=False, default="")
     citations: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
@@ -98,6 +100,7 @@ class ResearchSessionTurn(BaseModel):
 
 class ResearchSessionCreate(BaseModel):
     prompt: str = Field(..., min_length=4, max_length=2000)
+    origin_idea_id: Optional[uuid.UUID] = None
 
 
 class ResearchSessionTurnCreate(BaseModel):
@@ -106,6 +109,7 @@ class ResearchSessionTurnCreate(BaseModel):
 
 class ResearchSessionRead(BaseModel):
     id: uuid.UUID
+    origin_idea_id: Optional[uuid.UUID] = None
     title: str
     report_markdown: str
     citations: list[ResearchSessionCitation] = Field(default_factory=list)

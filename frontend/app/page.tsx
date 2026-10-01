@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, MessageSquareText, ChevronRight, AlertTriangle, FileText, Paperclip, X } from "lucide-react";
 import Link from "next/link";
@@ -55,6 +55,8 @@ export default function NewStoryPage() {
   const [prompt, setPrompt] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [originIdeaId, setOriginIdeaId] = useState<string | null>(null);
+  const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { data: stories } = useQuery<Story[]>({
@@ -64,17 +66,39 @@ export default function NewStoryPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => apiClient.createIdeationStory(prompt.trim(), attachments),
+    mutationFn: () => apiClient.createIdeationStory(prompt.trim(), attachments, originIdeaId),
     onSuccess: ({ story }) => {
       setPrompt("");
       setAttachments([]);
       setAttachmentError(null);
+      setOriginIdeaId(null);
       router.push(`/ideation/${story.id}/angles`);
     },
   });
 
   const wordCount = countWords(prompt);
   const recent = (stories ?? []).slice(0, 6);
+
+  useEffect(() => {
+    const ideaId = new URLSearchParams(window.location.search).get("idea");
+    if (!ideaId) return;
+    let cancelled = false;
+    apiClient.getIdeaHandoffPreview(ideaId, "story")
+      .then((preview) => {
+        if (cancelled) return;
+        if (!preview.allowed) {
+          setHandoffNotice(preview.message);
+          return;
+        }
+        setOriginIdeaId(preview.idea_id);
+        setPrompt(preview.prompt);
+        setHandoffNotice(`${preview.inherited_source_count} evidence sources will be copied when you confirm. No research has started yet.`);
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setHandoffNotice(error.message || "The selected idea could not be loaded.");
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   function handleAttachmentChange(files: FileList | null) {
     if (!files?.length) return;
@@ -124,6 +148,12 @@ export default function NewStoryPage() {
               <MessageSquareText size={17} style={{ color: "var(--color-action)" }} />
               <h1 style={{ fontSize: 16, margin: 0 }}>What story you want to work on today?</h1>
             </div>
+
+            {handoffNotice && (
+              <div style={{ marginBottom: 12, padding: "9px 11px", borderRadius: 8, background: "#f4f5ff", color: "var(--color-text-secondary)", fontSize: 12 }}>
+                {handoffNotice}
+              </div>
+            )}
 
             <textarea
               value={prompt}
@@ -220,7 +250,7 @@ export default function NewStoryPage() {
                 className="btn-primary"
               >
                 {createMutation.isPending && <Loader2 size={13} className="animate-spin" />}
-                Start ideation
+                {originIdeaId ? "Confirm and start ideation" : "Start ideation"}
               </button>
               {createMutation.isPending && (
                 <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>

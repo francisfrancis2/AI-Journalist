@@ -20,12 +20,14 @@ from backend.api.deps import get_current_user
 from backend.api.routes import admin as admin_router
 from backend.api.routes import auth as auth_router
 from backend.api.routes import benchmarks as benchmarks_router
+from backend.api.routes import idea_generations as idea_generations_router
 from backend.api.routes import research as research_router
 from backend.api.routes import research_sessions as research_sessions_router
 from backend.api.routes import stories as stories_router
 from backend.config import settings
 from backend.db.database import AsyncSessionLocal, create_tables
 from backend.models import benchmark as _benchmark_models  # noqa: F401 — registers BIReferenceDocORM, BIPatternLibraryORM
+from backend.models import idea_generation as _idea_generation_models  # noqa: F401 — registers Idea Generator tables
 from backend.models import research_session as _research_session_models  # noqa: F401 — registers ResearchSessionORM
 from backend.models import user as _user_models  # noqa: F401 — ensures UserORM is registered with Base
 from backend.models.benchmark import BIReferenceDocORM
@@ -193,7 +195,7 @@ def create_app() -> FastAPI:
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
     )
 
     # ── Strip server fingerprinting headers ───────────────────────────────────
@@ -248,6 +250,12 @@ def create_app() -> FastAPI:
         stories_router.router,
         prefix="/api/v1/stories",
         tags=["Stories"],
+        dependencies=[Depends(get_current_user)],
+    )
+    app.include_router(
+        idea_generations_router.router,
+        prefix="/api/v1/idea-generations",
+        tags=["Idea Generator"],
         dependencies=[Depends(get_current_user)],
     )
     app.include_router(

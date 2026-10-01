@@ -8,6 +8,7 @@ Citations are merged across turns (dedupe by URL).
 """
 
 import asyncio
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -16,6 +17,7 @@ import structlog
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.api.deps import get_current_user
 from backend.api.security import validate_user_input
@@ -30,6 +32,7 @@ from backend.models.research_session import (
     ResearchSessionTurn,
     ResearchSessionTurnCreate,
 )
+from backend.models.idea_generation import GeneratedIdeaORM, IdeaGenerationRunORM
 from backend.models.user import UserORM
 from backend.tools.anthropic_deep_research import (
     DeepResearchCitation,
@@ -137,6 +140,7 @@ def _to_read_model(session: ResearchSessionORM, owner_email: Optional[str] = Non
     return ResearchSessionRead(
         owner_email=owner_email,
         id=session.id,
+        origin_idea_id=session.origin_idea_id,
         title=session.title,
         report_markdown=session.report_markdown,
         citations=[
@@ -144,6 +148,7 @@ def _to_read_model(session: ResearchSessionORM, owner_email: Optional[str] = Non
             for citation in (session.citations or [])
             if isinstance(citation, dict)
         ],
+        youtube_demand_data=session.youtube_demand_data,
         turns=[
             ResearchSessionTurn(**turn)
             for turn in (session.turns or [])
@@ -225,8 +230,15 @@ async def _run_initial_research_session(session_id: uuid.UUID) -> None:
             return
 
     demand_task = asyncio.create_task(_fetch_youtube_demand(prompt))
+    research_prompt = prompt
+    if session.seed_evidence_data:
+        research_prompt += (
+            "\n\nStarting evidence inherited from the selected Idea Generator result. "
+            "Verify and extend it; do not treat vidIQ signals as factual corroboration:\n"
+            + json.dumps(session.seed_evidence_data, default=str)[:8000]
+        )
     try:
-        result = await _get_research_agent().run_report(prompt=prompt)
+        result = await _get_research_agent().run_report(prompt=research_prompt)
     except Exception as exc:
         demand_task.cancel()
         log.error("research_session.initial.failed", session_id=str(session_id), error=str(exc))
@@ -399,9 +411,60 @@ async def create_session(
 ) -> ResearchSessionRead:
     validate_user_input(payload.prompt, field="prompt")
     prompt = payload.prompt.strip()
+    seed_evidence_data = None
+    if payload.origin_idea_id is not None:
+        idea_result = await db.execute(
+            select(GeneratedIdeaORM)
+            .join(IdeaGenerationRunORM)
+            .options(
+                selectinload(GeneratedIdeaORM.sources),
+                selectinload(GeneratedIdeaORM.signals),
+            )
+            .where(
+                GeneratedIdeaORM.id == payload.origin_idea_id,
+                IdeaGenerationRunORM.user_id == current_user.id,
+            )
+        )
+        idea = idea_result.scalar_one_or_none()
+        if idea is None:
+            raise HTTPException(status_code=404, detail="Idea not found")
+        seed_evidence_data = {
+            "idea": {
+                "id": str(idea.id),
+                "title": idea.title,
+                "premise": idea.premise,
+                "why_now": idea.why_now,
+                "uae_relevance": idea.uae_relevance,
+                "central_tension": idea.central_tension,
+            },
+            "sources": [
+                {
+                    "title": source.title,
+                    "url": source.url,
+                    "domain": source.domain,
+                    "published_at": source.published_at.isoformat() if source.published_at else None,
+                    "excerpt": source.excerpt,
+                    "credibility": source.credibility,
+                }
+                for source in idea.sources
+            ],
+            "signals": [
+                {
+                    "provider": signal.provider,
+                    "signal_type": signal.signal_type,
+                    "topic": signal.topic,
+                    "geography_meaning": signal.geography_meaning,
+                    "metric": signal.metric,
+                    "values": signal.values,
+                }
+                for signal in idea.signals
+            ],
+        }
 
     session = ResearchSessionORM(
         user_id=current_user.id,
+        origin_idea_id=payload.origin_idea_id,
+        seed_evidence_data=seed_evidence_data,
         title=_derive_title(prompt),
         report_markdown="",
         citations=[],

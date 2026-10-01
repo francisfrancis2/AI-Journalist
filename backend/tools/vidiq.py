@@ -24,6 +24,7 @@ import hashlib
 import json
 import re
 import time
+from datetime import date, timedelta
 from typing import Any, Optional
 
 import httpx
@@ -45,6 +46,8 @@ MCP_URL = "https://mcp.vidiq.com/mcp"
 PROTOCOL_VERSION = "2025-06-18"
 KEYWORD_TOOL = "vidiq_keyword_research"
 VIDEO_TOOL = "vidiq_youtube_search"
+TRENDING_TOOL = "vidiq_trending_videos"
+OUTLIERS_TOOL = "vidiq_outliers"
 
 # ── relevance filtering (topic-agnostic) ──────────────────────────────────────
 # The topic vocabulary is derived from vidIQ's own related keywords, so nothing
@@ -266,19 +269,141 @@ class VidIQTool:
             log.warning("vidiq.failed", topic=topic[:80], error=str(exc)[:200])
         return None
 
-    async def _build_report(self, client: httpx.AsyncClient, topic: str,
-                            seed: str) -> Optional[YouTubeDemandReport]:
-        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {},
-                           "clientInfo": {"name": "ai-journalist", "version": "1.0"}}}
+    async def fetch_idea_trends(self, *, window_days: int = 30) -> Optional[dict[str, Any]]:
+        """Collect broad YouTube opportunity signals for UAE business ideation.
+
+        Country keyword volume is an in-country demand estimate. Trending and
+        outlier country filters describe where the publishing channel is based,
+        not where its audience lives; that distinction is preserved in the
+        returned payload and must not be upgraded into an audience claim.
+        """
+        if not self.enabled:
+            return None
+
+        self._calls_made = 0
+        since = (date.today() - timedelta(days=max(1, window_days))).isoformat()
+        try:
+            async with httpx.AsyncClient(
+                timeout=settings.vidiq_timeout_seconds,
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                },
+            ) as client:
+                return await asyncio.wait_for(
+                    self._build_idea_trends(client, since=since, window_days=window_days),
+                    timeout=settings.vidiq_total_timeout_seconds,
+                )
+        except asyncio.TimeoutError:
+            log.warning("vidiq.idea_trends_timeout")
+        except Exception as exc:
+            log.warning("vidiq.idea_trends_failed", error=str(exc)[:200])
+        return None
+
+    async def _initialize(self, client: httpx.AsyncClient) -> Optional[str]:
+        init = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "ai-journalist", "version": "2.0"},
+            },
+        }
         resp = await client.post(MCP_URL, json=init)
         if resp.status_code >= 400:
             log.warning("vidiq.init_failed", status=resp.status_code)
             return None
         session_id = resp.headers.get("mcp-session-id")
-        await client.post(MCP_URL, json={"jsonrpc": "2.0",
-                                         "method": "notifications/initialized"},
-                          headers={"Mcp-Session-Id": session_id} if session_id else {})
+        await client.post(
+            MCP_URL,
+            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+            headers={"Mcp-Session-Id": session_id} if session_id else {},
+        )
+        return session_id
+
+    async def _build_idea_trends(
+        self, client: httpx.AsyncClient, *, since: str, window_days: int
+    ) -> Optional[dict[str, Any]]:
+        session_id = await self._initialize(client)
+        if session_id is None:
+            return None
+
+        calls = [
+            (
+                "uae_country_keywords",
+                KEYWORD_TOOL,
+                {
+                    "mode": "country_search",
+                    "keyword": "business economy technology entrepreneurship",
+                    "country": "AE",
+                    "broad": True,
+                    "limit": 30,
+                },
+                "United Arab Emirates search volume",
+            ),
+            (
+                "global_rising_keywords",
+                KEYWORD_TOOL,
+                {"mode": "rising", "period": "month", "language": "en", "limit": 30},
+                "Global YouTube keyword momentum; not UAE-specific",
+            ),
+            (
+                "uae_channel_trending_videos",
+                TRENDING_TOOL,
+                {
+                    "videoFormat": "long",
+                    "titleQuery": "UAE business economy technology entrepreneurship",
+                    "channelCountry": "AE",
+                    "videoTitleLanguage": "en",
+                    "videoPublishedAfter": since,
+                    "sortBy": "vph",
+                    "limit": 20,
+                },
+                "Channels based in UAE; not UAE audience geography",
+            ),
+            (
+                "uae_channel_outliers",
+                OUTLIERS_TOOL,
+                {
+                    "keyword": "UAE business economy technology entrepreneurship",
+                    "contentType": "long",
+                    "publishedWithin": "thisMonth" if window_days <= 31 else "threeMonths",
+                    "channelCountry": "AE",
+                    "language": "en",
+                    "sort": "breakoutScore",
+                    "limit": 20,
+                },
+                "Channels based in UAE; not UAE audience geography",
+            ),
+        ]
+
+        payloads: dict[str, Any] = {}
+        semantics: dict[str, str] = {}
+        for key, tool, args, geography_meaning in calls:
+            payload, session_id = await self._call_tool(client, session_id, tool, args)
+            if payload is not None:
+                payloads[key] = payload
+                semantics[key] = geography_meaning
+
+        if not payloads:
+            return None
+        return {
+            "window_days": window_days,
+            "geography": "AE",
+            "payloads": payloads,
+            "geography_semantics": semantics,
+            "credits_spent": self._calls_made * 5,
+            "partial": len(payloads) < len(calls),
+        }
+
+    async def _build_report(self, client: httpx.AsyncClient, topic: str,
+                            seed: str) -> Optional[YouTubeDemandReport]:
+        session_id = await self._initialize(client)
+        if session_id is None:
+            return None
 
         kw_payload, session_id = await self._call_tool(
             client, session_id, KEYWORD_TOOL,

@@ -404,6 +404,7 @@ class ResearchAgent:
         deep: bool,
         deep_prompt: str,
         deep_max_uses: int | None = None,
+        include_vidiq: bool = True,
     ) -> None:
         """Dispatch all routed providers in parallel into ``package`` and scrape."""
         fetch_tasks: dict[str, Any] = {}
@@ -453,7 +454,7 @@ class ResearchAgent:
         # vidIQ YouTube demand — enrichment only. Gathered with return_exceptions
         # below, so a failure logs and the rest of research proceeds untouched.
         vidiq_key = None
-        if self._vidiq.enabled and package.youtube_demand is None:
+        if include_vidiq and self._vidiq.enabled and package.youtube_demand is None:
             vidiq_key = "vidiq"
             fetch_tasks[vidiq_key] = self._vidiq.fetch_demand_report(
                 topic=topic, search_seed=rss_keyword or topic,
@@ -504,6 +505,47 @@ class ResearchAgent:
 
     # ── Standalone consolidated report (Research Tab) ─────────────────────────
 
+    async def gather_package(
+        self,
+        *,
+        prompt: str,
+        deep: bool = True,
+        include_vidiq: bool = True,
+    ) -> ResearchPackage:
+        """Gather the shared evidence package without generating a prose report."""
+        topic = prompt.strip()
+        state = {"topic": topic}
+        duration_target = duration_target_for(None)
+        start = time.monotonic()
+        plan = await self._plan_queries(topic, state=state)
+        use_sources = self._normalise_sources(plan)
+        plan.use_sources = sorted(use_sources)
+        package = ResearchPackage(topic=topic)
+        package.queries_issued = [
+            ResearchQuery(query_text=query, target_source_types=[SourceType.WEB_SEARCH])
+            for query in self._select_balanced_queries(plan, duration_target.web_query_cap)
+        ]
+        await self._run_gather(
+            topic=topic,
+            package=package,
+            base_queries=[query.query_text for query in package.queries_issued],
+            human_story_queries=plan.human_story_queries,
+            news_queries=(
+                plan.economics_queries[:2]
+                + plan.counterintuitive_queries[:2]
+                + plan.origin_queries[:1]
+            ),
+            rss_keyword=plan.rss_keyword,
+            financial_symbols=plan.financial_symbols,
+            use_sources=use_sources,
+            duration_target=duration_target,
+            deep=deep,
+            deep_prompt=topic,
+            include_vidiq=include_vidiq,
+        )
+        package.research_duration_seconds = time.monotonic() - start
+        return package
+
     async def run_report(
         self,
         *,
@@ -522,36 +564,7 @@ class ResearchAgent:
         ``deep=False`` on follow-ups so deep research runs only on the first
         query of a session (cost control).
         """
-        topic = prompt.strip()
-        state = {"topic": topic}
-        duration_target = duration_target_for(None)
-        start = time.monotonic()
-
-        plan = await self._plan_queries(topic, state=state)
-        use_sources = self._normalise_sources(plan)
-        plan.use_sources = sorted(use_sources)
-        base_queries = self._select_balanced_queries(plan, duration_target.web_query_cap)
-        news_queries = (
-            plan.economics_queries[:2]
-            + plan.counterintuitive_queries[:2]
-            + plan.origin_queries[:1]
-        )
-
-        package = ResearchPackage(topic=topic)
-        await self._run_gather(
-            topic=topic,
-            package=package,
-            base_queries=base_queries,
-            human_story_queries=plan.human_story_queries,
-            news_queries=news_queries,
-            rss_keyword=plan.rss_keyword,
-            financial_symbols=plan.financial_symbols,
-            use_sources=use_sources,
-            duration_target=duration_target,
-            deep=deep,
-            deep_prompt=topic,
-        )
-        package.research_duration_seconds = time.monotonic() - start
+        package = await self.gather_package(prompt=prompt, deep=deep, include_vidiq=True)
 
         report, citations = await self._synthesizer.synthesize(
             prompt=prompt,
@@ -561,7 +574,7 @@ class ResearchAgent:
         )
         log.info(
             "researcher.report_complete",
-            topic=topic,
+            topic=prompt.strip(),
             total_sources=package.total_sources,
             citations=len(citations),
             web_search_requests=package.deep_research_web_search_requests,

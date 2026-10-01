@@ -1,0 +1,377 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatDistanceToNow } from "date-fns";
+import { useRouter } from "next/navigation";
+import {
+  Bookmark,
+  CheckCircle2,
+  ChevronDown,
+  ExternalLink,
+  Lightbulb,
+  Loader2,
+  RefreshCw,
+  Search,
+  Sparkles,
+  Trash2,
+  Undo2,
+  X,
+} from "lucide-react";
+import {
+  apiClient,
+  type GeneratedIdea,
+  type IdeaFormat,
+  type IdeaGenerationRun,
+  type IdeaGenerationRunSummary,
+  type IdeaState,
+} from "@/lib/api";
+
+const FORMAT_LABEL: Record<IdeaFormat, string> = {
+  documentary: "Documentary",
+  expert_interview: "Expert Interview Video",
+};
+
+function titleCase(value: string): string {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function SignalSummary({ values }: { values: Record<string, unknown> }) {
+  const entries = Object.entries(values)
+    .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
+    .slice(0, 4);
+  if (!entries.length) return null;
+  return (
+    <span style={{ color: "var(--color-text-tertiary)" }}>
+      {entries.map(([key, value]) => `${titleCase(key)}: ${String(value)}`).join(" · ")}
+    </span>
+  );
+}
+
+function IdeaCard({
+  idea,
+  onState,
+}: {
+  idea: GeneratedIdea;
+  onState: (ideaId: string, state: IdeaState) => void;
+}) {
+  const router = useRouter();
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const details = Object.entries(idea.format_details ?? {});
+  const isDismissed = idea.state === "dismissed";
+
+  return (
+    <article className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 15 }}>
+      <div style={{ display: "flex", gap: 14, justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 7, alignItems: "center", marginBottom: 7 }}>
+            <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>#{idea.rank}</span>
+            <span className="chip" style={{ padding: "3px 9px", cursor: "default" }}>{idea.sector}</span>
+            <span style={{ fontSize: 11, color: "var(--color-success)" }}>{idea.strength} · {Math.round(idea.confidence * 100)}% confidence</span>
+          </div>
+          <h2 style={{ fontSize: 18, margin: 0 }}>{idea.title}</h2>
+        </div>
+        <div style={{ minWidth: 54, textAlign: "right" }}>
+          <strong style={{ fontSize: 20, fontWeight: 500 }}>{Math.round(idea.score)}</strong>
+          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>/100</div>
+        </div>
+      </div>
+
+      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65 }}>{idea.premise}</p>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+        {[
+          ["Why now", idea.why_now],
+          ["UAE relevance", idea.uae_relevance],
+          ["Central tension", idea.central_tension],
+          ["Business significance", idea.business_significance],
+        ].map(([label, value]) => (
+          <div key={label} style={{ padding: 11, borderRadius: 8, background: "var(--color-background-secondary)" }}>
+            <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 12, lineHeight: 1.55 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {details.length > 0 && (
+        <div>
+          <div className="section-label" style={{ marginBottom: 7 }}>Format treatment</div>
+          <div style={{ display: "grid", gap: 7 }}>
+            {details.map(([label, value]) => (
+              <div key={label} style={{ fontSize: 12 }}>
+                <strong style={{ fontWeight: 500 }}>{titleCase(label)}:</strong>{" "}
+                {Array.isArray(value) ? value.join(" · ") : typeof value === "object" ? JSON.stringify(value) : String(value)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        className="btn-secondary"
+        onClick={() => setEvidenceOpen((open) => !open)}
+        style={{ alignSelf: "flex-start" }}
+      >
+        <ChevronDown size={13} style={{ transform: evidenceOpen ? "rotate(180deg)" : undefined }} />
+        Evidence & trend signals ({idea.sources.length + idea.signals.length})
+      </button>
+
+      {evidenceOpen && (
+        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", paddingTop: 13, display: "grid", gap: 14 }}>
+          <div>
+            <div className="section-label" style={{ marginBottom: 7 }}>Factual sources</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {idea.sources.map((source) => (
+                <div key={source.id} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                  {source.url ? (
+                    <a href={source.url} target="_blank" rel="noreferrer" style={{ color: "var(--color-action)" }}>
+                      {source.title} <ExternalLink size={10} style={{ display: "inline" }} />
+                    </a>
+                  ) : <span>{source.title}</span>}
+                  <div style={{ color: "var(--color-text-tertiary)" }}>
+                    {source.domain ?? source.source_type}
+                    {source.published_at ? ` · ${new Date(source.published_at).toLocaleDateString()}` : ""}
+                    {source.is_uae_relevant ? " · UAE-relevant" : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="section-label" style={{ marginBottom: 7 }}>vidIQ opportunity signals</div>
+            {idea.signals.length ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                {idea.signals.map((signal) => (
+                  <div key={signal.id} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    <strong style={{ fontWeight: 500 }}>{signal.topic}</strong>
+                    <div><SignalSummary values={signal.values} /></div>
+                    {signal.geography_meaning && (
+                      <div style={{ color: "var(--color-text-tertiary)" }}>{signal.geography_meaning}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ margin: 0, color: "var(--color-text-tertiary)", fontSize: 12 }}>No vidIQ signal was available for this idea.</p>
+            )}
+          </div>
+          {idea.verification_gaps.length > 0 && (
+            <div style={{ fontSize: 12, color: "var(--color-warning)" }}>
+              Verification gaps: {idea.verification_gaps.join(" · ")}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        {idea.format === "documentary" && (
+          <button className="btn-primary" type="button" onClick={() => router.push(`/?idea=${idea.id}`)}>
+            Develop in New Story
+          </button>
+        )}
+        <button className={idea.format === "documentary" ? "btn-secondary" : "btn-primary"} type="button" onClick={() => router.push(`/research?idea=${idea.id}`)}>
+          <Search size={13} /> Open in Research
+        </button>
+        {isDismissed ? (
+          <button className="btn-ghost" type="button" onClick={() => onState(idea.id, "active")}><Undo2 size={13} /> Undo dismiss</button>
+        ) : (
+          <>
+            <button className="btn-ghost" type="button" onClick={() => onState(idea.id, idea.state === "saved" ? "active" : "saved")}>
+              <Bookmark size={13} fill={idea.state === "saved" ? "currentColor" : "none"} /> {idea.state === "saved" ? "Saved" : "Save"}
+            </button>
+            <button className="btn-ghost" type="button" onClick={() => onState(idea.id, "dismissed")}><X size={13} /> Dismiss</button>
+          </>
+        )}
+      </div>
+    </article>
+  );
+}
+
+export default function IdeaGeneratorPage() {
+  const queryClient = useQueryClient();
+  const [format, setFormat] = useState<IdeaFormat>("documentary");
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [showDismissed, setShowDismissed] = useState(false);
+
+  const runsQuery = useQuery<IdeaGenerationRunSummary[]>({
+    queryKey: ["idea-generations"],
+    queryFn: () => apiClient.listIdeaGenerations(),
+    refetchInterval: (query) => query.state.data?.some((run) => ["queued", "running"].includes(run.status)) ? 3000 : false,
+  });
+  const runQuery = useQuery<IdeaGenerationRun>({
+    queryKey: ["idea-generation", selectedRunId],
+    queryFn: () => apiClient.getIdeaGeneration(selectedRunId as string),
+    enabled: !!selectedRunId,
+    refetchInterval: (query) => ["queued", "running"].includes(query.state.data?.status ?? "") ? 3000 : false,
+  });
+
+  useEffect(() => {
+    if (!selectedRunId && runsQuery.data?.length) setSelectedRunId(runsQuery.data[0].id);
+  }, [runsQuery.data, selectedRunId]);
+
+  const generate = useMutation({
+    mutationFn: ({ requestedFormat, previousRunId }: { requestedFormat: IdeaFormat; previousRunId?: string }) =>
+      apiClient.createIdeaGeneration(requestedFormat, previousRunId, crypto.randomUUID()),
+    onSuccess: (run) => {
+      setSelectedRunId(run.id);
+      setFormat(run.format);
+      queryClient.setQueryData(["idea-generation", run.id], run);
+      queryClient.invalidateQueries({ queryKey: ["idea-generations"] });
+    },
+  });
+  const retry = useMutation({
+    mutationFn: (runId: string) => apiClient.retryIdeaGeneration(runId),
+    onSuccess: (run) => {
+      setSelectedRunId(run.id);
+      queryClient.setQueryData(["idea-generation", run.id], run);
+      queryClient.invalidateQueries({ queryKey: ["idea-generations"] });
+    },
+  });
+  const updateState = useMutation({
+    mutationFn: ({ ideaId, state }: { ideaId: string; state: IdeaState }) => apiClient.updateIdeaState(ideaId, state),
+    onSuccess: (idea) => {
+      queryClient.setQueryData<IdeaGenerationRun>(["idea-generation", selectedRunId], (current) => current ? {
+        ...current,
+        ideas: current.ideas.map((item) => item.id === idea.id ? idea : item),
+      } : current);
+    },
+  });
+  const removeRun = useMutation({
+    mutationFn: (runId: string) => apiClient.deleteIdeaGeneration(runId),
+    onSuccess: (_, runId) => {
+      if (selectedRunId === runId) setSelectedRunId(null);
+      queryClient.removeQueries({ queryKey: ["idea-generation", runId] });
+      queryClient.invalidateQueries({ queryKey: ["idea-generations"] });
+    },
+  });
+
+  const run = runQuery.data;
+  const ideas = useMemo(
+    () => (run?.ideas ?? []).filter((idea) => showDismissed || idea.state !== "dismissed"),
+    [run?.ideas, showDismissed]
+  );
+  const isActive = run && ["queued", "running"].includes(run.status);
+  const providers = Object.entries(run?.provider_statuses ?? {});
+
+  return (
+    <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
+      <header style={{ height: 52, display: "flex", alignItems: "center", padding: "0 28px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
+        <Lightbulb size={17} style={{ marginRight: 8, color: "var(--color-action)" }} />
+        <span style={{ fontSize: 18, fontWeight: 500 }}>Idea Generator</span>
+        <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 9 }}>V2 · UAE business</span>
+      </header>
+
+      <div style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", minHeight: "calc(100vh - 52px)" }}>
+        <aside style={{ borderRight: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", padding: 14 }}>
+          <div className="section-label">Recent runs</div>
+          <div style={{ display: "grid", gap: 6 }}>
+            {(runsQuery.data ?? []).map((item) => (
+              <div key={item.id} style={{ display: "flex", gap: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedRunId(item.id); setFormat(item.format); }}
+                  style={{ flex: 1, textAlign: "left", border: selectedRunId === item.id ? "0.5px solid var(--color-action)" : "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: selectedRunId === item.id ? "#f4f5ff" : "#fff", padding: "9px 10px", cursor: "pointer" }}
+                >
+                  <div style={{ fontSize: 12 }}>{FORMAT_LABEL[item.format]}</div>
+                  <div style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{titleCase(item.status)} · {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</div>
+                </button>
+                {!(["queued", "running"] as string[]).includes(item.status) && (
+                  <button type="button" className="btn-ghost" aria-label="Delete run" onClick={() => removeRun.mutate(item.id)} style={{ padding: 6 }}><Trash2 size={12} /></button>
+                )}
+              </div>
+            ))}
+            {!runsQuery.isLoading && !(runsQuery.data ?? []).length && <p style={{ color: "var(--color-text-tertiary)", fontSize: 12 }}>No idea runs yet.</p>}
+          </div>
+        </aside>
+
+        <main style={{ padding: 28, maxWidth: 1040, width: "100%" }}>
+          <section className="card" style={{ padding: 20, marginBottom: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 18, flexWrap: "wrap" }}>
+              <div>
+                <div className="section-label">Choose a format</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {(["documentary", "expert_interview"] as IdeaFormat[]).map((value) => (
+                    <button key={value} type="button" className={`chip ${format === value ? "selected" : ""}`} onClick={() => setFormat(value)} disabled={!!isActive}>
+                      {FORMAT_LABEL[value]}
+                    </button>
+                  ))}
+                </div>
+                <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--color-text-secondary)" }}>
+                  Fixed scope: UAE · business · English · last 30 days · exactly five verified ideas.
+                </p>
+              </div>
+              <button type="button" className="btn-primary" disabled={generate.isPending || !!isActive} onClick={() => generate.mutate({ requestedFormat: format })} style={{ minWidth: 170 }}>
+                {generate.isPending || isActive ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                I am feeling lucky
+              </button>
+            </div>
+            {generate.isError && <p role="alert" style={{ color: "var(--color-danger)", marginBottom: 0 }}>{(generate.error as Error).message}</p>}
+          </section>
+
+          {runQuery.isLoading && <div style={{ padding: 30, textAlign: "center" }}><Loader2 size={20} className="animate-spin" /></div>}
+
+          {run && (
+            <>
+              <section className="card" style={{ padding: 16, marginBottom: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      {run.status === "completed" ? <CheckCircle2 size={14} style={{ color: "var(--color-success)" }} /> : isActive ? <Loader2 size={14} className="animate-spin" style={{ color: "var(--color-action)" }} /> : <X size={14} style={{ color: "var(--color-danger)" }} />}
+                      <strong style={{ fontWeight: 500 }}>{titleCase(run.stage)}</strong>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+                      Coverage: {titleCase(run.coverage_level)} · Google Trends not configured in V2
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 12 }}>{run.stage_progress}%</span>
+                </div>
+                <div style={{ height: 4, background: "var(--color-background-tertiary)", borderRadius: 4, marginTop: 10, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${run.stage_progress}%`, background: run.status === "failed" ? "var(--color-danger)" : "var(--color-action)" }} />
+                </div>
+                {providers.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+                    {providers.map(([name, provider]) => (
+                      <span key={name} className="chip" title={provider.detail} style={{ padding: "4px 9px", cursor: "help" }}>
+                        {titleCase(name)}: {titleCase(provider.status)}{provider.evidence_count ? ` (${provider.evidence_count})` : ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {run.error_message && <p style={{ color: "var(--color-danger)", margin: "10px 0 0" }}>{run.error_message}</p>}
+                {run.status === "failed" && (
+                  <button type="button" className="btn-secondary" onClick={() => retry.mutate(run.id)} disabled={retry.isPending} style={{ marginTop: 12 }}>
+                    <RefreshCw size={13} /> Retry run
+                  </button>
+                )}
+              </section>
+
+              {run.status === "completed" && (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>{ideas.length} visible ideas</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="button" className="btn-ghost" onClick={() => setShowDismissed((value) => !value)}>{showDismissed ? "Hide dismissed" : "Show dismissed"}</button>
+                    <button type="button" className="btn-secondary" onClick={() => generate.mutate({ requestedFormat: run.format, previousRunId: run.id })} disabled={generate.isPending}>
+                      <RefreshCw size={13} /> Generate fresh set
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: "grid", gap: 14 }}>
+                {ideas.map((idea) => <IdeaCard key={idea.id} idea={idea} onState={(ideaId, state) => updateState.mutate({ ideaId, state })} />)}
+              </div>
+            </>
+          )}
+
+          {!run && !runQuery.isLoading && (
+            <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--color-text-secondary)" }}>
+              <Sparkles size={23} style={{ margin: "0 auto 10px", color: "var(--color-action)" }} />
+              Pick a format and let the agent research the first set.
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}

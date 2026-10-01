@@ -352,6 +352,8 @@ export interface Story {
   target_audience: string | null;
   owner_user_id: string | null;
   owner_email: string | null;
+  origin_idea_id?: string | null;
+  research_mode?: string | null;
   quality_score: number | null;
   word_count: number | null;
   estimated_duration_minutes: number | null;
@@ -485,6 +487,7 @@ export type ResearchSessionStatus = "pending" | "running" | "completed" | "faile
 export interface ResearchSession {
   youtube_demand_data?: YouTubeDemandReport | null;
   id: string;
+  origin_idea_id?: string | null;
   title: string;
   report_markdown: string;
   citations: ResearchSessionCitation[];
@@ -513,6 +516,113 @@ export interface ResearchSessionSummary {
   updated_at: string;
   created_at: string;
   owner_email?: string | null;
+}
+
+export type IdeaFormat = "documentary" | "expert_interview";
+export type IdeaRunStatus = "queued" | "running" | "completed" | "failed";
+export type IdeaState = "active" | "saved" | "dismissed";
+
+export interface IdeaProviderStatus {
+  status: "complete" | "partial" | "unavailable" | "not_configured" | "failed";
+  detail: string;
+  evidence_count: number;
+}
+
+export interface IdeaEvidenceSource {
+  id: string;
+  title: string;
+  url: string | null;
+  domain: string | null;
+  publisher: string | null;
+  published_at: string | null;
+  excerpt: string;
+  source_type: string;
+  credibility: string;
+  is_uae_relevant: boolean;
+  is_primary: boolean;
+}
+
+export interface IdeaTrendSignal {
+  id: string;
+  provider: string;
+  signal_type: string;
+  topic: string;
+  query: string | null;
+  geography: string | null;
+  geography_meaning: string | null;
+  metric: string | null;
+  values: Record<string, unknown>;
+  reliability: string;
+}
+
+export interface GeneratedIdea {
+  id: string;
+  rank: number;
+  format: IdeaFormat;
+  sector: string;
+  title: string;
+  premise: string;
+  why_now: string;
+  uae_relevance: string;
+  central_tension: string;
+  target_audience: string;
+  business_significance: string;
+  format_details: Record<string, unknown>;
+  score_breakdown: Record<string, number>;
+  score: number;
+  strength: string;
+  confidence: number;
+  coverage: { level?: string; reasons?: string[] };
+  verification_gaps: string[];
+  state: IdeaState;
+  story_id: string | null;
+  research_session_id: string | null;
+  sources: IdeaEvidenceSource[];
+  signals: IdeaTrendSignal[];
+}
+
+export interface IdeaGenerationRun {
+  id: string;
+  format: IdeaFormat;
+  geography: string;
+  trend_window_days: number;
+  status: IdeaRunStatus;
+  stage: string;
+  stage_progress: number;
+  coverage_level: "full" | "partial";
+  coverage_reasons: string[];
+  provider_statuses: Record<string, IdeaProviderStatus>;
+  candidate_metrics: Record<string, unknown>;
+  usage_metrics: Record<string, unknown>;
+  previous_run_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  ideas: GeneratedIdea[];
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface IdeaGenerationRunSummary {
+  id: string;
+  format: IdeaFormat;
+  status: IdeaRunStatus;
+  coverage_level: "full" | "partial";
+  stage: string;
+  idea_count: number;
+  created_at: string;
+  updated_at: string;
+  error_message: string | null;
+}
+
+export interface IdeaHandoffPreview {
+  idea_id: string;
+  target: "story" | "research";
+  allowed: boolean;
+  prompt: string;
+  title: string;
+  inherited_source_count: number;
+  message: string;
 }
 
 // ── Client ────────────────────────────────────────────────────────────────────
@@ -621,10 +731,15 @@ class AIJournalistAPIClient {
     return data;
   }
 
-  async createIdeationStory(prompt: string, attachments: File[] = []): Promise<IdeationChatResponse> {
+  async createIdeationStory(
+    prompt: string,
+    attachments: File[] = [],
+    originIdeaId?: string | null
+  ): Promise<IdeationChatResponse> {
     if (attachments.length > 0) {
       const formData = new FormData();
       formData.append("prompt", prompt);
+      if (originIdeaId) formData.append("origin_idea_id", originIdeaId);
       attachments.forEach((file) => formData.append("attachments", file));
       const { data } = await this.http.post<IdeationChatResponse>(
         "/api/v1/stories/ideation",
@@ -635,7 +750,7 @@ class AIJournalistAPIClient {
 
     const { data } = await this.http.post<IdeationChatResponse>(
       "/api/v1/stories/ideation",
-      { prompt }
+      { prompt, origin_idea_id: originIdeaId ?? null }
     );
     return data;
   }
@@ -779,6 +894,60 @@ class AIJournalistAPIClient {
 
   // ── Research Hub (standalone sessions) ────────────────────────────────────
 
+  async createIdeaGeneration(
+    format: IdeaFormat,
+    previousRunId?: string | null,
+    idempotencyKey?: string
+  ): Promise<IdeaGenerationRun> {
+    const { data } = await this.http.post<IdeaGenerationRun>(
+      "/api/v1/idea-generations",
+      { format, previous_run_id: previousRunId ?? null },
+      { headers: { "Idempotency-Key": idempotencyKey ?? crypto.randomUUID() } }
+    );
+    return data;
+  }
+
+  async listIdeaGenerations(limit = 20): Promise<IdeaGenerationRunSummary[]> {
+    const { data } = await this.http.get<IdeaGenerationRunSummary[]>(
+      "/api/v1/idea-generations",
+      { params: { limit } }
+    );
+    return data;
+  }
+
+  async getIdeaGeneration(runId: string): Promise<IdeaGenerationRun> {
+    const { data } = await this.http.get<IdeaGenerationRun>(`/api/v1/idea-generations/${runId}`);
+    return data;
+  }
+
+  async retryIdeaGeneration(runId: string): Promise<IdeaGenerationRun> {
+    const { data } = await this.http.post<IdeaGenerationRun>(`/api/v1/idea-generations/${runId}/retry`);
+    return data;
+  }
+
+  async deleteIdeaGeneration(runId: string): Promise<void> {
+    await this.http.delete(`/api/v1/idea-generations/${runId}`);
+  }
+
+  async updateIdeaState(ideaId: string, state: IdeaState): Promise<GeneratedIdea> {
+    const { data } = await this.http.post<GeneratedIdea>(
+      `/api/v1/idea-generations/ideas/${ideaId}/state`,
+      { state }
+    );
+    return data;
+  }
+
+  async getIdeaHandoffPreview(
+    ideaId: string,
+    target: "story" | "research"
+  ): Promise<IdeaHandoffPreview> {
+    const { data } = await this.http.get<IdeaHandoffPreview>(
+      `/api/v1/idea-generations/ideas/${ideaId}/handoff`,
+      { params: { target } }
+    );
+    return data;
+  }
+
   async listResearchSessions(): Promise<ResearchSessionSummary[]> {
     const { data } = await this.http.get<ResearchSessionSummary[]>(
       "/api/v1/research/sessions"
@@ -793,10 +962,10 @@ class AIJournalistAPIClient {
     return data;
   }
 
-  async createResearchSession(prompt: string): Promise<ResearchSession> {
+  async createResearchSession(prompt: string, originIdeaId?: string | null): Promise<ResearchSession> {
     const { data } = await this.http.post<ResearchSession>(
       "/api/v1/research/sessions",
-      { prompt },
+      { prompt, origin_idea_id: originIdeaId ?? null },
       { timeout: 240_000 }
     );
     return data;

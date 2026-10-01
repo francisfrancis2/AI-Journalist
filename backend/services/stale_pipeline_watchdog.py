@@ -26,6 +26,7 @@ from sqlalchemy import select, update
 
 from backend.db.database import AsyncSessionLocal
 from backend.models.research_session import ResearchSessionORM, ResearchSessionStatus
+from backend.models.idea_generation import IdeaGenerationRunORM, IdeaRunStatus
 from backend.models.story import StoryORM, StoryStatus
 
 log = structlog.get_logger(__name__)
@@ -56,6 +57,9 @@ _STALE_IDEATION_MESSAGE = (
 )
 _STALE_SCRIPT_GENERATION_MESSAGE = (
     "Script generation was interrupted before completing. Please try again."
+)
+_STALE_IDEA_GENERATION_MESSAGE = (
+    "Idea generation was interrupted before completing. Please retry the run."
 )
 _SCRIPT_GENERATION_OPERATION = "script_generation"
 
@@ -174,6 +178,24 @@ async def mark_stale_pipelines_failed() -> int:
                 now,
             )
 
+        stale_idea_result = await session.execute(
+            select(IdeaGenerationRunORM).where(
+                IdeaGenerationRunORM.status.in_([
+                    IdeaRunStatus.QUEUED.value,
+                    IdeaRunStatus.RUNNING.value,
+                ]),
+                IdeaGenerationRunORM.updated_at < stale_pipeline_threshold,
+            )
+        )
+        stale_idea_runs = list(stale_idea_result.scalars().all())
+        for idea_run in stale_idea_runs:
+            idea_run.status = IdeaRunStatus.FAILED.value
+            idea_run.stage = "failed"
+            idea_run.stage_progress = 100
+            idea_run.error_code = "interrupted"
+            idea_run.error_message = _STALE_IDEA_GENERATION_MESSAGE
+            idea_run.completed_at = now
+
         ideation_result = await session.execute(
             select(StoryORM).where(
                 StoryORM.status == StoryStatus.IDEATING.value,
@@ -207,6 +229,7 @@ async def mark_stale_pipelines_failed() -> int:
         stale_pipeline_count = stale_pipeline_result.rowcount or 0
         expired_angle_count = expired_angle_result.rowcount or 0
         stale_research_count = len(stale_research_sessions)
+        stale_idea_count = len(stale_idea_runs)
 
     if stale_pipeline_count:
         log.warning("watchdog.marked_stale_failed", count=stale_pipeline_count)
@@ -214,13 +237,21 @@ async def mark_stale_pipelines_failed() -> int:
         log.warning("watchdog.marked_stale_research_failed", count=stale_research_count)
     if stale_ideation_count:
         log.warning("watchdog.marked_stale_ideation_failed", count=stale_ideation_count)
+    if stale_idea_count:
+        log.warning("watchdog.marked_stale_idea_generation_failed", count=stale_idea_count)
     if expired_angle_count:
         log.info(
             "watchdog.marked_angle_selection_expired",
             count=expired_angle_count,
             timeout_hours=ANGLE_SELECTION_TIMEOUT_HOURS,
         )
-    return stale_pipeline_count + expired_angle_count + stale_research_count + stale_ideation_count
+    return (
+        stale_pipeline_count
+        + expired_angle_count
+        + stale_research_count
+        + stale_ideation_count
+        + stale_idea_count
+    )
 
 
 async def run_watchdog_loop() -> None:

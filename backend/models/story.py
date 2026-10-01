@@ -106,6 +106,11 @@ class StoryORM(Base):
         nullable=True,
         index=True,
     )
+    # Optional lineage from an Idea Generator handoff. The evidence snapshot is
+    # copied at confirmation time so later edits/deletes cannot rewrite history.
+    origin_idea_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    research_mode: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    seed_research_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Research artefacts (JSON blobs)
     research_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
@@ -213,6 +218,8 @@ class StoryRead(BaseModel):
     target_audience: Optional[str]
     owner_user_id: Optional[uuid.UUID] = None
     owner_email: Optional[str] = None
+    origin_idea_id: Optional[uuid.UUID] = None
+    research_mode: Optional[str] = None
     quality_score: Optional[float]
     word_count: Optional[int]
     estimated_duration_minutes: Optional[float]
@@ -254,6 +261,7 @@ class StoryListItem(BaseModel):
     target_audience: Optional[str]
     owner_user_id: Optional[uuid.UUID] = None
     owner_email: Optional[str] = None
+    origin_idea_id: Optional[uuid.UUID] = None
     quality_score: Optional[float]
     estimated_duration_minutes: Optional[float]
     benchmark_data: Optional[dict] = None

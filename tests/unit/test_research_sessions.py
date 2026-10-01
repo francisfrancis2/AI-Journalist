@@ -12,6 +12,7 @@ from backend.tools.anthropic_deep_research import (
     DeepResearchCitation,
     DeepResearchResult,
     _merge_citations,
+    _remove_recommended_next_steps,
 )
 
 
@@ -64,6 +65,39 @@ def test_merge_citations_drops_empty_urls():
     assert [c.url for c in _merge_citations(existing, new)] == ["https://good.com"]
 
 
+def test_remove_recommended_next_steps_section():
+    report = """# Research Report
+
+## Key Findings
+
+Useful finding.
+
+## Recommended Next Steps
+
+1. Internal follow-up action.
+2. Another action.
+"""
+
+    cleaned = _remove_recommended_next_steps(report)
+
+    assert "Useful finding." in cleaned
+    assert "Recommended Next Steps" not in cleaned
+    assert "Internal follow-up action" not in cleaned
+
+
+def test_remove_recommended_next_steps_preserves_later_section():
+    report = """## Recommended Next Steps
+
+- Hidden action
+
+## Appendix
+
+Keep this.
+"""
+
+    assert _remove_recommended_next_steps(report) == "## Appendix\n\nKeep this."
+
+
 @pytest.mark.asyncio
 async def test_run_standalone_returns_report_and_citations(mocker):
     tool = AnthropicDeepResearchTool()
@@ -87,6 +121,7 @@ async def test_run_standalone_returns_report_and_citations(mocker):
     sent_instruction = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "Latest EV battery trends" in sent_instruction
     assert "existing consolidated report" not in sent_instruction.lower()
+    assert "## Recommended Next Steps" not in sent_instruction
 
 
 @pytest.mark.asyncio
@@ -102,7 +137,14 @@ async def test_resynthesize_passes_existing_report_and_extends(mocker):
     )
     mocker.patch.object(tool, "_client", mock_client)
 
-    existing_report = "# Research Report\n\nFindings here."
+    existing_report = """# Research Report
+
+Findings here.
+
+## Recommended Next Steps
+
+- This legacy section must not enter the prompt.
+"""
     existing_citations = [DeepResearchCitation(title="Old", url="https://old.com")]
 
     result = await tool.resynthesize(
@@ -114,7 +156,9 @@ async def test_resynthesize_passes_existing_report_and_extends(mocker):
     assert "Germany" in result.report_markdown
     sent_instruction = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "Existing consolidated report" in sent_instruction
-    assert existing_report in sent_instruction
+    assert "Findings here." in sent_instruction
+    assert "This legacy section must not enter the prompt" not in sent_instruction
+    assert "## Recommended Next Steps" not in sent_instruction
     assert "Extend to cover Germany" in sent_instruction
     # Existing citation should be presented to the model so it can keep it relevant
     assert "https://old.com" in sent_instruction

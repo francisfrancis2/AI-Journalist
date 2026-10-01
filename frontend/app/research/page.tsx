@@ -278,6 +278,7 @@ function ResearchPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionIdFromUrl = searchParams.get("id");
+  const ideaIdFromUrl = searchParams.get("idea");
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [promptText, setPromptText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -285,6 +286,7 @@ function ResearchPageInner() {
   const [sessionRecoveryNotice, setSessionRecoveryNotice] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
+  const [originIdeaId, setOriginIdeaId] = useState<string | null>(null);
 
   const selectSession = useCallback((sessionId: string | null) => {
     setActiveSessionId(sessionId);
@@ -316,7 +318,8 @@ function ResearchPageInner() {
   });
 
   const createSession = useMutation({
-    mutationFn: (prompt: string) => apiClient.createResearchSession(prompt),
+    mutationFn: ({ prompt, originIdeaId }: { prompt: string; originIdeaId: string | null }) =>
+      apiClient.createResearchSession(prompt, originIdeaId),
     onMutate: () => {
       setError(null);
       setStatusNotice(null);
@@ -327,6 +330,7 @@ function ResearchPageInner() {
     onSuccess: (session) => {
       selectSession(session.id);
       setPromptText("");
+      setOriginIdeaId(null);
       setStatusNotice("Research accepted. The first report will appear in this session when it finishes.");
       queryClient.setQueryData(["research-session", session.id], session);
       queryClient.invalidateQueries({ queryKey: ["research-sessions"] });
@@ -408,6 +412,23 @@ function ResearchPageInner() {
   }, [sessionIdFromUrl]);
 
   useEffect(() => {
+    if (!ideaIdFromUrl || sessionIdFromUrl) return;
+    let cancelled = false;
+    apiClient.getIdeaHandoffPreview(ideaIdFromUrl, "research")
+      .then((preview) => {
+        if (cancelled) return;
+        setActiveSessionId(null);
+        setOriginIdeaId(preview.idea_id);
+        setPromptText(preview.prompt);
+        setStatusNotice(`${preview.inherited_source_count} evidence sources will be copied when you confirm. No research has started yet.`);
+      })
+      .catch((handoffError: Error) => {
+        if (!cancelled) setError(handoffError.message || "The selected idea could not be loaded.");
+      });
+    return () => { cancelled = true; };
+  }, [ideaIdFromUrl, sessionIdFromUrl]);
+
+  useEffect(() => {
     if (!sessionsQuery.data) return;
 
     if (activeSessionId && !sessionsQuery.data.some((session) => session.id === activeSessionId)) {
@@ -415,13 +436,13 @@ function ResearchPageInner() {
       return;
     }
 
-    if (activeSessionId || sessionIdFromUrl || !sessionsQuery.data.length) return;
+    if (activeSessionId || sessionIdFromUrl || ideaIdFromUrl || !sessionsQuery.data.length) return;
     const running = sessionsQuery.data.find((session) => session.status === "running");
     if (running) {
       setSessionRecoveryNotice(null);
       selectSession(running.id);
     }
-  }, [activeSessionId, recoverMissingSession, selectSession, sessionIdFromUrl, sessionsQuery.data]);
+  }, [activeSessionId, ideaIdFromUrl, recoverMissingSession, selectSession, sessionIdFromUrl, sessionsQuery.data]);
 
   useEffect(() => {
     if (!activeSessionId || !sessionQuery.isError || !isMissingResearchSessionError(sessionQuery.error)) return;
@@ -472,7 +493,7 @@ function ResearchPageInner() {
     if (activeSession) {
       addTurn.mutate({ sessionId: activeSession.id, prompt });
     } else {
-      createSession.mutate(prompt);
+      createSession.mutate({ prompt, originIdeaId });
     }
   };
 

@@ -3,9 +3,13 @@ const RAW_URL_RE = /https?:\/\/[^\s)\]]+/gi;
 const PROMPT_LABEL_RE = /^\s{0,3}(?:[-*]\s*)?(?:research request|user follow-up instruction|prompt|query)\s*:/i;
 const PROMPT_HEADING_RE = /^\s{0,3}#{1,6}\s*(?:research request|user follow-up instruction|prompt|query)\s*$/i;
 const EMPTY_LINK_LABEL_RE = /^\s{0,3}(?:[-*]\s*)?(?:url|link|source url|citation url)\s*:\s*$/i;
+const RECOMMENDED_NEXT_STEPS_HEADING_RE =
+  /^\s{0,3}(?:#{1,6}\s+|\*\*\s*)recommended next steps(?:\s*\*\*)?\s*$/i;
+const MARKDOWN_HEADING_RE = /^\s{0,3}#{1,6}\s+/;
 
 export function cleanResearchReportBody(markdown: string): string {
   let skippingPromptBlock = false;
+  let skippingRecommendedNextSteps = false;
 
   return markdown
     .replace(/\r\n/g, "\n")
@@ -14,6 +18,18 @@ export function cleanResearchReportBody(markdown: string): string {
     .split("\n")
     .filter((rawLine) => {
       const line = rawLine.trim();
+
+      if (RECOMMENDED_NEXT_STEPS_HEADING_RE.test(line)) {
+        skippingRecommendedNextSteps = true;
+        return false;
+      }
+
+      if (skippingRecommendedNextSteps) {
+        if (!MARKDOWN_HEADING_RE.test(line)) {
+          return false;
+        }
+        skippingRecommendedNextSteps = false;
+      }
 
       if (PROMPT_HEADING_RE.test(line)) {
         skippingPromptBlock = true;

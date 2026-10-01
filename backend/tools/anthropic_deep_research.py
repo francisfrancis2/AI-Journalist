@@ -12,6 +12,7 @@ Returns markdown + citations; never mutates any story/script record.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 import structlog
@@ -21,6 +22,17 @@ from pydantic import BaseModel, Field
 from backend.config import settings
 
 log = structlog.get_logger(__name__)
+
+
+_RECOMMENDED_NEXT_STEPS_SECTION = re.compile(
+    r"(?ims)^\s*(?:#{1,6}\s+|\*\*\s*)Recommended Next Steps(?:\s*\*\*)?\s*$"
+    r".*?(?=^\s*#{1,6}\s+|\Z)"
+)
+
+
+def _remove_recommended_next_steps(report: str) -> str:
+    """Remove the internal follow-up checklist from user-visible research."""
+    return _RECOMMENDED_NEXT_STEPS_SECTION.sub("", report).strip()
 
 
 class DeepResearchCitation(BaseModel):
@@ -130,6 +142,7 @@ class AnthropicDeepResearchTool:
             messages=[{"role": "user", "content": instructions}],
         )
         report, citations = _extract_text_and_citations(response.content)
+        report = _remove_recommended_next_steps(report)
         if not report:
             raise RuntimeError("Anthropic deep research returned an empty report.")
         return DeepResearchResult(
@@ -156,13 +169,13 @@ Return a Markdown report with these sections (omit a section only when nothing a
 ## Key Findings
 ## Supporting Evidence
 ## Open Questions and Verification Gaps
-## Recommended Next Steps
 
 Rules:
 - Refer to source titles or publication names in prose when useful, but do not include raw URLs or Markdown links in the report body. The app shows links separately in the citation list.
 - Separate confirmed findings from leads that still need verification.
 - Be concrete: prefer numbers, dates, named sources over generalities.
 - Do not repeat the user's prompt in the report.
+- Do not include a recommended next steps section or user action checklist.
 - Do not invent sources or citations."""
         return await self._call(instructions, max_uses=max_uses)
 
@@ -183,6 +196,10 @@ Rules:
         The returned report is the FULL updated consolidated document. Citations
         are merged downstream (existing + new, deduped by URL).
         """
+        # Old saved reports may still contain this retired section. Remove it
+        # before constructing the prompt so it consumes neither input context
+        # nor output-generation tokens on follow-up turns.
+        existing_report = _remove_recommended_next_steps(existing_report)
         existing_citation_block = _format_existing_citations_for_prompt(existing_citations)
         instructions = f"""You are updating a consolidated research report in a documentary research hub.
 
@@ -209,6 +226,7 @@ Output requirements:
 - Preserve the existing section structure where it still applies. Add or remove sections as needed.
 - Refer to source titles or publication names in prose when useful, but do not include raw URLs or Markdown links in the report body. The app shows links separately in the citation list.
 - Do not repeat the user's follow-up instruction in the report.
+- Do not include a recommended next steps section or user action checklist.
 - Do not invent sources or citations.
 - Do not include preamble or commentary outside the report itself."""
         return await self._call(instructions)

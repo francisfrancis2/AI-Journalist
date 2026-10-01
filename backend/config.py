@@ -131,6 +131,15 @@ class Settings(BaseSettings):
     vidiq_timeout_seconds: float = 45.0      # per HTTP request
     vidiq_total_timeout_seconds: float = 180.0  # whole report build
 
+    # ── Idea Generator V2 ────────────────────────────────────────────────────
+    enable_idea_generator: bool = True
+    idea_generator_candidate_count: int = 8
+    idea_generator_result_count: int = 5
+    idea_generator_max_synthesis_attempts: int = 2
+    # Google Trends is deliberately not implemented in V2 yet. Keep this false
+    # until a supported access route is added; the API reports partial coverage.
+    enable_google_trends: bool = False
+
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")
     supadata_api_key: Optional[str] = Field(None, env="SUPADATA_API_KEY")

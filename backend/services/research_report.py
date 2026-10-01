@@ -21,6 +21,7 @@ from backend.models.research import ResearchPackage
 from backend.tools.anthropic_deep_research import (
     DeepResearchCitation,
     _merge_citations,
+    _remove_recommended_next_steps,
 )
 
 log = structlog.get_logger(__name__)
@@ -32,8 +33,7 @@ _REPORT_SECTIONS = """# Research Report
 ## Executive Brief
 ## Key Findings
 ## Supporting Evidence
-## Open Questions and Verification Gaps
-## Recommended Next Steps"""
+## Open Questions and Verification Gaps"""
 
 
 def _structured_source_digest(package: ResearchPackage, limit: int = 16) -> str:
@@ -92,7 +92,13 @@ class ResearchReportSynthesizer:
         - ``existing_report``/``existing_citations``: when present, this is a
           follow-up turn — honor extend/remove/refine against the prior report.
         """
-        deep_report = (package.deep_research_report or "").strip()[:_MAX_DEEP_REPORT_CHARS]
+        # Strip the retired section before either source is placed in an LLM
+        # prompt. This prevents legacy reports from spending context or output
+        # tokens regenerating content that users must never receive.
+        deep_report = _remove_recommended_next_steps(
+            (package.deep_research_report or "").strip()
+        )[:_MAX_DEEP_REPORT_CHARS]
+        existing_report = _remove_recommended_next_steps(existing_report or "")
         digest = _structured_source_digest(package)
         structured_citations = _structured_citations(package)
 
@@ -104,7 +110,7 @@ class ResearchReportSynthesizer:
 
         # Nothing to synthesize from — degrade gracefully to whatever we have.
         if not deep_report and not digest:
-            return (existing_report or "").strip(), merged_citations
+            return existing_report, merged_citations
 
         if existing_report:
             task = f"""You are updating a consolidated research report in a documentary research hub.
@@ -116,7 +122,7 @@ Determine the user's intent from their follow-up instruction and update the repo
 
 Existing consolidated report:
 ---
-{existing_report.strip()}
+{existing_report}
 ---
 
 User follow-up instruction:
@@ -149,6 +155,7 @@ Rules:
 - Separate confirmed findings from leads that still need verification.
 - Be concrete: prefer numbers, dates, and named sources over generalities.
 - Do not repeat the user's prompt or follow-up instruction in the report.
+- Do not include a recommended next steps section or user action checklist.
 - Do not invent sources or citations. Do not include commentary outside the report."""
 
         try:
@@ -162,8 +169,8 @@ Rules:
         except Exception as exc:
             log.warning("research_report.synthesis_failed", error=str(exc))
             # Fall back to the deep-research narrative (or prior report) unmerged.
-            report = deep_report or (existing_report or "").strip()
+            report = deep_report or existing_report
 
         if not report:
-            report = deep_report or (existing_report or "").strip()
-        return report, merged_citations
+            report = deep_report or existing_report
+        return _remove_recommended_next_steps(report), merged_citations

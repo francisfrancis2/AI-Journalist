@@ -17,6 +17,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.agents.angles_and_hooks import (
     AnglesAndHooksAgent,
@@ -41,6 +42,7 @@ from backend.models.research import (
     StorylineProposal,
 )
 from backend.models.notification import AdminNotificationORM
+from backend.models.idea_generation import GeneratedIdeaORM, IdeaFormat, IdeaGenerationRunORM
 from backend.models.story import (
     FinalScript,
     IdeationStage,
@@ -104,6 +106,7 @@ class ChatResponse(BaseModel):
 
 class IdeationCreateRequest(BaseModel):
     prompt: str = Field(..., min_length=10, max_length=2000)
+    origin_idea_id: uuid.UUID | None = None
 
 
 class IdeationChapter(BaseModel):
@@ -563,7 +566,10 @@ async def _parse_ideation_create_request(
         if key in {"attachments", "files"} and hasattr(value, "filename") and hasattr(value, "read")
     ]
     try:
-        payload = IdeationCreateRequest(prompt=str(prompt_value or ""))
+        payload = IdeationCreateRequest(
+            prompt=str(prompt_value or ""),
+            origin_idea_id=form.get("origin_idea_id") or None,
+        )
     except ValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1813,6 +1819,72 @@ async def create_ideation_story(
     validate_user_input(payload.prompt, field="prompt")
     prompt = payload.prompt.strip()
     attachment_data = [source.model_dump(mode="json") for source in attachment_sources]
+    origin_idea = None
+    inherited_links: list[IdeationSourceLink] = []
+    seed_research_data = None
+    if payload.origin_idea_id is not None:
+        idea_result = await db.execute(
+            select(GeneratedIdeaORM)
+            .join(IdeaGenerationRunORM)
+            .options(
+                selectinload(GeneratedIdeaORM.sources),
+                selectinload(GeneratedIdeaORM.signals),
+            )
+            .where(
+                GeneratedIdeaORM.id == payload.origin_idea_id,
+                IdeaGenerationRunORM.user_id == current_user.id,
+            )
+        )
+        origin_idea = idea_result.scalar_one_or_none()
+        if origin_idea is None:
+            raise HTTPException(status_code=404, detail="Idea not found")
+        if origin_idea.format != IdeaFormat.DOCUMENTARY.value:
+            raise HTTPException(
+                status_code=409,
+                detail="Only documentary ideas can be developed in New Story. Use Research for expert interviews.",
+            )
+        inherited_links = [
+            IdeationSourceLink(
+                title=source.title,
+                url=source.url,
+                provider=source.domain or source.source_type,
+                preview=source.excerpt[:240],
+            )
+            for source in origin_idea.sources
+        ]
+        seed_research_data = {
+            "idea": {
+                "id": str(origin_idea.id),
+                "title": origin_idea.title,
+                "premise": origin_idea.premise,
+                "why_now": origin_idea.why_now,
+                "uae_relevance": origin_idea.uae_relevance,
+                "central_tension": origin_idea.central_tension,
+            },
+            "sources": [
+                {
+                    "title": source.title,
+                    "url": source.url,
+                    "domain": source.domain,
+                    "published_at": source.published_at.isoformat() if source.published_at else None,
+                    "excerpt": source.excerpt,
+                    "credibility": source.credibility,
+                }
+                for source in origin_idea.sources
+            ],
+            "signals": [
+                {
+                    "provider": signal.provider,
+                    "signal_type": signal.signal_type,
+                    "topic": signal.topic,
+                    "geography_meaning": signal.geography_meaning,
+                    "metric": signal.metric,
+                    "values": signal.values,
+                }
+                for signal in origin_idea.signals
+            ],
+        }
+    source_links = [*_source_links_from_sources(attachment_sources, limit=6), *inherited_links]
     story = StoryORM(
         title=f"Story: {prompt[:80]}",
         topic=prompt,
@@ -1820,12 +1892,12 @@ async def create_ideation_story(
         tone="explanatory",
         target_duration_minutes=10,
         owner_user_id=current_user.id,
+        origin_idea_id=origin_idea.id if origin_idea else None,
+        research_mode="seeded" if origin_idea else None,
+        seed_research_data=seed_research_data,
         ideation_stage=IdeationStage.ANGLES.value,
         ideation_chat_data=_append_pending_ideation_message([], user_message=prompt),
-        ideation_research_data=[
-            link.model_dump(mode="json")
-            for link in _source_links_from_sources(attachment_sources, limit=6)
-        ],
+        ideation_research_data=[link.model_dump(mode="json") for link in source_links],
         attachment_data=attachment_data,
         ideation_operation_data=_ideation_operation(
             "initial_angles",
@@ -1841,13 +1913,13 @@ async def create_ideation_story(
         user_message=f"Generate the first set of producer-selectable documentary angles for this story idea: {prompt}",
         stage_value=IdeationStage.ANGLES.value,
         operation_type="initial_angles",
-        fetch_research=True,
+        fetch_research=origin_idea is None,
     )
     _attach_story_owner(story, current_user.email)
     return IdeationChatResponse(
         story=StoryRead.model_validate(story),
         content="Researching the first set of angles.",
-        sources=_source_links_from_sources(attachment_sources, limit=6),
+        sources=source_links,
     )
 
 
