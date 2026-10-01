@@ -40,6 +40,7 @@ from backend.models.research import (
     RawSource,
     ResearchPackage,
     StorylineProposal,
+    YouTubeDemandReport,
 )
 from backend.models.notification import AdminNotificationORM
 from backend.models.idea_generation import GeneratedIdeaORM, IdeaFormat, IdeaGenerationRunORM
@@ -63,6 +64,7 @@ from backend.services.attachment_ingest import (
 from backend.services.duration_targets import WORDS_PER_MINUTE
 from backend.tools.anthropic_search import AnthropicSearchTool
 from backend.tools.news_api import NewsAPITool
+from backend.tools.vidiq import VidIQTool, demand_report_to_sources
 from backend.tools.web_search import WebSearchTool
 
 log = structlog.get_logger(__name__)
@@ -409,6 +411,46 @@ async def _fresh_research_context(message: str, topic: str) -> str:
     return context
 
 
+async def _fetch_initial_youtube_demand(topic: str) -> Optional[YouTubeDemandReport]:
+    """Fetch the one vidIQ snapshot allowed for a New Story lifecycle."""
+    try:
+        tool = VidIQTool()
+        if not tool.enabled:
+            return None
+        return await tool.fetch_demand_report(topic=topic)
+    except Exception as exc:
+        log.warning("ideation.initial_vidiq_failed", error=str(exc)[:200])
+        return None
+
+
+def _format_youtube_demand_for_ideation(report: YouTubeDemandReport) -> str:
+    """Compact saved vidIQ evidence for the first angle-generation prompt."""
+    lines = ["VIDIQ YOUTUBE DEMAND SNAPSHOT (opportunity evidence, not factual corroboration):"]
+    if report.seed_keyword:
+        lines.append(
+            f"- Seed '{report.seed_keyword.keyword}': "
+            f"{report.seed_keyword.estimated_monthly_search:,} estimated monthly searches; "
+            f"volume {report.seed_keyword.volume:.0f}/100."
+        )
+    if report.keywords:
+        lines.append(
+            "- Related demand: "
+            + "; ".join(
+                f"{keyword.keyword} ({keyword.estimated_monthly_search:,}/month)"
+                for keyword in report.keywords[:8]
+            )
+        )
+    if report.videos:
+        lines.append(
+            "- Proven long-form titles: "
+            + "; ".join(
+                f"{video.title} ({video.view_count:,} views)"
+                for video in report.videos[:5]
+            )
+        )
+    return "\n".join(lines)
+
+
 def _append_ideation_messages(
     current: Optional[list],
     *,
@@ -650,6 +692,7 @@ async def _run_ideation_operation(
     stage_value: str,
     operation_type: str,
     fetch_research: bool = False,
+    fetch_vidiq: bool = False,
     selected_angle: str | None = None,
     approved_hook: str | None = None,
 ) -> None:
@@ -672,12 +715,38 @@ async def _run_ideation_operation(
         attachment_context = format_attachment_sources_for_prompt(attachment_sources)
         if attachment_sources:
             sources.extend(_source_links_from_sources(attachment_sources, limit=6))
-        if fetch_research:
+        youtube_demand: Optional[YouTubeDemandReport] = None
+        if fetch_vidiq and story.youtube_demand_data:
+            try:
+                youtube_demand = YouTubeDemandReport.model_validate(
+                    story.youtube_demand_data
+                )
+            except Exception as exc:
+                log.warning("ideation.saved_vidiq_invalid", error=str(exc)[:200])
+        should_fetch_vidiq = fetch_vidiq and youtube_demand is None
+        if fetch_research and should_fetch_vidiq:
+            (live_context, _, live_sources), youtube_demand = await asyncio.gather(
+                _fresh_research_pack(user_message, story.topic),
+                _fetch_initial_youtube_demand(story.topic),
+            )
+            fresh_context = _merged_fresh_context(live_context, attachment_context)
+            sources.extend(live_sources)
+        elif fetch_research:
             live_context, _, live_sources = await _fresh_research_pack(user_message, story.topic)
             fresh_context = _merged_fresh_context(live_context, attachment_context)
             sources.extend(live_sources)
         else:
             fresh_context = attachment_context
+            if should_fetch_vidiq:
+                youtube_demand = await _fetch_initial_youtube_demand(story.topic)
+        if youtube_demand is not None:
+            fresh_context = _merged_fresh_context(
+                fresh_context,
+                _format_youtube_demand_for_ideation(youtube_demand),
+            )
+            sources.extend(
+                _source_links_from_sources(demand_report_to_sources(youtube_demand), limit=6)
+            )
 
         output = await _run_story_planning_agent(
             story=story,
@@ -699,6 +768,8 @@ async def _run_ideation_operation(
             "ideation_operation_data": None,
             "error_message": None,
         }
+        if youtube_demand is not None:
+            values["youtube_demand_data"] = youtube_demand.model_dump(mode="json")
         if operation_type != "chat":
             values["tone"] = output.decided_tone
             values["target_duration_minutes"] = output.target_duration_minutes
@@ -1108,28 +1179,25 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
     # node. Persist research/analysis + angles and exit cleanly; the user will
     # resume via POST /stories/{id}/select-angle.
     if final_state.get("generated_angles") and not final_state.get("selected_angle"):
+        pause_package = final_state.get("research_package")
+        pause_demand = getattr(pause_package, "youtube_demand", None) if pause_package else None
+        pause_values: dict[str, Any] = {
+            "status": StoryStatus.AWAITING_ANGLE_SELECTION,
+            "angles_data": final_state["generated_angles"],
+            "iteration_count": final_state.get("research_iteration", 0),
+            "research_data": pause_package.model_dump(mode="json") if pause_package else None,
+            "analysis_data": (
+                final_state["analysis_result"].model_dump(mode="json")
+                if final_state.get("analysis_result") else None
+            ),
+        }
+        if pause_demand is not None:
+            pause_values["youtube_demand_data"] = pause_demand.model_dump(mode="json")
         async with AsyncSessionLocal() as db:
             await db.execute(
                 update(StoryORM)
                 .where(StoryORM.id == uuid.UUID(story_id))
-                .values(
-                    status=StoryStatus.AWAITING_ANGLE_SELECTION,
-                    angles_data=final_state["generated_angles"],
-                    iteration_count=final_state.get("research_iteration", 0),
-                    research_data=(
-                        final_state["research_package"].model_dump(mode="json")
-                        if final_state.get("research_package") else None
-                    ),
-                    youtube_demand_data=(
-                        final_state["research_package"].youtube_demand.model_dump(mode="json")
-                        if final_state.get("research_package")
-                        and final_state["research_package"].youtube_demand else None
-                    ),
-                    analysis_data=(
-                        final_state["analysis_result"].model_dump(mode="json")
-                        if final_state.get("analysis_result") else None
-                    ),
-                )
+                .values(**pause_values)
             )
             await db.commit()
         log.info(
@@ -1149,7 +1217,6 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
         values: dict[str, Any] = {
             "status": StoryStatus.COMPLETED if script else StoryStatus.FAILED,
             "script_data": script.model_dump(mode="json") if script else None,
-            "youtube_demand_data": demand.model_dump(mode="json") if demand else None,
             "quality_score": _evaluation_quality_score(evaluation),
             "word_count": script.total_word_count if script else None,
             "estimated_duration_minutes": script.estimated_duration_minutes if script else None,
@@ -1181,6 +1248,8 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
             "pipeline_cycles_run": max(final_state.get("pipeline_cycle", 0), 1),
             "pipeline_failure_summary": final_state.get("pipeline_failure_summary"),
         }
+        if demand is not None:
+            values["youtube_demand_data"] = demand.model_dump(mode="json")
         if ideation_script_generation:
             values["ideation_operation_data"] = None if script else _ideation_operation(
                 _SCRIPT_GENERATION_OPERATION,
@@ -1273,6 +1342,9 @@ async def _run_pipeline_from_ideation(story_id: str) -> None:
         target_audience=story.target_audience,
     )
     state["attachment_sources"] = story.attachment_data or []
+    # Reuse the snapshot collected during initial ideation. ResearchAgent.run
+    # hydrates it into the package and explicitly skips all later vidIQ calls.
+    state["youtube_demand_data"] = story.youtube_demand_data
     if story.research_data:
         try:
             state["research_package"] = ResearchPackage(**story.research_data)
@@ -1400,7 +1472,7 @@ def _hydrate_existing_story_state(story: StoryORM) -> dict[str, Any]:
     if not story.analysis_data or not story.research_data:
         raise ValueError("Story needs persisted analysis and research data before rewrite.")
 
-    return {
+    state = {
         **create_initial_state(
             topic=story.topic,
             story_id=str(story.id),
@@ -1429,6 +1501,9 @@ def _hydrate_existing_story_state(story: StoryORM) -> dict[str, Any]:
             if story.benchmark_data else None
         ),
     }
+    if story.youtube_demand_data:
+        state["youtube_demand_data"] = story.youtube_demand_data
+    return state
 
 
 async def _clone_story_for_revision(
@@ -1914,6 +1989,7 @@ async def create_ideation_story(
         stage_value=IdeationStage.ANGLES.value,
         operation_type="initial_angles",
         fetch_research=origin_idea is None,
+        fetch_vidiq=True,
     )
     _attach_story_owner(story, current_user.email)
     return IdeationChatResponse(

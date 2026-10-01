@@ -7,7 +7,6 @@ full report (integrating new findings, honoring removal/extension requests).
 Citations are merged across turns (dedupe by URL).
 """
 
-import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
@@ -192,21 +191,6 @@ async def _owner_email(db: AsyncSession, user_id: uuid.UUID) -> Optional[str]:
     return result.scalar_one_or_none()
 
 
-async def _fetch_youtube_demand(prompt: str) -> Optional[dict]:
-    """vidIQ demand signal for a research prompt. Enrichment: never raises."""
-    try:
-        from backend.tools.vidiq import VidIQTool
-
-        tool = VidIQTool()
-        if not tool.enabled:
-            return None
-        report = await tool.fetch_demand_report(topic=prompt)
-        return report.model_dump(mode="json") if report else None
-    except Exception as exc:
-        log.warning("research_session.vidiq_failed", error=str(exc)[:200])
-        return None
-
-
 async def _run_initial_research_session(session_id: uuid.UUID) -> None:
     """Complete the first research report for an already-created session row."""
     async with AsyncSessionLocal() as db:
@@ -229,8 +213,8 @@ async def _run_initial_research_session(session_id: uuid.UUID) -> None:
             await db.commit()
             return
 
-    demand_task = asyncio.create_task(_fetch_youtube_demand(prompt))
     research_prompt = prompt
+    should_fetch_vidiq = not bool(session.youtube_demand_data)
     if session.seed_evidence_data:
         research_prompt += (
             "\n\nStarting evidence inherited from the selected Idea Generator result. "
@@ -238,9 +222,15 @@ async def _run_initial_research_session(session_id: uuid.UUID) -> None:
             + json.dumps(session.seed_evidence_data, default=str)[:8000]
         )
     try:
-        result = await _get_research_agent().run_report(prompt=research_prompt)
+        # The initial report is the Research workspace's one and only vidIQ
+        # collection point. Its returned package is also what feeds the panel,
+        # avoiding the previous duplicate MCP request.
+        result = await _get_research_agent().run_report(
+            prompt=research_prompt,
+            include_vidiq=should_fetch_vidiq,
+            vidiq_topic=prompt,
+        )
     except Exception as exc:
-        demand_task.cancel()
         log.error("research_session.initial.failed", session_id=str(session_id), error=str(exc))
         async with AsyncSessionLocal() as db:
             session = await db.get(ResearchSessionORM, session_id)
@@ -259,17 +249,14 @@ async def _run_initial_research_session(session_id: uuid.UUID) -> None:
             await db.commit()
         return
 
-    try:
-        youtube_demand = await demand_task
-    except Exception:
-        youtube_demand = None
+    youtube_demand = result.package.youtube_demand
 
     async with AsyncSessionLocal() as db:
         session = await db.get(ResearchSessionORM, session_id)
         if session is None:
             return
         if youtube_demand:
-            session.youtube_demand_data = youtube_demand
+            session.youtube_demand_data = youtube_demand.model_dump(mode="json")
         session.report_markdown = result.report_markdown
         session.citations = _citations_to_orm(result.citations)
         session.turns = _mark_latest_turn(
@@ -315,6 +302,7 @@ async def _run_research_session_turn(session_id: uuid.UUID) -> None:
             existing_report=existing_report,
             existing_citations=existing_citations,
             deep=False,
+            include_vidiq=False,
         )
     except Exception as exc:
         log.error("research_session.turn.failed", session_id=str(session_id), error=str(exc))

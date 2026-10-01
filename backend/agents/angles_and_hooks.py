@@ -78,6 +78,13 @@ def compact_ideation_context(story: StoryORM) -> str:
         raw_sources_from_json(story.attachment_data),
         limit=5,
     )
+    # Reuse the snapshot saved during the first angle-generation operation;
+    # later ideation turns must not make another vidIQ MCP request.
+    youtube_demand_context = (
+        str(story.youtube_demand_data)[:5000]
+        if story.youtube_demand_data
+        else "No saved vidIQ snapshot."
+    )
     return "\n".join(
         [
             f"Topic: {story.topic}",
@@ -95,6 +102,8 @@ def compact_ideation_context(story: StoryORM) -> str:
             str(chapters)[:2500] if chapters else "[]",
             "Uploaded attachment context:",
             attachment_context[:5000] if attachment_context else "No uploaded attachments.",
+            "Saved vidIQ demand snapshot (reuse only; do not fetch again):",
+            youtube_demand_context,
         ]
     )
 

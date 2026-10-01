@@ -139,7 +139,8 @@ class TestStoriesCreate:
 
     @pytest.mark.asyncio
     async def test_create_ideation_story_accepts_attachment(self, api_client, mocker):
-        mocker.patch("backend.api.routes.stories._run_ideation_operation", new=AsyncMock())
+        operation_mock = AsyncMock()
+        mocker.patch("backend.api.routes.stories._run_ideation_operation", new=operation_mock)
         workbook = b"""<?xml version="1.0"?>
         <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet">
           <Worksheet ss:Name="Summary" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
@@ -177,6 +178,9 @@ class TestStoriesCreate:
         assert attachment["metadata"]["filename"] == "churn.xls"
         assert "Customer churn" in attachment["content"]
         assert data["sources"][0]["provider"] == "user_attachment"
+        operation_mock.assert_awaited_once()
+        assert operation_mock.await_args.kwargs["operation_type"] == "initial_angles"
+        assert operation_mock.await_args.kwargs["fetch_vidiq"] is True
 
 
 class TestStoriesList:

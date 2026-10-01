@@ -25,6 +25,7 @@ from backend.models.research import (
     ResearchQuery,
     SourceCredibility,
     SourceType,
+    YouTubeDemandReport,
 )
 from backend.services.attachment_ingest import raw_sources_from_json
 from backend.services.prompt_loader import load_prompt
@@ -296,6 +297,15 @@ class ResearchAgent:
         )
 
         package = ResearchPackage(topic=topic)
+        # New Story collects vidIQ once during the initial ideation/angles
+        # operation. Later pipeline stages may reuse that persisted snapshot,
+        # but must never call the vidIQ MCP again.
+        saved_youtube_demand = state.get("youtube_demand_data")
+        if isinstance(saved_youtube_demand, dict):
+            try:
+                package.youtube_demand = YouTubeDemandReport.model_validate(saved_youtube_demand)
+            except Exception as exc:
+                log.warning("researcher.saved_vidiq_invalid", error=str(exc)[:200])
         for attachment_source in raw_sources_from_json(state.get("attachment_sources")):
             package.add_source(attachment_source)
         package.queries_issued = [
@@ -326,6 +336,7 @@ class ResearchAgent:
             # Pipeline research uses a lighter deep-research cap than the
             # Research Tab (run_report) to control per-story cost/latency.
             deep_max_uses=settings.anthropic_deep_research_pipeline_max_uses,
+            include_vidiq=False,
         )
 
         package.research_duration_seconds = time.monotonic() - start
@@ -404,7 +415,8 @@ class ResearchAgent:
         deep: bool,
         deep_prompt: str,
         deep_max_uses: int | None = None,
-        include_vidiq: bool = True,
+        include_vidiq: bool = False,
+        vidiq_topic: str | None = None,
         rss_country: str = "US",
     ) -> None:
         """Dispatch all routed providers in parallel into ``package`` and scrape."""
@@ -459,7 +471,8 @@ class ResearchAgent:
         if include_vidiq and self._vidiq.enabled and package.youtube_demand is None:
             vidiq_key = "vidiq"
             fetch_tasks[vidiq_key] = self._vidiq.fetch_demand_report(
-                topic=topic, search_seed=rss_keyword or topic,
+                topic=vidiq_topic or topic,
+                search_seed=rss_keyword or vidiq_topic or topic,
             )
 
         if not fetch_tasks:
@@ -512,7 +525,8 @@ class ResearchAgent:
         *,
         prompt: str,
         deep: bool = True,
-        include_vidiq: bool = True,
+        include_vidiq: bool = False,
+        vidiq_topic: str | None = None,
         rss_country: str = "US",
     ) -> ResearchPackage:
         """Gather the shared evidence package without generating a prose report."""
@@ -545,6 +559,7 @@ class ResearchAgent:
             deep=deep,
             deep_prompt=topic,
             include_vidiq=include_vidiq,
+            vidiq_topic=vidiq_topic,
             rss_country=rss_country,
         )
         package.research_duration_seconds = time.monotonic() - start
@@ -557,6 +572,8 @@ class ResearchAgent:
         existing_report: str | None = None,
         existing_citations: list[DeepResearchCitation] | None = None,
         deep: bool = True,
+        include_vidiq: bool = False,
+        vidiq_topic: str | None = None,
     ) -> ConsolidatedResearch:
         """
         Run the full multi-source (and optionally deep-research) gather for a
@@ -566,9 +583,16 @@ class ResearchAgent:
         Used by the Research Tab. When ``existing_report`` is provided this is a
         follow-up turn (extend / remove / refine the prior report). Pass
         ``deep=False`` on follow-ups so deep research runs only on the first
-        query of a session (cost control).
+        query of a session (cost control). ``include_vidiq=True`` is reserved
+        for the initial Research workspace report; the default stays disabled
+        so follow-ups and other callers cannot accidentally refetch it.
         """
-        package = await self.gather_package(prompt=prompt, deep=deep, include_vidiq=True)
+        package = await self.gather_package(
+            prompt=prompt,
+            deep=deep,
+            include_vidiq=include_vidiq,
+            vidiq_topic=vidiq_topic,
+        )
 
         report, citations = await self._synthesizer.synthesize(
             prompt=prompt,
@@ -679,6 +703,7 @@ class ResearchAgent:
             deep=True,
             deep_prompt=deep_prompt,
             deep_max_uses=settings.anthropic_deep_research_enrichment_max_uses,
+            include_vidiq=False,
         )
         package.research_iterations += 1
         log.info(

@@ -1,7 +1,12 @@
 """Unit tests for the vidIQ YouTube demand tool."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
 
+from backend.agents.angles_and_hooks import compact_ideation_context
+from backend.agents.research import ResearchAgent
 from backend.models.research import (
     ResearchPackage,
     SourceType,
@@ -148,3 +153,47 @@ class TestSourceMapping:
 
     def test_package_defaults_to_no_demand(self):
         assert ResearchPackage(topic="t").youtube_demand is None
+
+
+class TestVidIQLifecycle:
+    @pytest.mark.asyncio
+    async def test_research_report_vidiq_is_opt_in_and_forwarded(self):
+        agent = ResearchAgent.__new__(ResearchAgent)
+        package = ResearchPackage(topic="UAE business")
+        agent.gather_package = AsyncMock(return_value=package)
+        agent._synthesizer = SimpleNamespace(
+            synthesize=AsyncMock(return_value=("# Report", []))
+        )
+
+        await agent.run_report(prompt="UAE business")
+        assert agent.gather_package.await_args.kwargs["include_vidiq"] is False
+
+        agent.gather_package.reset_mock()
+        await agent.run_report(
+            prompt="UAE business with seed evidence",
+            include_vidiq=True,
+            vidiq_topic="UAE business",
+        )
+        assert agent.gather_package.await_args.kwargs["include_vidiq"] is True
+        assert agent.gather_package.await_args.kwargs["vidiq_topic"] == "UAE business"
+
+    def test_later_ideation_context_reuses_saved_snapshot(self):
+        story = SimpleNamespace(
+            topic="UAE logistics",
+            title="Logistics story",
+            tone="explanatory",
+            target_duration_minutes=10,
+            ideation_stage="hook",
+            selected_angle="The last-mile race",
+            angles_data=[],
+            story_hook=None,
+            hook_options_data=[],
+            chapters_data=[],
+            attachment_data=[],
+            youtube_demand_data={"seed_keyword": {"keyword": "UAE logistics"}},
+        )
+
+        context = compact_ideation_context(story)
+
+        assert "Saved vidIQ demand snapshot (reuse only; do not fetch again)" in context
+        assert "UAE logistics" in context
