@@ -62,8 +62,8 @@ function StoriesListView() {
           borderBottom: "0.5px solid var(--color-border-tertiary)",
         }}
       >
-        <span style={{ fontSize: 18, fontWeight: 500 }}>Stories</span>
-        <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+        <span style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500 }}>Stories</span>
+        <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
           {stories?.length ?? 0} total
         </span>
       </div>
@@ -82,7 +82,7 @@ function StoriesListView() {
               background: "var(--color-danger-bg)",
               border: "0.5px solid #fecaca",
               borderRadius: "var(--border-radius-md)",
-              fontSize: 14,
+              fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
               color: "var(--color-danger)",
             }}
           >
@@ -91,7 +91,7 @@ function StoriesListView() {
         )}
 
         {stories && stories.length === 0 && (
-          <div style={{ textAlign: "center", padding: "60px 0", fontSize: 14, color: "var(--color-text-secondary)" }}>
+          <div style={{ textAlign: "center", padding: "60px 0", fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)" }}>
             No stories found. Go to the dashboard to create one.
           </div>
         )}
@@ -146,7 +146,7 @@ function StoryDetailView({
 
   if (!story) {
     return (
-      <div style={{ textAlign: "center", padding: "60px 0", fontSize: 14, color: "var(--color-text-secondary)" }}>
+      <div style={{ textAlign: "center", padding: "60px 0", fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)" }}>
         Story not found.
       </div>
     );
@@ -169,12 +169,12 @@ function StoryDetailView({
         <button
           onClick={onBack}
           className="btn-ghost"
-          style={{ padding: "4px 0", marginBottom: 10, fontSize: 12, gap: 4 }}
+          style={{ padding: "4px 0", marginBottom: 10, fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", gap: 4 }}
         >
           <ArrowLeft size={13} /> Back to Stories
         </button>
-        <h1 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>{story.title}</h1>
-        <p style={{ fontSize: 14, color: "var(--color-text-secondary)" }}>{story.topic}</p>
+        <h1 style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500, marginBottom: 4 }}>{story.title}</h1>
+        <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)" }}>{story.topic}</p>
       </div>
 
       <div style={{ padding: 28, maxWidth: 800 }}>
@@ -187,7 +187,7 @@ function StoryDetailView({
               background: "var(--color-danger-bg)",
               border: "0.5px solid #fecaca",
               borderRadius: "var(--border-radius-md)",
-              fontSize: 14,
+              fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
               color: "var(--color-danger)",
             }}
           >
@@ -202,7 +202,7 @@ function StoryDetailView({
               background: "var(--color-warning-bg)",
               border: "0.5px solid #fed7aa",
               borderRadius: "var(--border-radius-md)",
-              fontSize: 14,
+              fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
               color: "var(--color-warning)",
             }}
           >
@@ -233,10 +233,10 @@ function PipelineProgress({ status }: { status: string }) {
   return (
     <div className="card" style={{ padding: "24px", maxWidth: 480, margin: "0 auto", textAlign: "center" }}>
       <Loader2 size={20} className="animate-spin" style={{ color: "var(--color-text-tertiary)", marginBottom: 14 }} />
-      <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
+      <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500, marginBottom: 4 }}>
         {storyStatusTitle(status)}…
       </p>
-      <p style={{ fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 16 }}>
+      <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginBottom: 16 }}>
         Stage {Math.max(currentIdx + 1, 1)} of {PIPELINE_STAGES.length}
       </p>
       <div className="progress-track">

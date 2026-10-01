@@ -43,7 +43,7 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
         <p
           style={{
-            fontSize: 14,
+            fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
             fontWeight: 500,
             color: "var(--color-text-primary)",
             lineHeight: 1.4,
@@ -58,7 +58,7 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
         </p>
         <span
           className={`badge tone-${story.tone}`}
-          style={{ fontSize: 12, padding: "2px 8px", borderRadius: 20, border: "none", flexShrink: 0 }}
+          style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", padding: "2px 8px", borderRadius: 20, border: "none", flexShrink: 0 }}
         >
           {story.tone}
         </span>
@@ -67,7 +67,7 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
       {/* Topic */}
       <p
         style={{
-          fontSize: 12,
+          fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
           color: "var(--color-text-secondary)",
           overflow: "hidden",
           display: "-webkit-box",
@@ -79,14 +79,14 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
       </p>
 
       {showOwner && (
-        <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: -2 }}>
+        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: -2 }}>
           Created by {story.owner_email}
         </p>
       )}
 
       {/* Metrics */}
       {story.estimated_duration_minutes && (
-        <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--color-text-tertiary)" }}>
+        <div style={{ display: "flex", gap: 12, fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
           <span>{story.estimated_duration_minutes} min</span>
         </div>
       )}
@@ -103,27 +103,27 @@ export function StoryCard({ story, showLink = false }: StoryCardProps) {
         }}
       >
         {isComplete && (
-          <span className="badge badge-success" style={{ fontSize: 12 }}>
+          <span className="badge badge-success" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
             <CheckCircle2 size={10} /> Completed
           </span>
         )}
         {isFailed && (
-          <span className="badge badge-danger" style={{ fontSize: 12 }}>
+          <span className="badge badge-danger" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
             <XCircle size={10} /> Failed
           </span>
         )}
         {isStopped && (
-          <span className="badge badge-warning" style={{ fontSize: 12 }}>
+          <span className="badge badge-warning" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
             <AlertTriangle size={10} /> Script writing stopped
           </span>
         )}
         {isRunning && (
-          <span className="badge badge-active" style={{ fontSize: 12 }}>
+          <span className="badge badge-active" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
             <Loader2 size={10} className="animate-spin" />
             {storyStatusLabel(story.status)}
           </span>
         )}
-        <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+        <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
           {formatDistanceToNow(new Date(story.created_at), { addSuffix: true })}
         </span>
       </div>

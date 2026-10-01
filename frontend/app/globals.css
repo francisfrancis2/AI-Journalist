@@ -36,6 +36,20 @@
     --border-radius-md:           8px;
     --border-radius-lg:           14px;
 
+    /* ── Type scale (Untitled UI) ──
+       Each step pairs a size with its line height. ~240 text elements had no
+       line-height at all and inherited the browser default (~1.2); the kit
+       specifies 1.4-1.5 for body, which is most of the readability gain. */
+    --text-xs:                    12px;  --text-xs-lh:      18px;
+    --text-sm:                    14px;  --text-sm-lh:      20px;
+    --text-md:                    16px;  --text-md-lh:      24px;
+    --text-lg:                    18px;  --text-lg-lh:      28px;
+    --text-xl:                    20px;  --text-xl-lh:      30px;
+    --display-xs:                 24px;  --display-xs-lh:   32px;
+    --display-sm:                 30px;  --display-sm-lh:   38px;
+    --display-md:                 36px;  --display-md-lh:   44px;  --display-md-ls: -0.72px;
+    --display-lg:                 48px;  --display-lg-lh:   60px;  --display-lg-ls: -0.96px;
+
     /* ── Elevation (Untitled UI shadow ramp) ── */
     --shadow-xs:                  0 1px 2px rgba(0, 0, 0, 0.05);
     --shadow-sm:                  0 1px 3px rgba(0, 0, 0, 0.10);
@@ -152,6 +166,23 @@
   .input:focus { border-color: var(--color-border-secondary); }
 
   /* ── Card ── */
+  /* ── Type scale utilities ── */
+  .text-xs { font-size: var(--text-xs); line-height: var(--text-xs-lh); }
+  .text-sm { font-size: var(--text-sm); line-height: var(--text-sm-lh); }
+  .text-md { font-size: var(--text-md); line-height: var(--text-md-lh); }
+  .text-lg { font-size: var(--text-lg); line-height: var(--text-lg-lh); }
+  .text-xl { font-size: var(--text-xl); line-height: var(--text-xl-lh); }
+  .display-xs { font-size: var(--display-xs); line-height: var(--display-xs-lh); }
+  .display-sm { font-size: var(--display-sm); line-height: var(--display-sm-lh); }
+  .display-md {
+    font-size: var(--display-md); line-height: var(--display-md-lh);
+    letter-spacing: var(--display-md-ls);
+  }
+  .display-lg {
+    font-size: var(--display-lg); line-height: var(--display-lg-lh);
+    letter-spacing: var(--display-lg-ls);
+  }
+
   .card {
     background: var(--color-background-primary);
     border: 1px solid var(--color-border-tertiary);

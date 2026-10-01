@@ -114,7 +114,7 @@ export default function NewStoryPage() {
           borderBottom: "0.5px solid var(--color-border-tertiary)",
         }}
       >
-        <span style={{ fontSize: 18, fontWeight: 500 }}>New story</span>
+        <span style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500 }}>New story</span>
       </div>
 
       <div style={{ padding: 28, maxWidth: 920 }}>
@@ -122,7 +122,7 @@ export default function NewStoryPage() {
           <section className="card" style={{ padding: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
               <MessageSquareText size={17} style={{ color: "var(--color-action)" }} />
-              <h1 style={{ fontSize: 16, margin: 0 }}>What story you want to work on today?</h1>
+              <h1 style={{ fontSize: "var(--text-md)", lineHeight: "var(--text-md-lh)", margin: 0 }}>What story you want to work on today?</h1>
             </div>
 
             <textarea
@@ -138,8 +138,8 @@ export default function NewStoryPage() {
               disabled={createMutation.isPending}
             />
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 8 }}>
-              <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{wordCount}/{PROMPT_MAX_WORDS} words</span>
-              <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Tone and duration are decided by the backend.</span>
+              <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>{wordCount}/{PROMPT_MAX_WORDS} words</span>
+              <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>Tone and duration are decided by the backend.</span>
             </div>
 
             <div style={{ marginTop: 14 }}>
@@ -164,7 +164,7 @@ export default function NewStoryPage() {
                 <Paperclip size={13} />
                 Attach sources
               </button>
-              <span style={{ marginLeft: 10, fontSize: 12, color: "var(--color-text-tertiary)" }}>
+              <span style={{ marginLeft: 10, fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
                 PDF, DOCX, JPEG, XLS/XLSX
               </span>
 
@@ -183,10 +183,10 @@ export default function NewStoryPage() {
                       }}
                     >
                       <FileText size={14} style={{ color: "var(--color-text-secondary)" }} />
-                      <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {file.name}
                       </span>
-                      <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+                      <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
                         {formatFileSize(file.size)}
                       </span>
                       <button
@@ -206,7 +206,7 @@ export default function NewStoryPage() {
               )}
 
               {attachmentError && (
-                <p role="alert" style={{ marginTop: 8, fontSize: 12, color: "var(--color-danger)" }}>
+                <p role="alert" style={{ marginTop: 8, fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-danger)" }}>
                   {attachmentError}.
                 </p>
               )}
@@ -223,7 +223,7 @@ export default function NewStoryPage() {
                 Start ideation
               </button>
               {createMutation.isPending && (
-                <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+                <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)" }}>
                   {attachments.length ? "Uploading sources and researching angles..." : "Researching the first set of angles..."}
                 </span>
               )}
@@ -238,7 +238,7 @@ export default function NewStoryPage() {
                   borderRadius: "var(--border-radius-md)",
                   background: "var(--color-danger-bg)",
                   color: "var(--color-danger)",
-                  fontSize: 14,
+                  fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
                   display: "flex",
                   gap: 8,
                 }}
@@ -254,7 +254,7 @@ export default function NewStoryPage() {
           <aside className="card" style={{ padding: 16 }}>
             <p className="section-label" style={{ marginBottom: 10 }}>Recent stories</p>
             {recent.length === 0 ? (
-              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+              <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
                 Your drafts and scripts will appear here.
               </p>
             ) : (
@@ -266,17 +266,17 @@ export default function NewStoryPage() {
                     style={{ textDecoration: "none", color: "inherit", display: "block" }}
                   >
                     <div style={{ borderBottom: "0.5px solid var(--color-border-tertiary)", paddingBottom: 8 }}>
-                      <p style={{ fontSize: 12, fontWeight: 500, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 500, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {story.title}
                       </p>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span className={`badge ${storyStatusBadgeClass(story.status)}`} style={{ fontSize: 11 }}>
+                        <span className={`badge ${storyStatusBadgeClass(story.status)}`} style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
                           {storyStatusLabel(story.status)}
                         </span>
                         {isAdmin && story.owner_email && (
-                          <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{story.owner_email}</span>
+                          <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>{story.owner_email}</span>
                         )}
-                        <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+                        <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
                           {formatDistanceToNow(new Date(story.created_at), { addSuffix: true })}
                         </span>
                       </div>
