@@ -1,0 +1,34 @@
+{
+  "_README": [
+    "Untitled UI v2.0 -> AI-Journalist CSS custom properties.",
+    "Only these definitions change; the 549 var(--...) call sites are untouched.",
+    "Status colours already matched the kit exactly and are left alone.",
+    "Brand tokens keep EDB Blue — importing a generic kit should not discard brand identity."
+  ],
+  "source": { "file": "z5wKZcrPjEsRorTuEHxc6r", "library": "Untitled UI v2.0 (Community)" },
+  "mapping": [
+    { "token": "--color-background-primary",   "from": "#ffffff", "to": "#ffffff",  "note": "gray/White — unchanged" },
+    { "token": "--color-background-secondary", "from": "#f4f4f5", "to": "#fafafa",  "note": "gray 50 — true neutral" },
+    { "token": "--color-background-tertiary",  "from": "#f9f9f9", "to": "#f5f5f5",  "note": "gray 100" },
+    { "token": "--color-border-primary",       "from": "#d0d0d0", "to": "#d4d4d4",  "note": "gray 300" },
+    { "token": "--color-border-secondary",     "from": "#4d4d4f", "to": "#404040",  "note": "gray 700" },
+    { "token": "--color-border-tertiary",      "from": "#e8e8e8", "to": "#e5e5e5",  "note": "gray 200" },
+    { "token": "--color-text-primary",         "from": "#4d4d4f", "to": "#171717",  "note": "gray 900 — markedly higher contrast" },
+    { "token": "--color-text-secondary",       "from": "#8a8a8c", "to": "#525252",  "note": "gray 600 — was failing contrast at small sizes" },
+    { "token": "--color-text-tertiary",        "from": "#adadad", "to": "#737373",  "note": "gray 500" },
+    { "token": "--color-action",               "from": "#1c26a8", "to": "#1c26a8",  "note": "EDB Blue — KEPT (brand)" },
+    { "token": "--color-action-hover",         "from": "#151e8a", "to": "#151e8a",  "note": "EDB Blue hover — KEPT (brand)" },
+    { "token": "--color-success",              "from": "#16a34a", "to": "#16a34a",  "note": "green 600 — already exact" },
+    { "token": "--color-success-bg",           "from": "#f0fdf4", "to": "#f0fdf4",  "note": "green 50 — already exact" },
+    { "token": "--color-warning",              "from": "#c2410c", "to": "#c2410c",  "note": "orange 700 — already exact" },
+    { "token": "--color-warning-bg",           "from": "#fff7ed", "to": "#fff7ed",  "note": "orange 50 — already exact" },
+    { "token": "--color-danger",               "from": "#dc2626", "to": "#dc2626",  "note": "red 600 — already exact" },
+    { "token": "--color-danger-bg",            "from": "#fef2f2", "to": "#fef2f2",  "note": "red 50 — already exact" },
+    { "token": "--border-radius-sm",           "from": "6px",     "to": "6px",      "note": "kit uses 5/6 at small" },
+    { "token": "--border-radius-md",           "from": "8px",     "to": "8px",      "note": "kit uses 8/9" },
+    { "token": "--border-radius-lg",           "from": "12px",    "to": "12px",     "note": "kit uses 12" }
+  ],
+  "not_applied": {
+    "typography": "Kit uses Inter 400/500/600 at 12/14/16/18/20/24px. Your stack is system-ui. Switching needs a next/font change in layout.tsx — proposed separately, not bundled with the colour swap."
+  }
+}
