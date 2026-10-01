@@ -8,7 +8,7 @@ type PdfLine = {
   gapBefore?: number;
 };
 
-function safeFilePart(value: string): string {
+export function safeFilePart(value: string): string {
   const cleaned = value
     .trim()
     .toLowerCase()
@@ -102,7 +102,7 @@ function markdownToPdfLines(markdown: string): PdfLine[] {
   return pdfLines;
 }
 
-function buildPdf(markdown: string): string {
+export function buildPdf(markdown: string): string {
   const pageWidth = 612;
   const pageHeight = 792;
   const marginX = 54;
@@ -186,6 +186,20 @@ export function downloadResearchSessionReport(session: ResearchSession): void {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = `${safeFilePart(session.title)}-research.pdf`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+
+/** Trigger a browser download for an already-built PDF body. */
+export function downloadPdfBody(pdf: string, filename: string): void {
+  const blob = new Blob([pdf], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();

@@ -1114,6 +1114,11 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
                         final_state["research_package"].model_dump(mode="json")
                         if final_state.get("research_package") else None
                     ),
+                    youtube_demand_data=(
+                        final_state["research_package"].youtube_demand.model_dump(mode="json")
+                        if final_state.get("research_package")
+                        and final_state["research_package"].youtube_demand else None
+                    ),
                     analysis_data=(
                         final_state["analysis_result"].model_dump(mode="json")
                         if final_state.get("analysis_result") else None
@@ -1133,9 +1138,12 @@ async def _drive_pipeline(story_id: str, state: dict) -> None:
     evaluation = final_state.get("evaluation_report")
 
     async with AsyncSessionLocal() as db:
+        research_package = final_state.get("research_package")
+        demand = getattr(research_package, "youtube_demand", None) if research_package else None
         values: dict[str, Any] = {
             "status": StoryStatus.COMPLETED if script else StoryStatus.FAILED,
             "script_data": script.model_dump(mode="json") if script else None,
+            "youtube_demand_data": demand.model_dump(mode="json") if demand else None,
             "quality_score": _evaluation_quality_score(evaluation),
             "word_count": script.total_word_count if script else None,
             "estimated_duration_minutes": script.estimated_duration_minutes if script else None,

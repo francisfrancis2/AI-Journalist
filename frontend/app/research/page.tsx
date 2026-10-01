@@ -21,6 +21,7 @@ import { downloadResearchSessionReport } from "@/lib/research-report-export";
 import { cleanResearchReportBody } from "@/lib/research-report-format";
 import { downloadSourceListPdf } from "@/lib/script-export";
 import { ReportMarkdown } from "@/components/ReportMarkdown";
+import { YouTubeResearchPanel } from "@/components/YouTubeResearchPanel";
 
 const RESEARCH_ESTIMATE_SECONDS = 150;
 const ACTIVE_SESSION_STORAGE_KEY = "ai-journalist:active-research-session";
@@ -600,6 +601,7 @@ function ResearchPageInner() {
         </div>
 
         {/* Main pane */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
         <div className="card" style={{ padding: "20px 24px", minHeight: 480 }}>
           {!activeSessionId ? (
             <EmptyStatePrompt
@@ -641,6 +643,12 @@ function ResearchPageInner() {
               onSubmit={handleSubmit}
             />
           )}
+        </div>
+
+        {/* YouTube Research and Analysis — its own window below the report */}
+        {activeSession?.youtube_demand_data && (
+          <YouTubeResearchPanel report={activeSession.youtube_demand_data} variant="window" />
+        )}
         </div>
       </div>
     </div>

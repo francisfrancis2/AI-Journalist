@@ -109,6 +109,59 @@ def _normalize_tone(value: str) -> str:
     return v if v in _ALLOWED_TONES else "explanatory"
 
 
+def _build_youtube_demand_section(package: ResearchPackage) -> str:
+    """Audience-demand evidence for angle and hook writing.
+
+    Framed as patterns to ADAPT, not to avoid. A title that already earned
+    millions of views is a hook the market has validated; replicating what works
+    is the editorial intent here. Verbatim reuse is still discouraged, since a
+    near-duplicate title competes with the original in search.
+    """
+    report = getattr(package, "youtube_demand", None)
+    if report is None or (not report.keywords and not report.videos):
+        return ""
+
+    lines = ["\n=== YOUTUBE AUDIENCE DEMAND (vidIQ) ===",
+             "Use this to choose angles and write hooks with proven pull."]
+
+    if report.seed_keyword:
+        seed = report.seed_keyword
+        lines.append(
+            f"Subject '{seed.keyword}': {seed.estimated_monthly_search:,} searches/month "
+            f"(volume {seed.volume:.0f}/100, competition "
+            f"{seed.competition if seed.competition is not None else 'n/a'}/100)."
+        )
+
+    if report.keywords:
+        lines.append("\nHighest-demand search terms (monthly searches | volume | competition):")
+        for kw in report.keywords[:12]:
+            comp = f"{kw.competition:.0f}" if kw.competition is not None else "n/a"
+            lines.append(
+                f"  - {kw.keyword} | {kw.monthly_display or kw.estimated_monthly_search} "
+                f"| {kw.volume:.0f}/100 | comp {comp}"
+            )
+        lines.append(
+            "Terms with high volume and LOW competition are the strongest openings — "
+            "work them into angle framing and hook phrasing where they fit naturally."
+        )
+
+    if report.videos:
+        lines.append(
+            "\nPROVEN HOOKS — top-performing long-form videos on this subject. "
+            "These titles are hooks the audience has already rewarded. Study the "
+            "patterns (the promise, the tension, the specificity) and ADAPT them to "
+            "this story. Reusing a successful framing is intended; copying a title "
+            "word-for-word is not."
+        )
+        for video in report.videos[:20]:
+            lines.append(
+                f"  - \"{video.title}\" — {video.view_count:,} views, "
+                f"{video.duration_display}, {video.channel or 'unknown channel'}"
+            )
+
+    return "\n".join(lines) + "\n"
+
+
 def _build_source_digest(package: ResearchPackage) -> str:
     lines: list[str] = []
     for i, src in enumerate(package.top_sources(12), 1):
@@ -277,6 +330,8 @@ class AngleSynthesisSkill:
                 f"{package.deep_research_report[:6000]}\n"
             )
 
+        youtube_demand_section = _build_youtube_demand_section(package)
+
         prompt = (
             f"Topic: {topic}\n"
             f"Target tone: {tone}\n"
@@ -289,6 +344,7 @@ class AngleSynthesisSkill:
             f"Total sources collected: {package.total_sources}\n"
             f"{gap_section}{focus_section}{inspiration_section}{corpus_section}"
             f"{analyst_section}{voice_section}{deep_research_section}"
+            f"{youtube_demand_section}"
             f"\n=== RESEARCH SOURCES ===\n{_build_source_digest(package)}"
         )
 

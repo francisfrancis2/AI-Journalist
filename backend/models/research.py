@@ -4,11 +4,11 @@ flowing through the LangGraph pipeline.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, computed_field
 
 from backend.config import settings
 
@@ -22,6 +22,7 @@ class SourceType(str, Enum):
     FINANCIAL_DATA = "financial_data"
     RSS_FEED = "rss_feed"
     USER_ATTACHMENT = "user_attachment"
+    YOUTUBE_BENCHMARK = "youtube_benchmark"
 
 
 class SourceCredibility(str, Enum):
@@ -72,6 +73,10 @@ class ResearchPackage(BaseModel):
     # How many research passes contributed to this package (initial = 1, each
     # gap-driven enrichment pass increments).
     research_iterations: int = 1
+    # vidIQ YouTube audience-demand signal. Optional: absent whenever vidIQ is
+    # disabled, unconfigured, out of credits, or simply failed — research
+    # continues unchanged in all those cases.
+    youtube_demand: Optional["YouTubeDemandReport"] = None
 
     def add_source(self, source: RawSource) -> None:
         self.sources.append(source)
@@ -190,3 +195,59 @@ class EvaluationReport(BaseModel):
             return
         self.overall_score = self.criteria.overall_score
         self.approved_for_scripting = self.overall_score >= settings.quality_score_threshold
+
+# ── YouTube demand (vidIQ) ────────────────────────────────────────────────────
+
+class YouTubeKeyword(BaseModel):
+    """One keyword with vidIQ demand metrics."""
+    keyword: str
+    volume: float = 0.0                      # 0-100 search-volume score
+    competition: Optional[float] = None      # 0-100; lower is a better opening
+    overall: Optional[float] = None          # vidIQ's combined opportunity score
+    estimated_monthly_search: int = 0
+    monthly_display: str = ""                # vidIQ's own formatting, e.g. "3,821"
+    label: str = ""                          # "Very high" | "High" | "Medium" | ...
+
+
+class YouTubeVideo(BaseModel):
+    """A top-performing YouTube video used as audience-demand evidence."""
+    video_id: str
+    title: str
+    channel: Optional[str] = None
+    view_count: int = 0
+    duration_seconds: int = 0
+    published_at: Optional[str] = None
+    matched_keyword: Optional[str] = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def url(self) -> str:
+        return f"https://youtube.com/watch?v={self.video_id}"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def duration_display(self) -> str:
+        if not self.duration_seconds:
+            return "—"
+        hours, rem = divmod(self.duration_seconds, 3600)
+        mins, secs = divmod(rem, 60)
+        return f"{hours}:{mins:02d}:{secs:02d}" if hours else f"{mins}:{secs:02d}"
+
+
+class YouTubeDemandReport(BaseModel):
+    """vidIQ demand signal for a topic: what people search, and what they watch."""
+    topic: str
+    search_seed: str                          # what vidIQ was actually queried with
+    seed_keyword: Optional[YouTubeKeyword] = None
+    keywords: list[YouTubeKeyword] = Field(default_factory=list)
+    videos: list[YouTubeVideo] = Field(default_factory=list)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    credits_spent: int = 0
+    partial: bool = False                     # True when some calls failed; still usable
+
+    @property
+    def total_views(self) -> int:
+        return sum(v.view_count for v in self.videos)
+
+
+ResearchPackage.model_rebuild()

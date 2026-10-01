@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 import { downloadScriptPdf, downloadSourceListPdf } from "@/lib/script-export";
 import { isTerminalStoryStatus, storyStatusBadgeClass, storyStatusLabel } from "@/lib/story-status";
+import { YouTubeResearchPanel } from "@/components/YouTubeResearchPanel";
 
 type WorkspaceStage = "angles" | "hook" | "chapters" | "script";
 
@@ -1652,6 +1653,7 @@ export function IdeationWorkspace({ storyId, stage }: { storyId: string; stage: 
           )}
 
           <ResearchSignalsPanel title={story.title} sources={sources} />
+          <YouTubeResearchPanel report={story.youtube_demand_data} />
 
           {readyForScript && (
             <div className="card" style={{ padding: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>

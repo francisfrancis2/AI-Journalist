@@ -45,6 +45,7 @@ from backend.tools.news_api import NewsAPITool
 from backend.tools.rss_parser import RSSParserTool
 from backend.tools.web_scraper import WebScraperTool
 from backend.tools.anthropic_search import AnthropicSearchTool
+from backend.tools.vidiq import VidIQTool, demand_report_to_sources
 from backend.tools.web_search import WebSearchTool
 
 log = structlog.get_logger(__name__)
@@ -149,6 +150,7 @@ class ResearchAgent:
         # Anthropic deep research is always available; gated per-call by
         # settings.enable_deep_research so cost stays tunable.
         self._deep_research = AnthropicDeepResearchTool()
+        self._vidiq = VidIQTool()
         self._synthesizer = ResearchReportSynthesizer()
 
     async def _plan_queries(
@@ -448,6 +450,15 @@ class ResearchAgent:
                 max_uses=deep_max_uses,
             )
 
+        # vidIQ YouTube demand — enrichment only. Gathered with return_exceptions
+        # below, so a failure logs and the rest of research proceeds untouched.
+        vidiq_key = None
+        if self._vidiq.enabled and package.youtube_demand is None:
+            vidiq_key = "vidiq"
+            fetch_tasks[vidiq_key] = self._vidiq.fetch_demand_report(
+                topic=topic, search_seed=rss_keyword or topic,
+            )
+
         if not fetch_tasks:
             return
 
@@ -463,6 +474,12 @@ class ResearchAgent:
                 continue
             if key == deep_key:
                 self._absorb_deep_research(package, result, seen_urls)
+                continue
+            if key == vidiq_key:
+                if result is not None:
+                    package.youtube_demand = result
+                    for src in demand_report_to_sources(result):
+                        package.add_source_deduped(src, seen_urls)
                 continue
             sources = result if isinstance(result, list) else [result]
             for src in sources:

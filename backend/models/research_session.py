@@ -44,6 +44,7 @@ class ResearchSessionORM(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     report_markdown: Mapped[str] = mapped_column(Text, nullable=False, default="")
     citations: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    youtube_demand_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     turns: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     model: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     web_search_requests: Mapped[int] = mapped_column(default=0, nullable=False)
@@ -109,6 +110,7 @@ class ResearchSessionRead(BaseModel):
     report_markdown: str
     citations: list[ResearchSessionCitation] = Field(default_factory=list)
     turns: list[ResearchSessionTurn] = Field(default_factory=list)
+    youtube_demand_data: Optional[dict] = None
     model: Optional[str] = None
     web_search_requests: int = 0
     status: ResearchSessionStatus = ResearchSessionStatus.COMPLETED

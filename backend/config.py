@@ -117,6 +117,20 @@ class Settings(BaseSettings):
     # headroom. LangGraph's default of 25 is tight for evidence restarts.
     graph_recursion_limit: int = 50
 
+    # ── vidIQ (YouTube audience demand) ───────────────────────────────────────
+    # Enrichment only: every failure path degrades research quality rather than
+    # failing a story. Calls bill ~5 vidIQ credits each from a shared monthly pool.
+    vidiq_api_key: Optional[str] = Field(None, env="VIDIQ_API_KEY")
+    enable_vidiq: bool = True
+    vidiq_max_calls_per_story: int = 9       # hard spend cap (~45 credits/story)
+    vidiq_keyword_fanout: int = 2            # related keywords also given a video search
+    vidiq_max_keywords: int = 20             # keywords kept in the report
+    vidiq_max_videos: int = 10               # videos kept in the report
+    vidiq_min_video_seconds: int = 240       # 4 min — drops Shorts and clips
+    vidiq_cache_ttl_seconds: int = 7 * 24 * 3600
+    vidiq_timeout_seconds: float = 45.0      # per HTTP request
+    vidiq_total_timeout_seconds: float = 180.0  # whole report build
+
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")
     supadata_api_key: Optional[str] = Field(None, env="SUPADATA_API_KEY")

@@ -306,6 +306,42 @@ export interface AdminNotification {
   read_at: string | null;
 }
 
+
+// ── YouTube audience demand (vidIQ) ──────────────────────────────────────────
+
+export interface YouTubeKeyword {
+  keyword: string;
+  volume: number;
+  competition: number | null;
+  overall: number | null;
+  estimated_monthly_search: number;
+  monthly_display: string;
+  label: string;
+}
+
+export interface YouTubeDemandVideo {
+  video_id: string;
+  title: string;
+  channel: string | null;
+  view_count: number;
+  duration_seconds: number;
+  published_at: string | null;
+  matched_keyword: string | null;
+  url: string;
+  duration_display: string;
+}
+
+export interface YouTubeDemandReport {
+  topic: string;
+  search_seed: string;
+  seed_keyword: YouTubeKeyword | null;
+  keywords: YouTubeKeyword[];
+  videos: YouTubeDemandVideo[];
+  generated_at: string;
+  credits_spent: number;
+  partial: boolean;
+}
+
 export interface Story {
   id: string;
   title: string;
@@ -338,6 +374,7 @@ export interface Story {
   attachment_data?: StoryAttachmentSource[] | null;
   story_hook: string | null;
   hook_options_data: string[] | null;
+  youtube_demand_data?: YouTubeDemandReport | null;
   chapters_data: IdeationChapter[] | null;
   created_at: string;
   updated_at: string;
@@ -446,6 +483,7 @@ export interface ResearchSessionTurn {
 export type ResearchSessionStatus = "pending" | "running" | "completed" | "failed";
 
 export interface ResearchSession {
+  youtube_demand_data?: YouTubeDemandReport | null;
   id: string;
   title: string;
   report_markdown: string;

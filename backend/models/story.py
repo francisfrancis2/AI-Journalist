@@ -123,6 +123,10 @@ class StoryORM(Base):
     # Benchmark scores
     benchmark_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # vidIQ YouTube audience-demand report (keyword volumes + top videos).
+    # Nullable by design: vidIQ is enrichment, so stories exist without it.
+    youtube_demand_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     # Previous script versions (list of {version, script, created_at})
     script_versions: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
 
@@ -229,6 +233,7 @@ class StoryRead(BaseModel):
     ideation_research_data: Optional[list] = None
     ideation_operation_data: Optional[dict] = None
     attachment_data: Optional[list] = None
+    youtube_demand_data: Optional[dict] = None
     story_hook: Optional[str] = None
     hook_options_data: Optional[list] = None
     chapters_data: Optional[list] = None
