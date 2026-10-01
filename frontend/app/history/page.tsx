@@ -109,20 +109,20 @@ function normalizeResearchStatus(status: unknown): ResearchSessionStatus | strin
 }
 
 function StoryStatusBadge({ status }: { status: StoryStatus | string }) {
-  if (status === "ideating") return <span className="badge badge-neutral" style={{ fontSize: 11 }}>Ideating</span>;
-  if (status === "completed") return <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>;
-  if (status === "failed") return <span className="badge badge-danger" style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>;
+  if (status === "ideating") return <span className="badge badge-neutral" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>Ideating</span>;
+  if (status === "completed") return <span className="badge badge-success" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}><CheckCircle2 size={10} /> Completed</span>;
+  if (status === "failed") return <span className="badge badge-danger" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}><XCircle size={10} /> Failed</span>;
   if (status === "angle_selection_expired") {
-    return <span className="badge badge-warning" style={{ fontSize: 11 }}><AlertTriangle size={10} /> Script writing stopped</span>;
+    return <span className="badge badge-warning" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}><AlertTriangle size={10} /> Script writing stopped</span>;
   }
-  return <span className="badge badge-active" style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> {storyStatusLabel(status)}</span>;
+  return <span className="badge badge-active" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}><Loader2 size={10} className="animate-spin" /> {storyStatusLabel(status)}</span>;
 }
 
 function ResearchStatusBadge({ status }: { status: ResearchSessionStatus | string }) {
-  if (status === "completed") return <span className="badge badge-success" style={{ fontSize: 11 }}><CheckCircle2 size={10} /> Completed</span>;
-  if (status === "failed") return <span className="badge badge-danger" style={{ fontSize: 11 }}><XCircle size={10} /> Failed</span>;
-  if (status === "running") return <span className="badge badge-active" style={{ fontSize: 11 }}><Loader2 size={10} className="animate-spin" /> Running</span>;
-  return <span className="badge badge-neutral" style={{ fontSize: 11 }}>Pending</span>;
+  if (status === "completed") return <span className="badge badge-success" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}><CheckCircle2 size={10} /> Completed</span>;
+  if (status === "failed") return <span className="badge badge-danger" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}><XCircle size={10} /> Failed</span>;
+  if (status === "running") return <span className="badge badge-active" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}><Loader2 size={10} className="animate-spin" /> Running</span>;
+  return <span className="badge badge-neutral" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>Pending</span>;
 }
 
 function TypeBadge({ kind }: { kind: HistoryItem["kind"] }) {
@@ -130,7 +130,7 @@ function TypeBadge({ kind }: { kind: HistoryItem["kind"] }) {
   return (
     <span
       className={isStory ? "badge badge-neutral" : "badge badge-active"}
-      style={{ fontSize: 11, whiteSpace: "nowrap" }}
+      style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", whiteSpace: "nowrap" }}
     >
       {isStory ? <FileText size={10} /> : <Search size={10} />}
       {isStory ? "New Story" : "Research"}
@@ -325,7 +325,7 @@ export default function HistoryPage() {
           borderBottom: "0.5px solid var(--color-border-tertiary)",
         }}
       >
-        <span style={{ fontSize: 18, fontWeight: 500 }}>History</span>
+        <span style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500 }}>History</span>
         <div style={{ display: "flex", gap: 8 }}>
           <Link href="/research" className="btn-secondary" style={{ textDecoration: "none" }}>
             <Search size={13} /> Research
@@ -352,10 +352,10 @@ export default function HistoryPage() {
                 className="card"
                 style={{ padding: "12px 16px", minWidth: 100 }}
               >
-                <p style={{ fontSize: 11, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
                   {label}
                 </p>
-                <p style={{ fontSize: 20, fontWeight: 500, color: "var(--color-text-primary)" }}>{value}</p>
+                <p style={{ fontSize: "var(--text-xl)", lineHeight: "var(--text-xl-lh)", fontWeight: 500, color: "var(--color-text-primary)" }}>{value}</p>
               </div>
             ))}
           </div>
@@ -370,7 +370,7 @@ export default function HistoryPage() {
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search history..."
               className="input"
-              style={{ paddingLeft: 30, fontSize: 13 }}
+              style={{ paddingLeft: 30, fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)" }}
             />
           </div>
 
@@ -380,7 +380,7 @@ export default function HistoryPage() {
                 key={opt.value}
                 onClick={() => setHistoryFilter(opt.value)}
                 className={`chip ${historyFilter === opt.value ? "selected" : ""}`}
-                style={{ padding: "5px 12px", fontSize: 12 }}
+                style={{ padding: "5px 12px", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}
               >
                 {opt.label}
               </button>
@@ -406,8 +406,8 @@ export default function HistoryPage() {
             }}
           >
             <XCircle size={20} style={{ color: "var(--color-danger, #b42318)" }} />
-            <p style={{ fontSize: 14, fontWeight: 500 }}>Could not load history</p>
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", maxWidth: 420 }}>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500 }}>Could not load history</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", maxWidth: 420 }}>
               {historyError instanceof Error ? historyError.message : "Unknown error"}.
               {" "}If this keeps happening, try signing out and back in.
             </p>
@@ -446,10 +446,10 @@ export default function HistoryPage() {
             >
               <FileText size={16} style={{ color: "var(--color-text-tertiary)" }} />
             </div>
-            <p style={{ fontSize: 14, fontWeight: 500 }}>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500 }}>
               {historyItems.length === 0 ? "No history yet" : "No matches found"}
             </p>
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)" }}>
               {historyItems.length === 0 ? "Create a story or research session to see it here." : "Try a different search or filter."}
             </p>
           </div>
@@ -463,7 +463,7 @@ export default function HistoryPage() {
                 padding: "10px 16px",
                 background: "var(--color-background-secondary)",
                 borderBottom: "0.5px solid var(--color-border-tertiary)",
-                fontSize: 11,
+                fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                 fontWeight: 500,
                 color: "var(--color-text-secondary)",
                 textTransform: "uppercase",
@@ -497,7 +497,7 @@ export default function HistoryPage() {
                     <Link
                       href={item.href}
                       style={{
-                        fontSize: 13,
+                        fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
                         color: "var(--color-text-primary)",
                         textDecoration: "none",
                         overflow: "hidden",
@@ -510,7 +510,7 @@ export default function HistoryPage() {
                     </Link>
                     <p
                       style={{
-                        fontSize: 12,
+                        fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                         color: "var(--color-text-tertiary)",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -526,7 +526,7 @@ export default function HistoryPage() {
                     <div style={{ minWidth: 0 }}>
                       <span
                         style={{
-                          fontSize: 12,
+                          fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                           color: "var(--color-text-secondary)",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -596,8 +596,8 @@ export default function HistoryPage() {
           }}
         >
           <div className="card" style={{ width: "100%", maxWidth: 360, padding: 24 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>Delete this story?</h3>
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 20 }}>
+            <h3 style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500, marginBottom: 8 }}>Delete this story?</h3>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", marginBottom: 20 }}>
               This will permanently remove the story and all associated data. This cannot be undone.
             </p>
             <div style={{ display: "flex", gap: 8 }}>
@@ -614,7 +614,7 @@ export default function HistoryPage() {
                   color: "#fff",
                   border: "none",
                   borderRadius: "var(--border-radius-md)",
-                  fontSize: 13,
+                  fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
                   fontWeight: 500,
                   cursor: "pointer",
                   display: "inline-flex",

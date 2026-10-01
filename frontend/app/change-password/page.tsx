@@ -82,10 +82,10 @@ export default function ChangePasswordPage() {
           >
             <KeyRound size={16} color="#fff" />
           </div>
-          <h1 style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>
+          <h1 style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500, marginBottom: 4 }}>
             {isForced ? "Change your password" : "Change password"}
           </h1>
-          <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
+          <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)" }}>
             {isForced
               ? "Your account was set up with a temporary password."
               : "Update your account password."}
@@ -95,7 +95,7 @@ export default function ChangePasswordPage() {
         <div className="card" style={{ padding: "20px" }}>
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>
+              <label style={{ display: "block", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginBottom: 6 }}>
                 Current password
               </label>
               <input
@@ -109,7 +109,7 @@ export default function ChangePasswordPage() {
             </div>
 
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>
+              <label style={{ display: "block", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginBottom: 6 }}>
                 New password
               </label>
               <input
@@ -124,7 +124,7 @@ export default function ChangePasswordPage() {
             </div>
 
             <div style={{ marginBottom: error ? 14 : 20 }}>
-              <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>
+              <label style={{ display: "block", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginBottom: 6 }}>
                 Confirm new password
               </label>
               <input
@@ -145,7 +145,7 @@ export default function ChangePasswordPage() {
                   background: "var(--color-danger-bg)",
                   border: "0.5px solid #fecaca",
                   borderRadius: "var(--border-radius-md)",
-                  fontSize: 12,
+                  fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                   color: "var(--color-danger)",
                 }}
               >
@@ -169,7 +169,7 @@ export default function ChangePasswordPage() {
               padding: "8px",
               border: "none",
               background: "none",
-              fontSize: 13,
+              fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
               color: "var(--color-text-secondary)",
               cursor: "pointer",
               fontFamily: "var(--font-sans)",

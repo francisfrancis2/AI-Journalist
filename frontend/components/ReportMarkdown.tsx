@@ -44,7 +44,7 @@ export function ReportMarkdown({ markdown }: { markdown: string }) {
     blocks.push(
       <ul key={`ul-${blocks.length}`} style={{ paddingLeft: 20, margin: "8px 0", display: "flex", flexDirection: "column", gap: 4 }}>
         {listBuf.map((item, idx) => (
-          <li key={idx} style={{ fontSize: 13, lineHeight: 1.7, color: "var(--color-text-primary)" }}>
+          <li key={idx} style={{ fontSize: "var(--text-sm)", lineHeight: 1.7, color: "var(--color-text-primary)" }}>
             {renderInline(item)}
           </li>
         ))}
@@ -59,7 +59,7 @@ export function ReportMarkdown({ markdown }: { markdown: string }) {
     blocks.push(
       <p
         key={`p-${blocks.length}`}
-        style={{ fontSize: 13, lineHeight: 1.75, margin: "6px 0", color: "var(--color-text-primary)" }}
+        style={{ fontSize: "var(--text-sm)", lineHeight: 1.75, margin: "6px 0", color: "var(--color-text-primary)" }}
       >
         {renderInline(text)}
       </p>
@@ -78,7 +78,7 @@ export function ReportMarkdown({ markdown }: { markdown: string }) {
       flushList();
       flushPara();
       blocks.push(
-        <h1 key={`h1-${blocks.length}`} style={{ fontSize: 20, fontWeight: 600, margin: "16px 0 8px" }}>
+        <h1 key={`h1-${blocks.length}`} style={{ fontSize: "var(--text-xl)", lineHeight: "var(--text-xl-lh)", fontWeight: 600, margin: "16px 0 8px" }}>
           {renderInline(line.slice(2))}
         </h1>
       );
@@ -88,7 +88,7 @@ export function ReportMarkdown({ markdown }: { markdown: string }) {
       flushList();
       flushPara();
       blocks.push(
-        <h2 key={`h2-${blocks.length}`} style={{ fontSize: 15, fontWeight: 600, margin: "14px 0 6px", color: "var(--color-text-primary)" }}>
+        <h2 key={`h2-${blocks.length}`} style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 600, margin: "14px 0 6px", color: "var(--color-text-primary)" }}>
           {renderInline(line.slice(3))}
         </h2>
       );
@@ -98,7 +98,7 @@ export function ReportMarkdown({ markdown }: { markdown: string }) {
       flushList();
       flushPara();
       blocks.push(
-        <h3 key={`h3-${blocks.length}`} style={{ fontSize: 13, fontWeight: 600, margin: "10px 0 4px", color: "var(--color-text-primary)" }}>
+        <h3 key={`h3-${blocks.length}`} style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 600, margin: "10px 0 4px", color: "var(--color-text-primary)" }}>
           {renderInline(line.slice(4))}
         </h3>
       );

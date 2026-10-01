@@ -34,10 +34,10 @@ function ServiceRow({ svc }: { svc: ServiceHealth }) {
       <div style={{ marginTop: 3, width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
       <div style={{ flex: 1 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>{svc.label}</span>
-          <span style={{ fontSize: 12, fontWeight: 600, color }}>{STATUS_LABEL[svc.status]}{svc.latency_ms != null ? ` · ${svc.latency_ms}ms` : ""}</span>
+          <span style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500 }}>{svc.label}</span>
+          <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 600, color }}>{STATUS_LABEL[svc.status]}{svc.latency_ms != null ? ` · ${svc.latency_ms}ms` : ""}</span>
         </div>
-        {svc.detail && <p style={{ fontSize: 11, color: "var(--color-danger)", margin: 0 }}>{svc.detail}</p>}
+        {svc.detail && <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-danger)", margin: 0 }}>{svc.detail}</p>}
       </div>
     </div>
   );
@@ -55,12 +55,12 @@ function APIHealthPanel() {
     <div className="card" style={{ padding: 20, marginBottom: 24, maxWidth: 560 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <div>
-          <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+          <h2 style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
             <Activity size={14} /> Research Source Health
           </h2>
-          {checkedAt && <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 3 }}>Last checked {checkedAt} · includes NewsAPI, Google News RSS, and other external services</p>}
+          {checkedAt && <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 3 }}>Last checked {checkedAt} · includes NewsAPI, Google News RSS, and other external services</p>}
         </div>
-        <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary" style={{ padding: "5px 10px", fontSize: 12 }}>
+        <button onClick={() => refetch()} disabled={isFetching} className="btn-secondary" style={{ padding: "5px 10px", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
           <RefreshCw size={11} className={isFetching ? "animate-spin" : ""} /> {isFetching ? "Checking…" : "Refresh"}
         </button>
       </div>
@@ -97,22 +97,22 @@ function NotificationsPanel() {
       <div className="card" style={{ padding: 20, marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            <h2 style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
               <Bell size={14} /> Pipeline Notifications
               {unreadCount > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-danger)", background: "var(--color-danger-bg)", padding: "1px 6px", borderRadius: 10 }}>
+                <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 600, color: "var(--color-danger)", background: "var(--color-danger-bg)", padding: "1px 6px", borderRadius: 10 }}>
                   {unreadCount} unread
                 </span>
               )}
             </h2>
-            <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 4 }}>Technical failures and quality gate alerts</p>
+            <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 4 }}>Technical failures and quality gate alerts</p>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer", color: "var(--color-text-secondary)" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", cursor: "pointer", color: "var(--color-text-secondary)" }}>
               <input type="checkbox" checked={showUnreadOnly} onChange={e => setShowUnreadOnly(e.target.checked)} style={{ accentColor: "var(--color-action)" }} />
               Unread only
             </label>
-            <button onClick={() => refetch()} className="btn-secondary" style={{ padding: "5px 10px", fontSize: 12 }}>
+            <button onClick={() => refetch()} className="btn-secondary" style={{ padding: "5px 10px", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
               <RefreshCw size={11} /> Refresh
             </button>
           </div>
@@ -122,7 +122,7 @@ function NotificationsPanel() {
       {isLoading && <div style={{ padding: 32, textAlign: "center" }}><Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} /></div>}
 
       {!isLoading && (!notifications || notifications.length === 0) && (
-        <div style={{ textAlign: "center", padding: "48px 0", color: "var(--color-text-tertiary)", fontSize: 13 }}>
+        <div style={{ textAlign: "center", padding: "48px 0", color: "var(--color-text-tertiary)", fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)" }}>
           <Bell size={28} style={{ margin: "0 auto 10px", opacity: 0.4 }} />
           <p>No notifications</p>
         </div>
@@ -134,24 +134,24 @@ function NotificationsPanel() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: LEVEL_COLOR[n.level], textTransform: "uppercase" }}>{n.level}</span>
+                  <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 600, color: LEVEL_COLOR[n.level], textTransform: "uppercase" }}>{n.level}</span>
                   {!n.is_read && <span style={{ width: 6, height: 6, borderRadius: "50%", background: LEVEL_COLOR[n.level] }} />}
-                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: "auto" }}>{formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}</span>
+                  <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginLeft: "auto" }}>{formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}</span>
                 </div>
-                <p style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{n.title}</p>
-                <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{n.message}</p>
+                <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500, marginBottom: 6 }}>{n.title}</p>
+                <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{n.message}</p>
                 {n.technical_detail && (
-                  <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6, fontFamily: "monospace", background: "var(--color-background-tertiary)", padding: "6px 8px", borderRadius: 6, whiteSpace: "pre-wrap" }}>{n.technical_detail}</p>
+                  <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 6, fontFamily: "monospace", background: "var(--color-background-tertiary)", padding: "6px 8px", borderRadius: 6, whiteSpace: "pre-wrap" }}>{n.technical_detail}</p>
                 )}
                 {n.suggested_fix && (
                   <div style={{ marginTop: 8, padding: "8px 10px", background: "#f0fdf4", border: "0.5px solid #86efac", borderRadius: 6 }}>
-                    <p style={{ fontSize: 11, fontWeight: 600, color: "#16a34a", marginBottom: 2 }}>Suggested fix</p>
-                    <p style={{ fontSize: 11, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{n.suggested_fix}</p>
+                    <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 600, color: "#16a34a", marginBottom: 2 }}>Suggested fix</p>
+                    <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{n.suggested_fix}</p>
                   </div>
                 )}
               </div>
               {!n.is_read && (
-                <button onClick={() => markReadMutation.mutate(n.id)} disabled={markReadMutation.isPending} className="btn-secondary" style={{ fontSize: 11, padding: "4px 8px", flexShrink: 0 }}>
+                <button onClick={() => markReadMutation.mutate(n.id)} disabled={markReadMutation.isPending} className="btn-secondary" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", padding: "4px 8px", flexShrink: 0 }}>
                   Mark read
                 </button>
               )}
@@ -212,7 +212,7 @@ export default function AdminConsolePage() {
     padding: "6px 16px",
     borderRadius: 6,
     border: "none",
-    fontSize: 13,
+    fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
     fontWeight: active ? 500 : 400,
     background: active ? "var(--color-background-primary)" : "transparent",
     color: active ? "var(--color-text-primary)" : "var(--color-text-secondary)",
@@ -227,7 +227,7 @@ export default function AdminConsolePage() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
         <ShieldCheck size={20} style={{ color: "var(--color-action)" }} />
-        <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>Admin Console</h1>
+        <h1 style={{ fontSize: "var(--text-xl)", lineHeight: "var(--text-xl-lh)", fontWeight: 600, margin: 0 }}>Admin Console</h1>
       </div>
 
       {/* Tabs */}
@@ -242,43 +242,43 @@ export default function AdminConsolePage() {
         <>
           {/* Create User */}
           <div className="card" style={{ padding: 20, marginBottom: 24 }}>
-            <h2 style={{ fontSize: 14, fontWeight: 600, marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
+            <h2 style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 600, marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
               <UserPlus size={14} /> Add User
             </h2>
             <form onSubmit={handleCreate} style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 200px" }}>
-                <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>Email</label>
+                <label style={{ display: "block", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginBottom: 6 }}>Email</label>
                 <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="user@example.com" required className="input" />
               </div>
               <div style={{ flex: "1 1 180px" }}>
-                <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>Temporary password</label>
+                <label style={{ display: "block", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginBottom: 6 }}>Temporary password</label>
                 <input type="text" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min. 8 characters" required minLength={8} className="input" style={{ fontFamily: "monospace" }} />
               </div>
               <button type="submit" disabled={createMutation.isPending} className="btn-primary" style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
                 {createMutation.isPending ? <><Loader2 size={13} className="animate-spin" /> Creating…</> : "Create user"}
               </button>
             </form>
-            {formError && <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--color-danger-bg)", border: "0.5px solid #fecaca", borderRadius: "var(--border-radius-md)", fontSize: 12, color: "var(--color-danger)" }}>{formError}</div>}
-            {formSuccess && <div style={{ marginTop: 12, padding: "8px 12px", background: "#f0fdf4", border: "0.5px solid #86efac", borderRadius: "var(--border-radius-md)", fontSize: 12, color: "#16a34a" }}>{formSuccess}</div>}
+            {formError && <div style={{ marginTop: 12, padding: "8px 12px", background: "var(--color-danger-bg)", border: "0.5px solid #fecaca", borderRadius: "var(--border-radius-md)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-danger)" }}>{formError}</div>}
+            {formSuccess && <div style={{ marginTop: 12, padding: "8px 12px", background: "#f0fdf4", border: "0.5px solid #86efac", borderRadius: "var(--border-radius-md)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "#16a34a" }}>{formSuccess}</div>}
           </div>
 
           {/* User List */}
           <div className="card" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ padding: "16px 20px", borderBottom: "0.5px solid var(--color-border-tertiary)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Users {users ? `(${users.length})` : ""}</h2>
-              <button onClick={() => qc.invalidateQueries({ queryKey: ["admin-users"] })} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontFamily: "var(--font-sans)" }}>
+              <h2 style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 600, margin: 0 }}>Users {users ? `(${users.length})` : ""}</h2>
+              <button onClick={() => qc.invalidateQueries({ queryKey: ["admin-users"] })} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: 4, fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontFamily: "var(--font-sans)" }}>
                 <RefreshCw size={13} /> Refresh
               </button>
             </div>
             {usersLoading && <div style={{ padding: 32, textAlign: "center" }}><Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} /></div>}
-            {usersError && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--color-danger)" }}>Failed to load users.</div>}
-            {users && users.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "var(--color-text-tertiary)" }}>No users yet.</div>}
+            {usersError && <div style={{ padding: 24, textAlign: "center", fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-danger)" }}>Failed to load users.</div>}
+            {users && users.length === 0 && <div style={{ padding: 24, textAlign: "center", fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-tertiary)" }}>No users yet.</div>}
             {users && users.length > 0 && (
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)" }}>
                 <thead>
                   <tr style={{ borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
                     {["Email", "Role", "Status", "Created", ""].map(h => (
-                      <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: 11, fontWeight: 500, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                      <th key={h} style={{ padding: "10px 20px", textAlign: "left", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 500, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -288,16 +288,16 @@ export default function AdminConsolePage() {
                       <td style={{ padding: "12px 20px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           {u.email}
-                          {u.must_change_password && <span style={{ fontSize: 10, padding: "2px 6px", background: "#fef9c3", color: "#854d0e", borderRadius: 4, fontWeight: 500 }}>pwd reset</span>}
+                          {u.must_change_password && <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", padding: "2px 6px", background: "#fef9c3", color: "#854d0e", borderRadius: 4, fontWeight: 500 }}>pwd reset</span>}
                         </div>
                       </td>
                       <td style={{ padding: "12px 20px" }}>
                         {u.is_admin
-                          ? <span style={{ fontSize: 11, padding: "2px 8px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 500 }}>Admin</span>
-                          : <span style={{ fontSize: 11, padding: "2px 8px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", borderRadius: 4 }}>User</span>}
+                          ? <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", padding: "2px 8px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 500 }}>Admin</span>
+                          : <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", padding: "2px 8px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", borderRadius: 4 }}>User</span>}
                       </td>
                       <td style={{ padding: "12px 20px" }}>
-                        <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, fontWeight: 500, background: u.is_active ? "#f0fdf4" : "var(--color-danger-bg)", color: u.is_active ? "#16a34a" : "var(--color-danger)" }}>
+                        <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", padding: "2px 8px", borderRadius: 4, fontWeight: 500, background: u.is_active ? "#f0fdf4" : "var(--color-danger-bg)", color: u.is_active ? "#16a34a" : "var(--color-danger)" }}>
                           {u.is_active ? "Active" : "Disabled"}
                         </span>
                       </td>

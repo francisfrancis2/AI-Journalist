@@ -56,12 +56,12 @@ export default function ProfilePage() {
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
         <User size={20} style={{ color: "var(--color-action)" }} />
-        <h1 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>My Profile</h1>
+        <h1 style={{ fontSize: "var(--text-xl)", lineHeight: "var(--text-xl-lh)", fontWeight: 600, margin: 0 }}>My Profile</h1>
       </div>
 
       {/* Account details */}
       <div className="card" style={{ padding: 20, marginBottom: 24 }}>
-        <h2 style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        <h2 style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 600, marginBottom: 16, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
           Account
         </h2>
 
@@ -74,22 +74,22 @@ export default function ProfilePage() {
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <Mail size={14} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
               <div>
-                <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 2 }}>Email</div>
-                <div style={{ fontSize: 13, color: "var(--color-text-primary)", fontWeight: 500 }}>{user?.email ?? "—"}</div>
+                <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginBottom: 2 }}>Email</div>
+                <div style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-primary)", fontWeight: 500 }}>{user?.email ?? "—"}</div>
               </div>
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <ShieldCheck size={14} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
               <div>
-                <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 2 }}>Role</div>
+                <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginBottom: 2 }}>Role</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   {user?.is_admin ? (
-                    <span style={{ fontSize: 12, padding: "2px 8px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 500 }}>
+                    <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", padding: "2px 8px", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontWeight: 500 }}>
                       Administrator
                     </span>
                   ) : (
-                    <span style={{ fontSize: 12, padding: "2px 8px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", borderRadius: 4 }}>
+                    <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", padding: "2px 8px", background: "var(--color-background-secondary)", color: "var(--color-text-secondary)", borderRadius: 4 }}>
                       User
                     </span>
                   )}
@@ -101,8 +101,8 @@ export default function ProfilePage() {
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <Calendar size={14} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
                 <div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: 2 }}>Member since</div>
-                  <div style={{ fontSize: 13, color: "var(--color-text-primary)" }}>
+                  <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginBottom: 2 }}>Member since</div>
+                  <div style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-primary)" }}>
                     {new Date(me.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
                   </div>
                 </div>
@@ -114,14 +114,14 @@ export default function ProfilePage() {
 
       {/* Change password */}
       <div className="card" style={{ padding: 20 }}>
-        <h2 style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+        <h2 style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 600, marginBottom: 16, color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
           <KeyRound size={13} />
           Change Password
         </h2>
 
         <form onSubmit={handlePasswordChange}>
           <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>
+            <label style={{ display: "block", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginBottom: 6 }}>
               Current password
             </label>
             <input
@@ -135,7 +135,7 @@ export default function ProfilePage() {
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>
+            <label style={{ display: "block", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginBottom: 6 }}>
               New password
             </label>
             <input
@@ -150,7 +150,7 @@ export default function ProfilePage() {
           </div>
 
           <div style={{ marginBottom: pwError || pwSuccess ? 14 : 20 }}>
-            <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 6 }}>
+            <label style={{ display: "block", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginBottom: 6 }}>
               Confirm new password
             </label>
             <input
@@ -164,12 +164,12 @@ export default function ProfilePage() {
           </div>
 
           {pwError && (
-            <div style={{ marginBottom: 16, padding: "10px 12px", background: "var(--color-danger-bg)", border: "0.5px solid #fecaca", borderRadius: "var(--border-radius-md)", fontSize: 12, color: "var(--color-danger)" }}>
+            <div style={{ marginBottom: 16, padding: "10px 12px", background: "var(--color-danger-bg)", border: "0.5px solid #fecaca", borderRadius: "var(--border-radius-md)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-danger)" }}>
               {pwError}
             </div>
           )}
           {pwSuccess && (
-            <div style={{ marginBottom: 16, padding: "10px 12px", background: "#f0fdf4", border: "0.5px solid #86efac", borderRadius: "var(--border-radius-md)", fontSize: 12, color: "#16a34a" }}>
+            <div style={{ marginBottom: 16, padding: "10px 12px", background: "#f0fdf4", border: "0.5px solid #86efac", borderRadius: "var(--border-radius-md)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "#16a34a" }}>
               {pwSuccess}
             </div>
           )}

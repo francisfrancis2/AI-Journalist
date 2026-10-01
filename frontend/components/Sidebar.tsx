@@ -67,7 +67,7 @@ export function Sidebar() {
             <path d="M2 2h3v8H2zM7 2h3v4H7zM7 8h3v2H7z" fill="#fff" />
           </svg>
         </div>
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>
+        <span style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500, color: "var(--color-text-primary)" }}>
           AI Journalist
         </span>
       </div>
@@ -77,7 +77,7 @@ export function Sidebar() {
         <div style={{ marginBottom: 4 }}>
           <p
             style={{
-              fontSize: 11,
+              fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
               fontWeight: 500,
               color: "var(--color-text-tertiary)",
               textTransform: "uppercase",
@@ -102,7 +102,7 @@ export function Sidebar() {
           <div style={{ marginTop: 16 }}>
             <p
               style={{
-                fontSize: 11,
+                fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                 fontWeight: 500,
                 color: "var(--color-text-tertiary)",
                 textTransform: "uppercase",

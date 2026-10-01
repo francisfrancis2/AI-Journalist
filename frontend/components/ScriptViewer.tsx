@@ -32,23 +32,23 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
           <div className="card" style={{ padding: "14px 16px", position: "sticky", top: 24 }}>
             <p className="section-label">Contents</p>
             <ol style={{ listStyle: "none", padding: 0, margin: 0 }}>
-              <li style={{ padding: "5px 0", fontSize: 12, color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
+              <li style={{ padding: "5px 0", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", borderBottom: "0.5px solid var(--color-border-tertiary)", marginBottom: 4 }}>
                 Opening
               </li>
               {script.sections.map((s, i) => (
                 <li
                   key={i}
-                  style={{ padding: "5px 0", fontSize: 12, color: "var(--color-text-secondary)", cursor: "pointer" }}
+                  style={{ padding: "5px 0", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", cursor: "pointer" }}
                   onClick={() => { if (!open.includes(i)) toggle(i); }}
                 >
                   {s.section_number}. {s.title}
                 </li>
               ))}
-              <li style={{ padding: "5px 0", fontSize: 12, color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
+              <li style={{ padding: "5px 0", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
                 Closing
               </li>
               {hasResearch && (
-                <li style={{ padding: "5px 0", fontSize: 12, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
+                <li style={{ padding: "5px 0", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
                   <a
                     href="#research-appendix"
                     style={{ color: "var(--color-action)", textDecoration: "none" }}
@@ -58,7 +58,7 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
                 </li>
               )}
               {hasSources && (
-                <li style={{ padding: "5px 0", fontSize: 12, borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
+                <li style={{ padding: "5px 0", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", borderTop: "0.5px solid var(--color-border-tertiary)", marginTop: 4 }}>
                   <a
                     href="#sources-appendix"
                     style={{ color: "var(--color-action)", textDecoration: "none" }}
@@ -75,7 +75,7 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Metadata row */}
           <div className="card" style={{ padding: "14px 18px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--color-text-secondary)" }}>
+            <div style={{ display: "flex", gap: 16, fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)" }}>
               <span>~{script.estimated_duration_minutes} min</span>
               <span>{script.total_word_count.toLocaleString()} words</span>
               <span>{script.sections.length} acts</span>
@@ -93,13 +93,13 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
           {/* Logline */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Logline</span></div>
-            <p style={{ fontSize: 13, lineHeight: 1.7 }}>{script.logline}</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{script.logline}</p>
           </div>
 
           {/* Opening hook */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Opening Hook</span></div>
-            <p style={{ fontSize: 13, lineHeight: 1.7 }}>{script.opening_hook}</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{script.opening_hook}</p>
           </div>
 
           {/* Acts */}
@@ -115,7 +115,7 @@ export function ScriptViewer({ script }: ScriptViewerProps) {
           {/* Closing */}
           <div className="card" style={{ padding: "18px 20px", marginBottom: 16 }}>
             <div className="section-rule"><span>Closing Statement</span></div>
-            <p style={{ fontSize: 13, lineHeight: 1.7 }}>{script.closing_statement}</p>
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }}>{script.closing_statement}</p>
           </div>
 
           {/* Research Dossier */}
@@ -168,7 +168,7 @@ function ActCard({
               background: "var(--color-action)",
               color: "#fff",
               borderRadius: 4,
-              fontSize: 11,
+              fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
               fontWeight: 500,
               display: "flex",
               alignItems: "center",
@@ -178,12 +178,12 @@ function ActCard({
           >
             {section.section_number}
           </span>
-          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>
+          <span style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500, color: "var(--color-text-primary)" }}>
             {section.title}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+          <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
             {Math.round(section.estimated_seconds / 60)} min
           </span>
           {isOpen
@@ -194,7 +194,7 @@ function ActCard({
 
       {isOpen && (
         <div style={{ padding: "16px 20px 20px", borderTop: "0.5px solid var(--color-border-tertiary)" }}>
-          <p style={{ fontSize: 13, lineHeight: 1.8 }}>{section.narration}</p>
+          <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.8 }}>{section.narration}</p>
         </div>
       )}
     </div>
@@ -251,7 +251,7 @@ function SourcesAppendix({ sources }: { sources: FinalScript["sources"] }) {
                 justifyContent: "center",
                 background: "var(--color-border-tertiary)",
                 borderRadius: 4,
-                fontSize: 11,
+                fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                 fontWeight: 600,
                 color: "var(--color-text-secondary)",
                 marginTop: 1,
@@ -269,7 +269,7 @@ function SourcesAppendix({ sources }: { sources: FinalScript["sources"] }) {
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
-                      fontSize: 13,
+                      fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)",
                       fontWeight: 500,
                       color: "var(--color-action)",
                       textDecoration: "none",
@@ -279,7 +279,7 @@ function SourcesAppendix({ sources }: { sources: FinalScript["sources"] }) {
                     {src.title} ↗
                   </a>
                 ) : (
-                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", wordBreak: "break-word" }}>
+                  <span style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 500, color: "var(--color-text-primary)", wordBreak: "break-word" }}>
                     {src.title}
                   </span>
                 )}
@@ -287,7 +287,7 @@ function SourcesAppendix({ sources }: { sources: FinalScript["sources"] }) {
                 {src.credibility && (
                   <span
                     style={{
-                      fontSize: 10,
+                      fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                       fontWeight: 600,
                       textTransform: "uppercase",
                       letterSpacing: "0.06em",
@@ -305,14 +305,14 @@ function SourcesAppendix({ sources }: { sources: FinalScript["sources"] }) {
 
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 {src.type && (
-                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", textTransform: "capitalize" }}>
+                  <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", textTransform: "capitalize" }}>
                     {src.type.replace(/_/g, " ")}
                   </span>
                 )}
                 {src.url && (
                   <span
                     style={{
-                      fontSize: 11,
+                      fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                       color: "var(--color-text-tertiary)",
                       overflow: "hidden",
                       textOverflow: "ellipsis",

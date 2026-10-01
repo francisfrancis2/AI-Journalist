@@ -132,7 +132,7 @@ function ResearchReportThread({ session }: { session: ResearchSession }) {
           background: "var(--color-background-primary)",
         }}
       >
-        <p style={{ fontSize: 12, fontWeight: 500 }}>Report</p>
+        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 500 }}>Report</p>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 18, padding: "18px 18px 20px" }}>
         {session.turns.map((turn, index) => {
@@ -145,24 +145,24 @@ function ResearchReportThread({ session }: { session: ResearchSession }) {
               style={{ display: "flex", flexDirection: "column", gap: 10 }}
             >
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: 0 }}>
+                <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: 0 }}>
                   Report update {index + 1}
                 </span>
-                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
                   <TurnStatusLabel status={turn.status} />
                 </span>
                 {turn.completed_at && (
-                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                  <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
                     {formatDistanceToNow(new Date(turn.completed_at), { addSuffix: true })}
                   </span>
                 )}
                 {turn.web_search_requests > 0 && (
-                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                  <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
                     {turn.web_search_requests} web {turn.web_search_requests === 1 ? "search" : "searches"}
                   </span>
                 )}
                 {turn.error_message && (
-                  <span style={{ fontSize: 11, color: "var(--color-danger)" }}>
+                  <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-danger)" }}>
                     {turn.error_message}
                   </span>
                 )}
@@ -189,7 +189,7 @@ function ResearchReportThread({ session }: { session: ResearchSession }) {
                     alignItems: "center",
                     gap: 8,
                     color: "var(--color-text-secondary)",
-                    fontSize: 12,
+                    fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                     background: "#fff",
                     border: "0.5px solid var(--color-border-tertiary)",
                     borderRadius: 8,
@@ -218,8 +218,8 @@ function ResearchLinksList({ citations }: { citations: ResearchCitation[] }) {
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", marginBottom: 10 }}>
-        <p style={{ fontSize: 12, fontWeight: 500 }}>Research links</p>
-        <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", fontWeight: 500 }}>Research links</p>
+        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
           {citations.length} {citations.length === 1 ? "link" : "links"}
         </p>
       </div>
@@ -232,7 +232,7 @@ function ResearchLinksList({ citations }: { citations: ResearchCitation[] }) {
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                fontSize: 12,
+                fontSize: "var(--text-xs)",
                 color: "var(--color-action)",
                 display: "flex",
                 gap: 6,
@@ -249,7 +249,7 @@ function ResearchLinksList({ citations }: { citations: ResearchCitation[] }) {
           ))}
         </div>
       ) : (
-        <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+        <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
           Links will appear here when research returns citations.
         </p>
       )}
@@ -516,8 +516,8 @@ function ResearchPageInner() {
         }}
       >
         <div>
-          <span style={{ fontSize: 18, fontWeight: 500 }}>Research Hub</span>
-          <span style={{ fontSize: 12, color: "var(--color-text-secondary)", marginLeft: 10 }}>
+          <span style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500 }}>Research Hub</span>
+          <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)", marginLeft: 10 }}>
             Run research on any topic. Follow up to extend, refine, or remove content.
           </span>
         </div>
@@ -527,7 +527,7 @@ function ResearchPageInner() {
         {/* Sessions sidebar */}
         <div className="card" style={{ padding: "16px 18px", height: "fit-content" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--color-text-secondary)" }}>
+            <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--color-text-secondary)" }}>
               Sessions
             </span>
             <button
@@ -537,7 +537,7 @@ function ResearchPageInner() {
                 setSessionRecoveryNotice(null);
                 selectSession(null);
               }}
-              style={{ padding: "4px 10px", fontSize: 12 }}
+              style={{ padding: "4px 10px", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}
             >
               <Plus size={12} /> New
             </button>
@@ -547,7 +547,7 @@ function ResearchPageInner() {
               <Loader2 size={16} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
             </div>
           ) : (sessionsQuery.data?.length ?? 0) === 0 ? (
-            <p style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+            <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
               No saved research yet. Start one on the right.
             </p>
           ) : (
@@ -576,7 +576,7 @@ function ResearchPageInner() {
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <p
                         style={{
-                          fontSize: 12,
+                          fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)",
                           fontWeight: isActive ? 500 : 400,
                           color: "var(--color-text-primary)",
                           overflow: "hidden",
@@ -586,7 +586,7 @@ function ResearchPageInner() {
                       >
                         {session.title}
                       </p>
-                      <p style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 2, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                      <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 2, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                         {session.status === "running" && (
                           <span style={{ color: "var(--color-action)", display: "inline-flex", alignItems: "center", gap: 3 }}>
                             <Loader2 size={9} className="animate-spin" /> Running
@@ -636,8 +636,8 @@ function ResearchPageInner() {
             />
           ) : sessionQuery.isError ? (
             <div style={{ maxWidth: 620, margin: "0 auto", padding: "56px 0", display: "flex", flexDirection: "column", gap: 12, alignItems: "center", textAlign: "center" }}>
-              <p style={{ fontSize: 16, fontWeight: 500 }}>Research session could not be opened</p>
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+              <p style={{ fontSize: "var(--text-md)", lineHeight: "var(--text-md-lh)", fontWeight: 500 }}>Research session could not be opened</p>
+              <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
                 {sessionErrorMessage || "This saved session is unavailable. Pick another session or start a new one."}
               </p>
               <button
@@ -710,10 +710,10 @@ function ProgressIndicator({
       <Loader2 size={16} className="animate-spin" style={{ color: "var(--color-action)", flexShrink: 0, marginTop: 2 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", marginBottom: 6 }}>
-          <p style={{ fontSize: 12, color: "var(--color-text-primary)", fontWeight: 500 }}>{label}</p>
-          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>{progress.percent}%</p>
+          <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-primary)", fontWeight: 500 }}>{label}</p>
+          <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>{progress.percent}%</p>
         </div>
-        <p style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 8, color: "var(--color-text-secondary)" }}>
+        <p style={{ fontSize: "var(--text-xs)", lineHeight: 1.6, marginBottom: 8, color: "var(--color-text-secondary)" }}>
           {description}
         </p>
         <div
@@ -739,15 +739,15 @@ function ProgressIndicator({
             }}
           />
         </div>
-        <p style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 6 }}>{progress.stage}</p>
+        <p style={{ fontSize: "var(--text-xs)", lineHeight: 1.6, marginBottom: 6 }}>{progress.stage}</p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+          <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
             Estimated total {formatResearchDuration(RESEARCH_ESTIMATE_SECONDS)}
           </span>
-          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+          <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
             Elapsed {formatResearchDuration(progress.elapsedSeconds)}
           </span>
-          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+          <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
             {progress.remainingSeconds > 0
               ? `About ${formatResearchDuration(progress.remainingSeconds)} remaining`
               : "Finalizing now"}
@@ -778,8 +778,8 @@ function EmptyStatePrompt({
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", padding: "32px 0", display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontSize: 18, fontWeight: 500, marginBottom: 6 }}>Start a new research session</p>
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+        <p style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500, marginBottom: 6 }}>Start a new research session</p>
+        <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
           Ask anything. You can follow up to extend the research, refine it, or remove parts you don&apos;t need.
         </p>
       </div>
@@ -793,13 +793,13 @@ function EmptyStatePrompt({
       )}
 
       {statusNotice && !isWorking && (
-        <p role="status" style={{ fontSize: 12, color: "var(--color-success)" }}>
+        <p role="status" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-success)" }}>
           {statusNotice}
         </p>
       )}
 
       {error && (
-        <p role="alert" style={{ fontSize: 12, color: "var(--color-danger)" }}>
+        <p role="alert" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-danger)" }}>
           {error}
         </p>
       )}
@@ -811,11 +811,11 @@ function EmptyStatePrompt({
           className="input"
           rows={5}
           placeholder="e.g., Latest trends in EV battery recycling in Europe — who's leading, what's the regulatory landscape, and what's still unresolved."
-          style={{ resize: "vertical", minHeight: 140, lineHeight: 1.6, fontSize: 13 }}
+          style={{ resize: "vertical", minHeight: 140, lineHeight: 1.6, fontSize: "var(--text-sm)" }}
           disabled={isWorking}
         />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+          <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
             Be specific about geography, time window, and angle for sharper sources.
           </p>
           <button type="submit" className="btn-primary" disabled={!promptText.trim() || isWorking}>
@@ -882,8 +882,8 @@ function ActiveSessionView({
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <p style={{ fontSize: 18, fontWeight: 500, marginBottom: 4 }}>{session.title}</p>
-          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+          <p style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500, marginBottom: 4 }}>{session.title}</p>
+          <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
             {session.turns.length} {session.turns.length === 1 ? "prompt" : "prompts"} ·{" "}
             {dedupedCitations.length} {dedupedCitations.length === 1 ? "citation" : "citations"} ·{" "}
             {session.web_search_requests} web searches
@@ -913,7 +913,7 @@ function ActiveSessionView({
         <p
           role="status"
           style={{
-            fontSize: 11,
+            fontSize: "var(--text-xs)",
             lineHeight: 1.5,
             color: linkExportNotice.tone === "success" ? "var(--color-success)" : "var(--color-danger)",
           }}
@@ -929,11 +929,11 @@ function ActiveSessionView({
           className="input"
           rows={4}
           placeholder="Refine, extend, or remove. Try 'extend to cover Asia', 'add 2025 data', or 'remove the regulatory section'."
-          style={{ resize: "vertical", minHeight: 100, lineHeight: 1.6, fontSize: 13 }}
+          style={{ resize: "vertical", minHeight: 100, lineHeight: 1.6, fontSize: "var(--text-sm)" }}
           disabled={isWorking}
         />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+          <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
             Follow-ups merge into the consolidated report — no need to repeat the original prompt.
           </p>
           <button type="submit" className="btn-primary" disabled={!promptText.trim() || isWorking}>
@@ -956,7 +956,7 @@ function ActiveSessionView({
       )}
 
       {statusNotice && !isRunning && (
-        <p role="status" style={{ fontSize: 12, color: "var(--color-success)" }}>
+        <p role="status" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-success)" }}>
           {statusNotice}
         </p>
       )}
@@ -971,7 +971,7 @@ function ActiveSessionView({
             borderRadius: 10,
             padding: "20px 24px",
             color: "var(--color-text-secondary)",
-            fontSize: 13,
+            fontSize: "var(--text-sm)",
             lineHeight: 1.6,
           }}
         >
@@ -982,7 +982,7 @@ function ActiveSessionView({
       <ResearchLinksList citations={dedupedCitations} />
 
       {(error || (isFailed && session.error_message)) && (
-        <p role="alert" style={{ fontSize: 12, color: "var(--color-danger)" }}>
+        <p role="alert" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-danger)" }}>
           {error || session.error_message}
         </p>
       )}
