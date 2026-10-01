@@ -111,7 +111,7 @@ export function YouTubeResearchPanel({
       </div>
 
       {notice && (
-        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: notice.tone === "success" ? "var(--color-success, #1baf7a)" : "var(--color-danger, #e34948)" }}>
+        <p style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: notice.tone === "success" ? "var(--color-success)" : "var(--color-danger)" }}>
           {notice.text}
         </p>
       )}
@@ -138,7 +138,7 @@ export function YouTubeResearchPanel({
               <div key={kw.keyword} style={{ display: "grid", gridTemplateColumns: "1fr 58px 44px", gap: 8, alignItems: "center", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kw.keyword}</div>
-                  <div style={{ height: 4, background: "var(--color-border, #e9eef6)", borderRadius: 3, marginTop: 3, overflow: "hidden" }}>
+                  <div style={{ height: 4, background: "var(--color-border-tertiary)", borderRadius: 3, marginTop: 3, overflow: "hidden" }}>
                     <span
                       style={{
                         display: "block",
