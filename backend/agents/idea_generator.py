@@ -343,11 +343,14 @@ class IdeaGeneratorAgent:
     """Researches, verifies, ranks, and returns exactly five supported ideas."""
 
     def __init__(self) -> None:
+        # Claude Opus 4.7 is a reasoning model: `temperature` was removed from
+        # its API and sending it returns 400 invalid_request_error. Every other
+        # agent here already omits it on Opus; this one was missed, which failed
+        # every generation with "Idea generation could not complete."
         llm = ChatAnthropic(
             model=settings.claude_opus_model,
             api_key=settings.anthropic_api_key,
             max_tokens=7000,
-            temperature=0.55,
         )
         self._structured_llm = llm.with_structured_output(CandidateSet)
         self._research = ResearchAgent()

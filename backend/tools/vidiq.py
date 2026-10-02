@@ -301,7 +301,16 @@ class VidIQTool:
             log.warning("vidiq.idea_trends_failed", error=str(exc)[:200])
         return None
 
-    async def _initialize(self, client: httpx.AsyncClient) -> Optional[str]:
+    async def _initialize(self, client: httpx.AsyncClient) -> tuple[bool, Optional[str]]:
+        """Open an MCP session. Returns (ok, session_id).
+
+        The two are separate signals and must not be conflated: vidIQ's server
+        does NOT return an Mcp-Session-Id header, so a successful handshake
+        yields session_id=None. Returning the bare session id made every caller
+        read that as an initialisation failure and abandon the request before
+        issuing a single tools/call — which is why YouTube demand silently came
+        back empty for every story.
+        """
         init = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -315,20 +324,20 @@ class VidIQTool:
         resp = await client.post(MCP_URL, json=init)
         if resp.status_code >= 400:
             log.warning("vidiq.init_failed", status=resp.status_code)
-            return None
+            return False, None
         session_id = resp.headers.get("mcp-session-id")
         await client.post(
             MCP_URL,
             json={"jsonrpc": "2.0", "method": "notifications/initialized"},
             headers={"Mcp-Session-Id": session_id} if session_id else {},
         )
-        return session_id
+        return True, session_id
 
     async def _build_idea_trends(
         self, client: httpx.AsyncClient, *, since: str, window_days: int
     ) -> Optional[dict[str, Any]]:
-        session_id = await self._initialize(client)
-        if session_id is None:
+        ok, session_id = await self._initialize(client)
+        if not ok:
             return None
 
         calls = [
@@ -401,8 +410,8 @@ class VidIQTool:
 
     async def _build_report(self, client: httpx.AsyncClient, topic: str,
                             seed: str) -> Optional[YouTubeDemandReport]:
-        session_id = await self._initialize(client)
-        if session_id is None:
+        ok, session_id = await self._initialize(client)
+        if not ok:
             return None
 
         kw_payload, session_id = await self._call_tool(

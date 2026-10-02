@@ -297,9 +297,6 @@ export default function IdeaGeneratorPage() {
                     </button>
                   ))}
                 </div>
-                <p style={{ margin: "10px 0 0", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-secondary)" }}>
-                  Fixed scope: UAE · business · English · last 30 days · exactly five verified ideas.
-                </p>
               </div>
               <button type="button" className="btn-primary" disabled={generate.isPending || !!isActive} onClick={() => generate.mutate({ requestedFormat: format })} style={{ minWidth: 170 }}>
                 {generate.isPending || isActive ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
@@ -321,7 +318,7 @@ export default function IdeaGeneratorPage() {
                       <strong style={{ fontWeight: 500 }}>{titleCase(run.stage)}</strong>
                     </div>
                     <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 4 }}>
-                      Coverage: {titleCase(run.coverage_level)} · Google Trends not configured in V2
+                      Coverage: {titleCase(run.coverage_level)}
                     </div>
                   </div>
                   <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>{run.stage_progress}%</span>
