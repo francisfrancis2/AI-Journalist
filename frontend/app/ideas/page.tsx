@@ -252,7 +252,13 @@ export default function IdeaGeneratorPage() {
     [run?.ideas, showDismissed]
   );
   const isActive = run && ["queued", "running"].includes(run.status);
-  const providers = Object.entries(run?.provider_statuses ?? {});
+  // Google Trends is deliberately unimplemented in V2 (enable_google_trends is
+  // false), so surfacing a permanent "Not Configured" chip is noise rather than
+  // signal. The backend still reports it in coverage_reasons, so coverage level
+  // stays honest.
+  const providers = Object.entries(run?.provider_statuses ?? {}).filter(
+    ([name]) => name !== "google_trends"
+  );
 
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
