@@ -363,10 +363,16 @@ class IdeaGeneratorAgent:
         # its API and sending it returns 400 invalid_request_error. Every other
         # agent here already omits it on Opus; this one was missed, which failed
         # every generation with "Idea generation could not complete."
+        # max_tokens must fit the whole CandidateSet in one response. At
+        # idea_generator_candidate_count=8, the schema's text fields alone can
+        # reach ~10.5k tokens before JSON overhead; the previous 7000 ceiling
+        # truncated the model mid-tool-call, so LangChain received empty tool
+        # arguments and every run died on "1 validation error for CandidateSet:
+        # candidates Field required [input_value={}]".
         llm = ChatAnthropic(
             model=settings.claude_opus_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=7000,
+            max_tokens=16000,
         )
         self._structured_llm = llm.with_structured_output(CandidateSet)
         self._research = ResearchAgent()
@@ -388,12 +394,12 @@ class IdeaGeneratorAgent:
                 deep=True,
                 include_vidiq=False,
                 rss_country="AE",
-                # The full Research Workspace budget (12 searches) has no
-                # wall-clock bound and routinely pushed this run past the
-                # watchdog's 30-minute staleness threshold, which then killed it
-                # with an unattributable "interrupted" message. Use the lighter
-                # pipeline cap.
-                deep_max_uses=settings.anthropic_deep_research_pipeline_max_uses,
+                # Deliberately NOT capped to the lighter pipeline budget. Doing
+                # so starved the evidence set: generate() requires >=2 distinct
+                # source domains and a reduced search budget tripped
+                # "insufficient_evidence". The watchdog problem this was meant
+                # to solve is handled by the wall-clock bound in _bounded()
+                # instead, which is the right lever for a time limit.
             ),
             VidIQTool().fetch_idea_trends(window_days=30),
         ))
@@ -474,6 +480,19 @@ class IdeaGeneratorAgent:
             if idea not in selected:
                 selected.append(idea)
         if len(selected) != settings.idea_generator_result_count:
+            # Carry the rejection tally into the error. Without it the failure
+            # reads as "insufficient_evidence" with no way to tell whether
+            # research was thin, the model produced duplicates, or verification
+            # rejected everything — three very different problems.
+            log.warning(
+                "idea_generator.insufficient_after_verification",
+                selected=len(selected),
+                required=settings.idea_generator_result_count,
+                accepted=len(accepted),
+                rejected=rejected,
+                sources=len(sources),
+                domains=len({s.domain for s in sources if s.domain}),
+            )
             raise RuntimeError("insufficient_evidence")
         for rank, idea in enumerate(selected, start=1):
             idea.rank = rank

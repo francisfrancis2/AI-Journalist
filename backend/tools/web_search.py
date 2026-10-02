@@ -20,11 +20,21 @@ _HIGH_CREDIBILITY_DOMAINS = {
     "reuters.com", "bloomberg.com", "ft.com", "wsj.com",
     "apnews.com", "bbc.com", "nytimes.com", "theguardian.com",
     "cnbc.com", "forbes.com", "economist.com",
+    # UAE / Gulf outlets and primary sources. Their absence made this a
+    # Western-only credibility model: every UAE source scored LOW, and the Idea
+    # Generator requires a non-low UAE source, so no candidate could ever pass
+    # verification in a product whose entire remit is UAE business.
+    "thenationalnews.com", "gulfnews.com", "khaleejtimes.com", "wam.ae",
+    "arabianbusiness.com", "zawya.com", "agbi.com", "arabnews.com",
+    "gulfbusiness.com", "thenational.ae",
 }
 
 _MEDIUM_CREDIBILITY_DOMAINS = {
     "techcrunch.com", "wired.com", "businessinsider.com",
     "axios.com", "politico.com", "theatlantic.com",
+    # Regional trade and business press.
+    "gccbusinessnews.com", "meed.com", "tradearabia.com",
+    "constructionweekonline.com", "logisticsmiddleeast.com",
 }
 
 
@@ -36,6 +46,10 @@ def _infer_credibility(url: Optional[str]) -> SourceCredibility:
         return SourceCredibility.HIGH
     if domain in _MEDIUM_CREDIBILITY_DOMAINS:
         return SourceCredibility.MEDIUM
+    if domain.endswith(".gov.ae") or domain.endswith(".ac.ae"):
+        return SourceCredibility.HIGH   # government / academic primary source
+    if domain.endswith(".ae"):
+        return SourceCredibility.MEDIUM  # UAE-registered publisher
     return SourceCredibility.LOW
 
 

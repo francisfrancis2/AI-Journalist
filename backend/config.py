@@ -142,7 +142,7 @@ class Settings(BaseSettings):
     # Wall-clock bound on the research phase. Must stay below the stale-pipeline
     # watchdog's STALE_THRESHOLD_MINUTES (30), so a slow run fails with an
     # attributable error instead of being swept up as "interrupted".
-    idea_generator_research_timeout_seconds: int = 900
+    idea_generator_research_timeout_seconds: int = 1500
 
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")
