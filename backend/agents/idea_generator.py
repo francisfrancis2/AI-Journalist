@@ -339,6 +339,22 @@ def _signal_digest(signals: list[PreparedSignal]) -> str:
     )
 
 
+
+async def _bounded(awaitable):
+    """Fail the research phase loudly rather than letting the watchdog sweep it.
+
+    Without a bound, a slow deep-research pass runs past the watchdog's 30-minute
+    staleness threshold and the run is marked failed with a generic "interrupted"
+    message that says nothing about the cause.
+    """
+    try:
+        return await asyncio.wait_for(
+            awaitable, timeout=settings.idea_generator_research_timeout_seconds
+        )
+    except asyncio.TimeoutError as exc:
+        raise RuntimeError("research_timed_out") from exc
+
+
 class IdeaGeneratorAgent:
     """Researches, verifies, ranks, and returns exactly five supported ideas."""
 
@@ -366,15 +382,21 @@ class IdeaGeneratorAgent:
             "filmable change. Keep discussion of the UAE, its government, rulers and institutions neutral "
             "or constructive; reject a topic if compliance would require hiding or distorting evidence."
         )
-        package, vidiq_raw = await asyncio.gather(
+        package, vidiq_raw = await _bounded(asyncio.gather(
             self._research.gather_package(
                 prompt=research_prompt,
                 deep=True,
                 include_vidiq=False,
                 rss_country="AE",
+                # The full Research Workspace budget (12 searches) has no
+                # wall-clock bound and routinely pushed this run past the
+                # watchdog's 30-minute staleness threshold, which then killed it
+                # with an unattributable "interrupted" message. Use the lighter
+                # pipeline cap.
+                deep_max_uses=settings.anthropic_deep_research_pipeline_max_uses,
             ),
             VidIQTool().fetch_idea_trends(window_days=30),
-        )
+        ))
         sources = _prepare_sources(package)
         signals = _prepare_signals(vidiq_raw)
         if len({source.domain for source in sources if source.domain}) < 2:

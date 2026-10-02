@@ -139,6 +139,10 @@ class Settings(BaseSettings):
     # Google Trends is deliberately not implemented in V2 yet. Keep this false
     # until a supported access route is added; the API reports partial coverage.
     enable_google_trends: bool = False
+    # Wall-clock bound on the research phase. Must stay below the stale-pipeline
+    # watchdog's STALE_THRESHOLD_MINUTES (30), so a slow run fails with an
+    # attributable error instead of being swept up as "interrupted".
+    idea_generator_research_timeout_seconds: int = 900
 
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")

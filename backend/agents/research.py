@@ -528,8 +528,13 @@ class ResearchAgent:
         include_vidiq: bool = False,
         vidiq_topic: str | None = None,
         rss_country: str = "US",
+        deep_max_uses: int | None = None,
     ) -> ResearchPackage:
-        """Gather the shared evidence package without generating a prose report."""
+        """Gather the shared evidence package without generating a prose report.
+
+        ``deep_max_uses`` caps Anthropic deep-research searches. Left unset it
+        uses the full Research Workspace budget, which is the slowest setting.
+        """
         topic = prompt.strip()
         state = {"topic": topic}
         duration_target = duration_target_for(None)
@@ -558,6 +563,7 @@ class ResearchAgent:
             duration_target=duration_target,
             deep=deep,
             deep_prompt=topic,
+            deep_max_uses=deep_max_uses,
             include_vidiq=include_vidiq,
             vidiq_topic=vidiq_topic,
             rss_country=rss_country,
