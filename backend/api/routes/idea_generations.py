@@ -186,7 +186,12 @@ async def _run_generation(run_id: uuid.UUID) -> None:
         result = await _get_agent().generate(idea_format)
     except Exception as exc:
         code = "insufficient_evidence" if str(exc) == "insufficient_evidence" else "generation_failed"
-        log.error("idea_generator.failed", run_id=str(run_id), code=code, error=str(exc)[:300])
+        # Flatten newlines: a pydantic ValidationError puts the offending field
+        # path on later lines, and the console renderer stops at the first one —
+        # which is why failures logged as a bare "1 validation error for X" with
+        # no indication of which field was at fault.
+        detail = " | ".join(str(exc).split("\n"))[:600]
+        log.error("idea_generator.failed", run_id=str(run_id), code=code, error=detail)
         async with AsyncSessionLocal() as db:
             run = await db.get(IdeaGenerationRunORM, run_id)
             if run is None:
