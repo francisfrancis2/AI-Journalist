@@ -153,12 +153,14 @@ class Settings(BaseSettings):
     cnbc_channel_handle: str = "@CNBCMakeIt"              # CNBC Make It
     vox_channel_handle: str = "@Vox"                      # Vox
     johnny_harris_channel_handle: str = "@johnnyharris"   # Johnny Harris
+    emirates_insider_channel_id: str = "UCJh2iRDP5TdaZLCCWJVOLqQ"  # Emirates Insider
 
     # Pattern cache paths per library
     bi_pattern_cache_path: str = "backend/data/bi_patterns.json"
     cnbc_pattern_cache_path: str = "backend/data/cnbc_patterns.json"
     vox_pattern_cache_path: str = "backend/data/vox_patterns.json"
     jh_pattern_cache_path: str = "backend/data/jh_patterns.json"
+    ei_pattern_cache_path: str = "backend/data/ei_patterns.json"
 
     bi_corpus_min_docs: int = 5           # min docs before patterns are considered valid
     benchmark_corpus_stale_after_days: int = 150
@@ -205,6 +207,7 @@ class Settings(BaseSettings):
             "cnbc": self.cnbc_pattern_cache_path,
             "vox": self.vox_pattern_cache_path,
             "jh": self.jh_pattern_cache_path,
+            "ei": self.ei_pattern_cache_path,
         }.get(library_key, f"backend/data/{library_key}_patterns.json")
 
     def get_channel_identifier(self, library_key: str) -> str:
@@ -214,6 +217,7 @@ class Settings(BaseSettings):
             "cnbc": self.cnbc_channel_handle,
             "vox": self.vox_channel_handle,
             "jh": self.johnny_harris_channel_handle,
+            "ei": self.emirates_insider_channel_id,
         }.get(library_key, "")
 
     @field_validator("claude_temperature")

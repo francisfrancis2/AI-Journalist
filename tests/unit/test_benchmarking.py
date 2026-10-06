@@ -67,7 +67,9 @@ async def test_corpus_builder_does_not_save_empty_library(db_session):
     from backend.models.benchmark import BIPatternLibraryORM
 
     class EmptyTranscriptFetcher:
-        async def get_channel_videos(self, channel_id: str, max_results: int) -> list[dict]:
+        async def get_channel_videos(
+            self, channel_id: str, max_results: int, published_after: str | None = None
+        ) -> list[dict]:
             return [
                 {
                     "id": "video-1",
@@ -138,7 +140,11 @@ async def test_corpus_build_expands_existing_library_to_target(
 
     class ExpansionFetcher:
         async def get_channel_videos(
-            self, channel_id: str, max_results: int, order: str = "viewCount"
+            self,
+            channel_id: str,
+            max_results: int,
+            order: str = "viewCount",
+            published_after: str | None = None,
         ) -> list[dict]:
             return [
                 {
@@ -249,7 +255,11 @@ async def test_corpus_refresh_replaces_only_one_quarter_with_fresh_videos(
             self.orders: list[str] = []
 
         async def get_channel_videos(
-            self, channel_id: str, max_results: int, order: str = "viewCount"
+            self,
+            channel_id: str,
+            max_results: int,
+            order: str = "viewCount",
+            published_after: str | None = None,
         ) -> list[dict]:
             self.orders.append(order)
             return [

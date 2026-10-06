@@ -445,9 +445,13 @@ class CorpusBuilderAgent:
         library_key: str = "bi",
         channel_label: str = "Business Insider",
         channel_identifier: Optional[str] = None,
+        published_after: Optional[str] = None,
     ) -> BIPatternLibrary:
         """
         Full corpus build pipeline for any supported channel. Skips videos already in DB.
+
+        ``published_after`` (ISO-8601) restricts the build to recent uploads, for
+        channels where only the current period is editorially relevant.
 
         Args:
             max_docs: Target usable reference docs for this component library.
@@ -499,7 +503,9 @@ class CorpusBuilderAgent:
             # 2. Fetch enough candidates to survive duplicate IDs and missing transcripts.
             candidate_limit = max(max_docs + 50, len(existing_ids) + (docs_needed * 2))
             videos = await self._fetcher.get_channel_videos(
-                channel_id=channel_id, max_results=candidate_limit
+                channel_id=channel_id,
+                max_results=candidate_limit,
+                published_after=published_after,
             )
             log.info(
                 "corpus_builder.videos_fetched",

@@ -180,11 +180,16 @@ class YouTubeFetcher:
         channel_id: Optional[str] = None,
         max_results: int = 50,
         order: str = "viewCount",
+        published_after: Optional[str] = None,
     ) -> list[dict]:
         """
         Fetch video metadata from a channel's uploads playlist, filtered to
         documentary-length content and sorted by the requested order.
         Uses the uploads playlist (not search) to access all videos, not just top-50.
+
+        ``published_after`` is an ISO-8601 timestamp; uploads older than it are
+        skipped. Scanning stops once a page is wholly older than the cutoff,
+        since the uploads playlist is newest-first.
         """
         if order not in {"viewCount", "date"}:
             raise ValueError("YouTube video order must be 'viewCount' or 'date'")
@@ -222,7 +227,13 @@ class YouTubeFetcher:
                     id=",".join(video_ids),
                 ).execute()
 
+                page_all_older = bool(published_after)
                 for item in details_resp.get("items", []):
+                    published = item["snippet"].get("publishedAt") or ""
+                    if published_after:
+                        if published < published_after:
+                            continue
+                        page_all_older = False
                     duration = _parse_iso_duration(item["contentDetails"]["duration"])
                     if not (_MIN_DURATION_SECONDS <= duration <= _MAX_DURATION_SECONDS):
                         continue
@@ -236,6 +247,10 @@ class YouTubeFetcher:
                         "duration_seconds": duration,
                     })
 
+                # Uploads are newest-first, so once an entire page predates the
+                # cutoff there is nothing older worth scanning.
+                if published_after and page_all_older:
+                    break
                 page_token = playlist_resp.get("nextPageToken")
                 if not page_token:
                     break

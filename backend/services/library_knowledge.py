@@ -23,7 +23,7 @@ from backend.models.benchmark import (
 
 log = structlog.get_logger(__name__)
 
-_LIBRARY_KEYS = ("bi", "cnbc", "vox", "jh")
+_LIBRARY_KEYS = ("bi", "cnbc", "vox", "jh", "ei")
 _SOURCE_NAME_RE = re.compile(
     r"\b(Business Insider|Insider Business|CNBC Make It|CNBC|Vox|Johnny Harris|BI)\b",
     re.IGNORECASE,

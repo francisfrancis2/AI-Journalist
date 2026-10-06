@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "doc_count": 14,
+  "avg_act_count": 3.79,
+  "avg_act_duration_seconds": 178.1,
+  "hook_type_distribution": {
+    "personal_story": 0.143,
+    "rhetorical_question": 0.143,
+    "bold_claim": 0.071,
+    "shocking_claim": 0.071,
+    "personal_confession": 0.071,
+    "personal_problem_statement": 0.071,
+    "personal_statement": 0.071,
+    "anecdote": 0.071,
+    "rhetorical_statement_with_flaw": 0.071,
+    "cold_open_teaser": 0.071,
+    "teaser_montage": 0.071,
+    "stat": 0.071
+  },
+  "title_formula_distribution": {
+    "transformation_with_dollar_figures": 0.286,
+    "how_founder_achieved_milestone": 0.214,
+    "question_hook": 0.214,
+    "location_plus_bold_claim": 0.143,
+    "authority_expert_plus_pain_point": 0.071,
+    "how_close_are_we_frontier": 0.071
+  },
+  "closing_device_distribution": {
+    "aspirational_vision": 0.214,
+    "future_vision_payoff_or_pivot": 0.214,
+    "founder_advice_or_philosophy": 0.143,
+    "rhetorical_question_or_open_ended": 0.143,
+    "numbered_action_list": 0.071,
+    "motivational_perseverance_reflection": 0.071,
+    "partial_resolution_answer_to_title": 0.071,
+    "forward_looking_goal": 0.071
+  },
+  "avg_stat_count": 7.79,
+  "avg_rhetorical_questions": 2.43,
+  "human_story_act_avg": 1.57,
+  "sample_hooks": [
+    "The biggest misconception about solar is that it has to look like solar.",
+    "Dubai police put a robot police officer on the streets and it's not a prototype. It's a fully autonomous patrol vehicle with no driver, no remote control, and nobody watching it from a van down the road.",
+    "I'm not vegan or vegetarian. Might surprise some of you, but I reduced my meat consumption by over 90%.",
+    "Solar is the cheapest electricity humans have ever made. But it has one fatal flaw. The moment the sun sets, it makes nothing.",
+    "Think about the last thing you ate. Seriously, picture it. Now, ask yourself where it came from. Not the restaurant, not the supermarket, where did it actually come from?"
+  ],
+  "sample_titles": [
+    "How He's Turning Dates Into a $131K Superfood Business",
+    "How Late Night Cravings Inspired a $1M Food Tech Startup",
+    "He Spent $2.5M Making Solar Panels Invisible... Now His Company Makes $41M/YR",
+    "Dubai Put A Robot Police Officer On The Streets?!",
+    "Can Solar Really Cut Your Electricity Bill?",
+    "He Turned $2,700 Into A $15Mn Ai Coaching Startup",
+    "How He Raised $6.5M to Build the Region's First Plant-Based Meat Factory",
+    "Can the UAE Feed Itself If Food Imports Stop?",
+    "Finance Expert Answers Why Your Business Isn’t As Fundable As You Think",
+    "They Turned A Tiny Cleaning Tablet Into A $1M Business",
+    "He Raised $297M to Farm in the Desert",
+    "How a Dad Turned His Kid’s Snack Problem Into a $6M Business",
+    "Abu Dhabi Is Building a $6BN Machine to Beat the Night",
+    "How Close Are We to the World's First Eye Transplant?"
+  ]
+}
