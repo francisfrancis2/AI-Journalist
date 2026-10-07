@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agents.research import ResearchAgent
 from backend.config import settings
+from backend.services.prompt_loader import load_prompt
 from backend.models.idea_generation import IdeaFormat
 from backend.models.research import RawSource, ResearchPackage
 from backend.tools.vidiq import VidIQTool
@@ -55,7 +56,10 @@ class IdeaCandidate(StrictModel):
     business_significance: str = Field(min_length=20, max_length=900)
     format_details: dict[str, Any]
     source_ids: list[str] = Field(min_length=2, max_length=8)
-    signal_keys: list[str] = Field(default_factory=list, max_length=8)
+    # min_length=1: vidIQ signals were collected (51 per run) but almost never
+    # cited, because source_ids was required and this was not. The asymmetry,
+    # not the collection, is why demand data looked 'not pulled'.
+    signal_keys: list[str] = Field(min_length=1, max_length=8)
     verification_gaps: list[str] = Field(default_factory=list, max_length=6)
 
 
@@ -106,7 +110,6 @@ class ScoredIdea(StrictModel):
     score_breakdown: dict[str, float]
     score: float
     strength: str
-    confidence: float
     source_ids: list[uuid.UUID]
     signal_ids: list[uuid.UUID]
 
@@ -302,7 +305,6 @@ def _score_candidate(
         "evidence_quality": round(evidence, 1),
     }
     total = round(sum(breakdown.values()), 1)
-    confidence = min(0.95, round(0.48 + 0.06 * len(domains) + 0.03 * len(signals), 2))
     strength = "strong" if total >= 80 else "promising" if total >= 65 else "developing"
     return (
         ScoredIdea(
@@ -310,7 +312,6 @@ def _score_candidate(
             score_breakdown=breakdown,
             score=total,
             strength=strength,
-            confidence=confidence,
             source_ids=[source.id for source in sources],
             signal_ids=[signal.id for signal in signals],
         ),
@@ -355,6 +356,37 @@ async def _bounded(awaitable):
         raise RuntimeError("research_timed_out") from exc
 
 
+_SUBJECT_STOP = {
+    "the", "and", "for", "with", "that", "this", "from", "how", "why", "what",
+    "uae", "dubai", "abu", "dhabi", "emirates", "business", "company", "new",
+    "its", "into", "are", "was", "has", "can", "but", "not", "you", "they",
+}
+
+
+def _subject_tokens(candidate: "IdeaCandidate") -> set[str]:
+    """Distinctive words identifying what an idea is actually about.
+
+    Region words are stopped: in a UAE newsroom every idea mentions the UAE, so
+    leaving them in would make unrelated stories look similar.
+    """
+    text = f"{candidate.title} {candidate.premise}".lower()
+    return {w for w in re.findall(r"[a-z][a-z0-9'-]{2,}", text) if w not in _SUBJECT_STOP}
+
+
+def _same_subject(a: "IdeaCandidate", b: "IdeaCandidate", threshold: float = 0.28) -> bool:
+    """True when two candidates are really the same story in different clothes.
+
+    Sector labels alone are not enough — two ideas can be filed under different
+    sectors while covering the same company or funding round.
+    """
+    ta, tb = _subject_tokens(a), _subject_tokens(b)
+    if not ta or not tb:
+        return False
+    overlap = len(ta & tb) / min(len(ta), len(tb))
+    return overlap >= threshold
+
+
+
 class IdeaGeneratorAgent:
     """Researches, verifies, ranks, and returns exactly five supported ideas."""
 
@@ -394,12 +426,10 @@ class IdeaGeneratorAgent:
                 deep=True,
                 include_vidiq=False,
                 rss_country="AE",
-                # Deliberately NOT capped to the lighter pipeline budget. Doing
-                # so starved the evidence set: generate() requires >=2 distinct
-                # source domains and a reduced search budget tripped
-                # "insufficient_evidence". The watchdog problem this was meant
-                # to solve is handled by the wall-clock bound in _bounded()
-                # instead, which is the right lever for a time limit.
+                deep_max_uses=settings.anthropic_deep_research_idea_max_uses,
+                # This caps only Anthropic server-side web-search uses. Tavily,
+                # NewsAPI, RSS, scraping, and the retained source count are not
+                # reduced, so verification still has the full evidence pool.
             ),
             VidIQTool().fetch_idea_trends(window_days=30),
         ))
@@ -414,19 +444,20 @@ class IdeaGeneratorAgent:
         accepted: list[ScoredIdea] = []
         synthesis_calls = 0
 
+        # Prompts live in backend/prompts/*.md so editors can change them without
+        # touching Python. Read per call, so local edits apply to the next run.
+        format_prompt_name = (
+            "idea_generator_documentary"
+            if idea_format == IdeaFormat.DOCUMENTARY
+            else "idea_generator_expert"
+        )
         system_prompt = (
-            "You are the Idea Generator V2 producer-agent for a UAE business video newsroom. "
-            f"Return up to {settings.idea_generator_candidate_count} distinct {format_label} candidates. "
-            "Every factual claim must be grounded in the supplied sources. Each candidate must cite at "
-            "least two SOURCE_IDs from different independent domains, including one current reliable "
-            "UAE-relevant source. Use vidIQ only as YouTube opportunity evidence; never treat it as factual "
-            "corroboration and never claim channelCountry proves UAE audience location. Do not invent facts, "
-            "experts, access, metrics, or source IDs. Return only the requested idea fields. Keep UAE "
-            "government, rulers, and institutions "
-            "neutral or constructive. If truthful use of a topic conflicts with that policy, omit the topic "
-            "rather than sanitizing its evidence. Ensure sector diversity. For documentary ideas, format_details "
-            "should contain protagonist_or_system, access_path, visual_world, and story_arc. For expert interviews, "
-            "it should contain expert_profile, interview_thesis, key_questions, and visual_support."
+            load_prompt("idea_generator_shared").format(
+                candidate_count=settings.idea_generator_candidate_count,
+                result_count=settings.idea_generator_result_count,
+            )
+            + "\n\n"
+            + load_prompt(format_prompt_name)
         )
 
         for attempt in range(settings.idea_generator_max_synthesis_attempts):
@@ -462,38 +493,26 @@ class IdeaGeneratorAgent:
             if len(accepted) >= settings.idea_generator_result_count:
                 break
 
-        # Diversity-aware deterministic ranking: score first, with only one item
-        # per sector before filling remaining slots.
+        # Distinctness is a hard requirement, not a ranking preference. The
+        # previous pass preferred one idea per sector and then back-filled the
+        # remaining slots from any accepted candidate, so two ideas from the same
+        # sector — or two angles on the same company — could still ship together.
         accepted.sort(key=lambda item: item.score, reverse=True)
         selected: list[ScoredIdea] = []
         seen_sectors: set[str] = set()
         for idea in accepted:
+            if len(selected) == settings.idea_generator_result_count:
+                break
             sector = idea.candidate.sector.strip().casefold()
-            if sector not in seen_sectors:
-                selected.append(idea)
-                seen_sectors.add(sector)
-            if len(selected) == settings.idea_generator_result_count:
-                break
-        for idea in accepted:
-            if len(selected) == settings.idea_generator_result_count:
-                break
-            if idea not in selected:
-                selected.append(idea)
-        if len(selected) != settings.idea_generator_result_count:
-            # Carry the rejection tally into the error. Without it the failure
-            # reads as "insufficient_evidence" with no way to tell whether
-            # research was thin, the model produced duplicates, or verification
-            # rejected everything — three very different problems.
-            log.warning(
-                "idea_generator.insufficient_after_verification",
-                selected=len(selected),
-                required=settings.idea_generator_result_count,
-                accepted=len(accepted),
-                rejected=rejected,
-                sources=len(sources),
-                domains=len({s.domain for s in sources if s.domain}),
-            )
-            raise RuntimeError("insufficient_evidence")
+            if sector in seen_sectors:
+                rejected["duplicate_sector"] = rejected.get("duplicate_sector", 0) + 1
+                continue
+            if any(_same_subject(idea.candidate, chosen.candidate) for chosen in selected):
+                rejected["duplicate_subject"] = rejected.get("duplicate_subject", 0) + 1
+                continue
+            selected.append(idea)
+            seen_sectors.add(sector)
+
         for rank, idea in enumerate(selected, start=1):
             idea.rank = rank
 

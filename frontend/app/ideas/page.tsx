@@ -67,7 +67,7 @@ function IdeaCard({
           <div style={{ display: "flex", flexWrap: "wrap", gap: 7, alignItems: "center", marginBottom: 7 }}>
             <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>#{idea.rank}</span>
             <span className="chip" style={{ padding: "3px 9px", cursor: "default" }}>{idea.sector}</span>
-            <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-success)" }}>{idea.strength} · {Math.round(idea.confidence * 100)}% confidence</span>
+            <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-success)" }}>{idea.strength}</span>
           </div>
           <h2 style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", margin: 0 }}>{idea.title}</h2>
         </div>

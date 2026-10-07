@@ -7,6 +7,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from backend.config import settings
+from backend.models.research import ResearchPackage
+from backend.services.research_report import ResearchReportSynthesizer
 from backend.tools.anthropic_deep_research import (
     AnthropicDeepResearchTool,
     DeepResearchCitation,
@@ -14,6 +17,13 @@ from backend.tools.anthropic_deep_research import (
     _merge_citations,
     _remove_recommended_next_steps,
 )
+
+
+def _sent_text(mock_client: AsyncMock) -> str:
+    content = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
+    if isinstance(content, str):
+        return content
+    return "\n".join(block.get("text", "") for block in content)
 
 
 def _make_text_block(text: str, citations: list[dict] | None = None) -> MagicMock:
@@ -118,10 +128,16 @@ async def test_run_standalone_returns_report_and_citations(mocker):
     assert result.web_search_requests == 3
     assert [c.url for c in result.citations] == ["https://example.com/a"]
     # Standalone prompt should not reference 'existing report'
-    sent_instruction = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
+    request = mock_client.messages.create.call_args.kwargs
+    sent_instruction = _sent_text(mock_client)
     assert "Latest EV battery trends" in sent_instruction
     assert "existing consolidated report" not in sent_instruction.lower()
     assert "## Recommended Next Steps" not in sent_instruction
+    assert request["model"] == settings.claude_model
+    assert request["tools"][0]["max_uses"] == 12
+    assert request["messages"][0]["content"][0]["cache_control"] == {
+        "type": "ephemeral"
+    }
 
 
 @pytest.mark.asyncio
@@ -154,7 +170,7 @@ Findings here.
     )
 
     assert "Germany" in result.report_markdown
-    sent_instruction = mock_client.messages.create.call_args.kwargs["messages"][0]["content"]
+    sent_instruction = _sent_text(mock_client)
     assert "Existing consolidated report" in sent_instruction
     assert "Findings here." in sent_instruction
     assert "This legacy section must not enter the prompt" not in sent_instruction
@@ -162,6 +178,59 @@ Findings here.
     assert "Extend to cover Germany" in sent_instruction
     # Existing citation should be presented to the model so it can keep it relevant
     assert "https://old.com" in sent_instruction
+
+
+@pytest.mark.asyncio
+async def test_deep_research_honors_explicit_lower_search_budget(mocker):
+    tool = AnthropicDeepResearchTool()
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        return_value=_make_response("# Research Report\n\nFindings.", citations=[])
+    )
+    mocker.patch.object(tool, "_client", mock_client)
+
+    await tool.run_standalone(prompt="UAE business", max_uses=3)
+
+    assert mock_client.messages.create.call_args.kwargs["tools"][0]["max_uses"] == 3
+
+
+def test_deep_research_path_budgets_keep_hub_depth():
+    assert settings.anthropic_deep_research_max_uses == 12
+    assert settings.anthropic_deep_research_pipeline_max_uses == 3
+    assert settings.anthropic_deep_research_idea_max_uses == 3
+    assert settings.anthropic_deep_research_enrichment_max_uses == 3
+
+
+def test_research_report_synthesizer_uses_sonnet(mocker):
+    constructor = mocker.patch("backend.services.research_report.ChatAnthropic")
+
+    ResearchReportSynthesizer()
+
+    assert constructor.call_args.kwargs["model"] == settings.claude_model
+
+
+@pytest.mark.asyncio
+async def test_research_report_synthesis_caches_accumulated_context():
+    synthesizer = ResearchReportSynthesizer.__new__(ResearchReportSynthesizer)
+    synthesizer._llm = MagicMock()
+    synthesizer._llm.ainvoke = AsyncMock(
+        return_value=MagicMock(content="# Research Report\n\nMerged findings.")
+    )
+    package = ResearchPackage(
+        topic="UAE business",
+        deep_research_report="# Research Report\n\nFresh evidence.",
+    )
+
+    await synthesizer.synthesize(
+        prompt="Extend the logistics section",
+        package=package,
+        existing_report="# Research Report\n\nExisting evidence.",
+    )
+
+    messages = synthesizer._llm.ainvoke.call_args.args[0]
+    assert messages[0].content[0]["cache_control"] == {"type": "ephemeral"}
+    assert "Existing evidence" in messages[0].content[0]["text"]
+    assert "Extend the logistics section" in messages[1].content
 
 
 @pytest.mark.asyncio

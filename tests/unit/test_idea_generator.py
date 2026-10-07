@@ -1,17 +1,23 @@
 """Focused tests for Idea Generator V2 contracts and deterministic validation."""
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 import uuid
 
 import pytest
 from pydantic import ValidationError
 
 from backend.agents.idea_generator import (
+    IdeaGeneratorAgent,
     IdeaCandidate,
     PreparedSignal,
     PreparedSource,
     _score_candidate,
 )
+from backend.config import settings
+from backend.models.idea_generation import IdeaFormat
+from backend.models.research import ResearchPackage
 
 
 def _source(reference_id: str, domain: str, *, uae: bool) -> PreparedSource:
@@ -115,3 +121,19 @@ async def test_vidiq_idea_trends_fail_open_when_disabled(monkeypatch) -> None:
     tool._api_key = None
     assert await tool.fetch_idea_trends() is None
 
+
+@pytest.mark.asyncio
+async def test_idea_generator_passes_three_search_deep_research_budget(mocker) -> None:
+    agent = IdeaGeneratorAgent.__new__(IdeaGeneratorAgent)
+    gather = AsyncMock(return_value=ResearchPackage(topic="UAE business"))
+    agent._research = SimpleNamespace(gather_package=gather)
+    mocker.patch(
+        "backend.agents.idea_generator.VidIQTool.fetch_idea_trends",
+        new=AsyncMock(return_value=None),
+    )
+
+    with pytest.raises(RuntimeError, match="insufficient_evidence"):
+        await agent.generate(IdeaFormat.DOCUMENTARY)
+
+    assert gather.await_args.kwargs["deep_max_uses"] == 3
+    assert gather.await_args.kwargs["deep_max_uses"] == settings.anthropic_deep_research_idea_max_uses

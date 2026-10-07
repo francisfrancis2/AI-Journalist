@@ -617,7 +617,7 @@ class ResearchAgent:
             report_markdown=report,
             citations=citations,
             package=package,
-            model=settings.claude_opus_model,
+            model=settings.claude_model,
             web_search_requests=package.deep_research_web_search_requests,
         )
 

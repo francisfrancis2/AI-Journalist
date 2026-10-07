@@ -109,7 +109,6 @@ async def _persist_idea(db_session, *, idea_format: str) -> GeneratedIdeaORM:
         score_breakdown={"evidence_quality": 5},
         score=80,
         strength="strong",
-        confidence=0.8,
         coverage={"level": "partial"},
         verification_gaps=[],
         sources=[source],

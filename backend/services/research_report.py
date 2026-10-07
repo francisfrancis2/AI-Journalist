@@ -18,6 +18,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from backend.config import settings
 from backend.models.research import ResearchPackage
+from backend.services.llm_cache import cached_system
 from backend.tools.anthropic_deep_research import (
     DeepResearchCitation,
     _merge_citations,
@@ -65,13 +66,13 @@ def _structured_citations(package: ResearchPackage, limit: int = 40) -> list[Dee
 
 
 class ResearchReportSynthesizer:
-    """Single-call Opus synthesis of a consolidated research report."""
+    """Single-call Sonnet synthesis of a consolidated research report."""
 
     def __init__(self) -> None:
-        # Opus is a reasoning model and rejects `temperature`; omit it
-        # (matches AngleSynthesisSkill / ScriptwriterAgent config).
+        # Consolidating retrieved evidence is summarisation rather than the
+        # high-stakes editorial reasoning reserved for Opus.
         self._llm = ChatAnthropic(
-            model=settings.claude_opus_model,
+            model=settings.claude_model,
             api_key=settings.anthropic_api_key,
             max_tokens=settings.claude_max_tokens,
         )
@@ -113,29 +114,30 @@ class ResearchReportSynthesizer:
             return existing_report, merged_citations
 
         if existing_report:
-            task = f"""You are updating a consolidated research report in a documentary research hub.
+            task = f"""Determine the user's intent from their follow-up instruction and update the report:
 
-Determine the user's intent from their follow-up instruction and update the report:
 - EXTEND: integrate the new findings below into the relevant sections.
 - REMOVE: delete the requested information cleanly, leaving no dangling references.
 - REFINE: restructure, rephrase, or deepen the parts the user calls out.
-
-Existing consolidated report:
----
-{existing_report}
----
 
 User follow-up instruction:
 {prompt}
 """
         else:
-            task = f"""You are writing a consolidated research report for a documentary research hub.
+            task = f"Research request:\n{prompt}"
 
-Research request:
-{prompt}
-"""
+        # Put all accumulated evidence before the per-turn request and mark the
+        # block as cacheable. Retries and repeated downstream synthesis can now
+        # read the prefix cache instead of paying full input price again.
+        existing_context = (
+            "=== EXISTING CONSOLIDATED REPORT ===\n"
+            f"{existing_report}\n"
+            if existing_report
+            else ""
+        )
+        cached_context = f"""You are a meticulous documentary research editor writing a consolidated research report.
 
-        instructions = f"""{task}
+{existing_context}
 
 You have TWO evidence inputs to merge into ONE report. Do not output them
 separately — weave them together, deduplicating overlapping facts.
@@ -161,8 +163,8 @@ Rules:
         try:
             response = await self._llm.ainvoke(
                 [
-                    SystemMessage(content="You are a meticulous documentary research editor."),
-                    HumanMessage(content=instructions),
+                    SystemMessage(content=cached_system(cached_context)),
+                    HumanMessage(content=task),
                 ]
             )
             report = (response.content if isinstance(response.content, str) else str(response.content)).strip()

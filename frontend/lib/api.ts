@@ -571,7 +571,6 @@ export interface GeneratedIdea {
   score_breakdown: Record<string, number>;
   score: number;
   strength: string;
-  confidence: number;
   coverage: { level?: string; reasons?: string[] };
   verification_gaps: string[];
   state: IdeaState;

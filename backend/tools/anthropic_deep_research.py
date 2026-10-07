@@ -20,6 +20,7 @@ from anthropic import AsyncAnthropic
 from pydantic import BaseModel, Field
 
 from backend.config import settings
+from backend.services.llm_cache import cached_text
 
 log = structlog.get_logger(__name__)
 
@@ -126,9 +127,22 @@ class AnthropicDeepResearchTool:
 
     def __init__(self) -> None:
         self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-        self._model = settings.claude_opus_model
+        # Deep research is retrieval and evidence summarisation. Sonnet is the
+        # cost-efficient model for this job; Opus remains reserved for the
+        # editorial reasoning stages that actually need it.
+        self._model = settings.claude_model
 
-    async def _call(self, instructions: str, *, max_uses: int | None = None) -> DeepResearchResult:
+    async def _call(
+        self,
+        *,
+        cached_prefix: str,
+        request: str,
+        max_uses: int | None = None,
+    ) -> DeepResearchResult:
+        content = [
+            *cached_text(cached_prefix),
+            {"type": "text", "text": request},
+        ]
         response = await self._client.messages.create(
             model=self._model,
             max_tokens=settings.claude_max_tokens,
@@ -136,10 +150,14 @@ class AnthropicDeepResearchTool:
                 {
                     "type": "web_search_20250305",
                     "name": "web_search",
-                    "max_uses": max_uses or settings.anthropic_deep_research_max_uses,
+                    "max_uses": (
+                        max_uses
+                        if max_uses is not None
+                        else settings.anthropic_deep_research_max_uses
+                    ),
                 }
             ],
-            messages=[{"role": "user", "content": instructions}],
+            messages=[{"role": "user", "content": content}],
         )
         report, citations = _extract_text_and_citations(response.content)
         report = _remove_recommended_next_steps(report)
@@ -154,14 +172,11 @@ class AnthropicDeepResearchTool:
 
     async def run_standalone(self, *, prompt: str, max_uses: int | None = None) -> DeepResearchResult:
         """Generate the first consolidated research report from a free-form prompt."""
-        instructions = f"""You are running deep research for a documentary research hub.
+        cached_prefix = """You are running deep research for a documentary research hub.
 
 Use Anthropic web search as the primary research source. Search broadly, then narrow toward
 credible primary sources, official data, expert sources, reputable reporting, and recent
 developments.
-
-Research request:
-{prompt}
 
 Return a Markdown report with these sections (omit a section only when nothing applies):
 # Research Report
@@ -177,7 +192,11 @@ Rules:
 - Do not repeat the user's prompt in the report.
 - Do not include a recommended next steps section or user action checklist.
 - Do not invent sources or citations."""
-        return await self._call(instructions, max_uses=max_uses)
+        return await self._call(
+            cached_prefix=cached_prefix,
+            request=f"Research request:\n{prompt}",
+            max_uses=max_uses,
+        )
 
     async def resynthesize(
         self,
@@ -201,7 +220,10 @@ Rules:
         # nor output-generation tokens on follow-up turns.
         existing_report = _remove_recommended_next_steps(existing_report)
         existing_citation_block = _format_existing_citations_for_prompt(existing_citations)
-        instructions = f"""You are updating a consolidated research report in a documentary research hub.
+        # The accumulated report and citations are the large repeated prefix on
+        # retries/reuse. Mark them as the cache breakpoint and keep the new user
+        # instruction in a small uncached suffix.
+        cached_prefix = f"""You are updating a consolidated research report in a documentary research hub.
 
 The user has submitted a follow-up instruction. Determine the user's intent and update the report accordingly:
 - EXTEND: research new findings (use web search) and integrate them into the relevant sections.
@@ -218,9 +240,6 @@ Existing consolidated report:
 Existing citations already known to the report (do not re-list these unless they remain relevant):
 {existing_citation_block}
 
-User follow-up instruction:
-{prompt}
-
 Output requirements:
 - Return the FULL updated report in Markdown — not a diff, not just the new section. The output replaces the existing report verbatim.
 - Preserve the existing section structure where it still applies. Add or remove sections as needed.
@@ -229,4 +248,8 @@ Output requirements:
 - Do not include a recommended next steps section or user action checklist.
 - Do not invent sources or citations.
 - Do not include preamble or commentary outside the report itself."""
-        return await self._call(instructions)
+
+        return await self._call(
+            cached_prefix=cached_prefix,
+            request=f"User follow-up instruction:\n{prompt}",
+        )

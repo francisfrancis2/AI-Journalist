@@ -132,7 +132,6 @@ class GeneratedIdeaORM(Base):
     score_breakdown: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     score: Mapped[float] = mapped_column(Float, nullable=False)
     strength: Mapped[str] = mapped_column(String(24), nullable=False)
-    confidence: Mapped[float] = mapped_column(Float, nullable=False)
     coverage: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     verification_gaps: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     state: Mapped[str] = mapped_column(String(24), nullable=False, default=IdeaState.ACTIVE.value)
@@ -266,7 +265,6 @@ class GeneratedIdeaRead(StrictSchema):
     score_breakdown: dict[str, float]
     score: float
     strength: str
-    confidence: float
     coverage: dict[str, Any]
     verification_gaps: list[str]
     state: IdeaState

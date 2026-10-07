@@ -39,8 +39,9 @@ class Settings(BaseSettings):
     enable_anthropic_search: bool = True
     anthropic_search_max_uses_per_query: int = 3   # caps cost per query call
     anthropic_search_max_queries: int = 4          # caps how many planned queries we send
-    anthropic_deep_research_max_uses: int = 12     # caps Research Workspace deep research searches
-    anthropic_deep_research_pipeline_max_uses: int = 5  # lighter cap for the story pipeline research node (Research Tab keeps the full cap)
+    anthropic_deep_research_max_uses: int = 12     # Research Hub: depth is the product
+    anthropic_deep_research_pipeline_max_uses: int = 3  # Story path; all other source-provider limits stay unchanged
+    anthropic_deep_research_idea_max_uses: int = 3  # Idea Generator path; all other source-provider limits stay unchanged
 
     # ── Unified Research Agent (deep research always-on + writer enrichment) ───
     # When True, ResearchAgent.run always folds an Anthropic deep-research report
@@ -54,7 +55,7 @@ class Settings(BaseSettings):
     # the Research Tab already cover the evidence base.
     enable_writer_research_enrichment: bool = False
     research_enrichment_max_queries: int = 4              # caps queries per enrichment pass
-    anthropic_deep_research_enrichment_max_uses: int = 6  # lighter deep-research cap for enrichment
+    anthropic_deep_research_enrichment_max_uses: int = 3  # Story writer enrichment (when enabled)
 
     # ── Team voice profile ────────────────────────────────────────────────────
     # When True, Angles & Hooks / Chapter Writer / Scriptwriter / Chief Editor rewrite
@@ -133,8 +134,8 @@ class Settings(BaseSettings):
 
     # ── Idea Generator V2 ────────────────────────────────────────────────────
     enable_idea_generator: bool = True
-    idea_generator_candidate_count: int = 8
-    idea_generator_result_count: int = 5
+    idea_generator_candidate_count: int = 6
+    idea_generator_result_count: int = 3
     idea_generator_max_synthesis_attempts: int = 2
     # Google Trends is deliberately not implemented in V2 yet. Keep this false
     # until a supported access route is added; the API reports partial coverage.
