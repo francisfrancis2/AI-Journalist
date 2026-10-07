@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     enable_vidiq: bool = True
     vidiq_max_calls_per_story: int = 9       # hard spend cap (~45 credits/story)
     vidiq_keyword_fanout: int = 2            # related keywords also given a video search
-    vidiq_max_keywords: int = 20             # keywords kept in the report
+    vidiq_max_keywords: int = 10             # additional keywords kept beyond the seed
     vidiq_max_videos: int = 10               # videos kept in the report
     vidiq_min_video_seconds: int = 240       # 4 min — drops Shorts and clips
     vidiq_cache_ttl_seconds: int = 7 * 24 * 3600

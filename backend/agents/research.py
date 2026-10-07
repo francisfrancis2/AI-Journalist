@@ -46,7 +46,11 @@ from backend.tools.news_api import NewsAPITool
 from backend.tools.rss_parser import RSSParserTool
 from backend.tools.web_scraper import WebScraperTool
 from backend.tools.anthropic_search import AnthropicSearchTool
-from backend.tools.vidiq import VidIQTool, demand_report_to_sources
+from backend.tools.vidiq import (
+    VidIQTool,
+    demand_report_to_sources,
+    distill_search_seed,
+)
 from backend.tools.web_search import WebSearchTool
 
 log = structlog.get_logger(__name__)
@@ -470,9 +474,13 @@ class ResearchAgent:
         vidiq_key = None
         if include_vidiq and self._vidiq.enabled and package.youtube_demand is None:
             vidiq_key = "vidiq"
+            # Same distillation as the story path. rss_keyword is planner output
+            # tuned for feed filtering, not a YouTube search term, so it still
+            # produced sentence-shaped seeds on conversational prompts.
+            vidiq_seed = await distill_search_seed(vidiq_topic or topic)
             fetch_tasks[vidiq_key] = self._vidiq.fetch_demand_report(
                 topic=vidiq_topic or topic,
-                search_seed=rss_keyword or vidiq_topic or topic,
+                search_seed=vidiq_seed,
             )
 
         if not fetch_tasks:

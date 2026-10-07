@@ -171,6 +171,95 @@ def _video_search_keywords(keywords: list[YouTubeKeyword], seed_stems: set[str],
     return picked or keywords[:limit]
 
 
+
+# ── search-seed distillation ──────────────────────────────────────────────────
+
+# Anything longer than this is treated as a sentence rather than a search term.
+_MAX_SEED_WORDS = 5
+
+_SEED_SYSTEM = (
+    "You turn a documentary story brief into a YouTube search term.\n"
+    "Return ONLY the search term: two or three words, no punctuation, no quotes, "
+    "no explanation.\n"
+    "It must be what a viewer would actually type into YouTube to find videos on "
+    "this subject — not a description of the brief.\n"
+    "Drop instruction wording such as 'create a story about' and keep the subject.\n"
+    "Name the INDUSTRY or SUBJECT. Drop circumstantial modifiers — causes, "
+    "conflicts, timeframes, motivations — because a word like 'conflict' or "
+    "'crisis' outweighs the subject and returns general news instead.\n"
+    "Prefer two words over three. Measured against the live API, two-word seeds "
+    "return on-subject results while four-word seeds drift into general news.\n"
+    "Example brief: Create for me a story about logistics changes in UAE due to "
+    "regional conflict\n"
+    "Example answer: UAE logistics\n"
+    "Example brief: Why family offices are moving capital to Abu Dhabi after the "
+    "2026 rule change\n"
+    "Example answer: Abu Dhabi family offices"
+)
+
+
+# Abstract nouns that describe a *situation* rather than a subject. Measured
+# against the live API, appending one of these to a good two-word seed collapses
+# the result into general news: "UAE ports" returns Jebel Ali and Dubai trucking,
+# "UAE ports adaptation" returns geopolitics and world news. The model does not
+# reliably suppress them from the prompt alone, so strip them deterministically.
+_CIRCUMSTANTIAL = {
+    "adaptation", "adapting", "change", "changes", "crisis", "conflict", "shift",
+    "shifts", "impact", "impacts", "future", "challenge", "challenges", "trend",
+    "trends", "growth", "disruption", "transformation", "revolution", "boom",
+    "rise", "decline", "strategy", "outlook", "story", "overview", "analysis",
+}
+
+
+def _strip_circumstantial(seed: str) -> str:
+    """Drop situation words, but never reduce a seed below two words."""
+    words = seed.split()
+    kept = [w for w in words if w.lower().strip(",.") not in _CIRCUMSTANTIAL]
+    return " ".join(kept) if len(kept) >= 2 else seed
+
+
+
+async def distill_search_seed(prompt: str) -> str:
+    """Reduce a conversational brief to something vidIQ can actually search.
+
+    vidIQ's keyword tool expects a search term. Given a full sentence it returns
+    a zero-volume seed and an EMPTY relatedKeywords array — verified against the
+    live API — so the whole report comes back empty while still costing credits.
+
+    Short prompts are passed through untouched; only sentence-shaped briefs are
+    distilled. Falls back to the original prompt on any failure, so a distiller
+    outage degrades to today's behaviour rather than losing the call.
+    """
+    text = (prompt or "").strip()
+    if not text or len(text.split()) <= _MAX_SEED_WORDS:
+        return text
+
+    try:
+        from langchain_anthropic import ChatAnthropic
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        llm = ChatAnthropic(
+            model=settings.claude_haiku_model,
+            api_key=settings.anthropic_api_key,
+            max_tokens=24,
+            temperature=0,   # same brief must distil to the same seed
+        )
+        reply = await llm.ainvoke(
+            [SystemMessage(content=_SEED_SYSTEM), HumanMessage(content=text)]
+        )
+        raw = reply.content if isinstance(reply.content, str) else str(reply.content)
+        seed = " ".join(raw.strip().strip('"\'').split())
+        # A distiller that returns a sentence has not distilled anything.
+        seed = _strip_circumstantial(seed)
+        if seed and len(seed.split()) <= _MAX_SEED_WORDS:
+            log.info("vidiq.seed_distilled", seed=seed, words=len(seed.split()))
+            return seed
+        log.warning("vidiq.seed_distill_unusable", returned=seed[:80])
+    except Exception as exc:
+        log.warning("vidiq.seed_distill_failed", error=str(exc)[:200])
+    return text
+
+
 class VidIQTool:
     """Async vidIQ MCP client returning a YouTubeDemandReport. Never raises."""
 

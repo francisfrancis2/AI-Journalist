@@ -64,7 +64,11 @@ from backend.services.attachment_ingest import (
 from backend.services.duration_targets import WORDS_PER_MINUTE
 from backend.tools.anthropic_search import AnthropicSearchTool
 from backend.tools.news_api import NewsAPITool
-from backend.tools.vidiq import VidIQTool, demand_report_to_sources
+from backend.tools.vidiq import (
+    VidIQTool,
+    demand_report_to_sources,
+    distill_search_seed,
+)
 from backend.tools.web_search import WebSearchTool
 
 log = structlog.get_logger(__name__)
@@ -412,12 +416,20 @@ async def _fresh_research_context(message: str, topic: str) -> str:
 
 
 async def _fetch_initial_youtube_demand(topic: str) -> Optional[YouTubeDemandReport]:
-    """Fetch the one vidIQ snapshot allowed for a New Story lifecycle."""
+    """Fetch the one vidIQ snapshot allowed for a New Story lifecycle.
+
+    The story topic is a conversational brief ("Create for me a story about ..."),
+    which vidIQ cannot search: it returns a zero-volume seed and no related
+    keywords at all, producing an empty report that still costs credits. Distil
+    a search term first and pass it as the seed, keeping the brief as the
+    report's display topic.
+    """
     try:
         tool = VidIQTool()
         if not tool.enabled:
             return None
-        return await tool.fetch_demand_report(topic=topic)
+        search_seed = await distill_search_seed(topic)
+        return await tool.fetch_demand_report(topic=topic, search_seed=search_seed)
     except Exception as exc:
         log.warning("ideation.initial_vidiq_failed", error=str(exc)[:200])
         return None
