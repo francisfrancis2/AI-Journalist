@@ -292,6 +292,13 @@ async def _run_research_session_turn(session_id: uuid.UUID) -> None:
         prompt = (session.pending_prompt or "").strip()
         existing_report = session.report_markdown
         existing_citations = _orm_to_citations(session.citations)
+        completed_turns = [
+            turn
+            for turn in (session.turns or [])
+            if isinstance(turn, dict)
+            and turn.get("status") == ResearchSessionStatus.COMPLETED.value
+            and turn.get("report_markdown")
+        ]
 
     try:
         # Deep research runs only on a session's first query. Follow-up turns
@@ -301,6 +308,7 @@ async def _run_research_session_turn(session_id: uuid.UUID) -> None:
             prompt=prompt,
             existing_report=existing_report,
             existing_citations=existing_citations,
+            conversation_turns=completed_turns,
             deep=False,
             include_vidiq=False,
         )

@@ -140,8 +140,11 @@ class AnthropicDeepResearchTool:
         max_uses: int | None = None,
     ) -> DeepResearchResult:
         content = [
-            *cached_text(cached_prefix),
-            {"type": "text", "text": request},
+            {"type": "text", "text": cached_prefix},
+            # Place the breakpoint after the complete initial request. The
+            # server-side web-search loop can then reuse that whole prefix as
+            # tool results accumulate instead of reprocessing it at full rate.
+            *cached_text(request),
         ]
         response = await self._client.messages.create(
             model=self._model,

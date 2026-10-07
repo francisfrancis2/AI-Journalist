@@ -135,7 +135,7 @@ async def test_run_standalone_returns_report_and_citations(mocker):
     assert "## Recommended Next Steps" not in sent_instruction
     assert request["model"] == settings.claude_model
     assert request["tools"][0]["max_uses"] == 12
-    assert request["messages"][0]["content"][0]["cache_control"] == {
+    assert request["messages"][0]["content"][-1]["cache_control"] == {
         "type": "ephemeral"
     }
 
@@ -225,12 +225,41 @@ async def test_research_report_synthesis_caches_accumulated_context():
         prompt="Extend the logistics section",
         package=package,
         existing_report="# Research Report\n\nExisting evidence.",
+        conversation_turns=[
+            {
+                "prompt": "Research UAE business",
+                "report_markdown": "# Research Report\n\nExisting evidence.",
+            }
+        ],
     )
 
     messages = synthesizer._llm.ainvoke.call_args.args[0]
-    assert messages[0].content[0]["cache_control"] == {"type": "ephemeral"}
-    assert "Existing evidence" in messages[0].content[0]["text"]
-    assert "Extend the logistics section" in messages[1].content
+    assert "Existing evidence" in messages[2].content
+    assert "Research request" in messages[1].content[0]["text"]
+    assert messages[-1].content[0]["cache_control"] == {"type": "ephemeral"}
+    assert "Extend the logistics section" in messages[-1].content[0]["text"]
+    assert "Fresh evidence" in messages[-1].content[1]["text"]
+
+    cached_followup_text = messages[-1].content[0]["text"]
+    synthesizer._llm.ainvoke.reset_mock()
+    await synthesizer.synthesize(
+        prompt="Now add aviation",
+        package=package,
+        existing_report="# Research Report\n\nLogistics added.",
+        conversation_turns=[
+            {
+                "prompt": "Research UAE business",
+                "report_markdown": "# Research Report\n\nExisting evidence.",
+            },
+            {
+                "prompt": "Extend the logistics section",
+                "report_markdown": "# Research Report\n\nLogistics added.",
+            },
+        ],
+    )
+
+    next_messages = synthesizer._llm.ainvoke.call_args.args[0]
+    assert next_messages[3].content[0]["text"] == cached_followup_text
 
 
 @pytest.mark.asyncio

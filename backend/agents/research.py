@@ -580,6 +580,7 @@ class ResearchAgent:
         deep: bool = True,
         include_vidiq: bool = False,
         vidiq_topic: str | None = None,
+        conversation_turns: list[dict[str, Any]] | None = None,
     ) -> ConsolidatedResearch:
         """
         Run the full multi-source (and optionally deep-research) gather for a
@@ -605,6 +606,7 @@ class ResearchAgent:
             package=package,
             existing_report=existing_report,
             existing_citations=existing_citations,
+            conversation_turns=conversation_turns,
         )
         log.info(
             "researcher.report_complete",
