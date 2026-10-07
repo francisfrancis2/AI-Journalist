@@ -337,6 +337,70 @@ async def filter_relevant_keywords(
     return pre
 
 
+_VIDEO_RELEVANCE_SYSTEM = (
+    "You select YouTube videos for a documentary research brief.\n"
+    "Given the BRIEF and a numbered list of video titles, return the numbers of "
+    "the videos closely aligned to that brief.\n"
+    "Be strict. A video qualifies only if it is about the brief's actual subject "
+    "AND its context. A video about the general activity elsewhere does not "
+    "qualify: for a brief about UAE logistics, 'Dubai Truck Driver Life' "
+    "qualifies and 'How to Become a Truck Driver in America' does not.\n"
+    "Regional context counts as part of the subject. A video about a place, "
+    "route, port or institution central to the brief qualifies even if it does "
+    "not repeat the brief's words.\n"
+    "Return ONLY comma-separated numbers, for example: 1,4,7. "
+    "Return NONE if nothing qualifies."
+)
+
+
+async def filter_relevant_videos(
+    brief: str, videos: list[YouTubeVideo], limit: int = 30
+) -> list[YouTubeVideo]:
+    """Keep videos closely aligned to the original request.
+
+    Keyword breadth is useful for demand measurement but harmful for video
+    selection. _on_topic builds its vocabulary from the expanded keyword set, so
+    a keyword like "truck drivers" admits any trucking video anywhere — the
+    stems match while the subject does not.
+
+    Judging is therefore done against the ORIGINAL brief rather than the
+    distilled seed or the keyword vocabulary: the seed is what we search with,
+    the brief is what alignment means.
+
+    Fails open — on any error the input list is returned unchanged.
+    """
+    pool = videos[:limit]
+    if not pool or not brief.strip():
+        return videos
+
+    try:
+        from langchain_anthropic import ChatAnthropic
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        listing = "\n".join(f"{i}. {v.title}" for i, v in enumerate(pool, 1))
+        llm = ChatAnthropic(
+            model=settings.claude_haiku_model,
+            api_key=settings.anthropic_api_key,
+            max_tokens=96,
+            temperature=0,
+        )
+        reply = await llm.ainvoke([
+            SystemMessage(content=_VIDEO_RELEVANCE_SYSTEM),
+            HumanMessage(content=f"BRIEF: {brief}\n\nVIDEOS:\n{listing}"),
+        ])
+        raw = reply.content if isinstance(reply.content, str) else str(reply.content)
+        if "none" in raw.strip().lower():
+            log.info("vidiq.video_filter", kept=0, of=len(pool))
+            return []
+        picks = {int(n) for n in re.findall(r"\d+", raw) if 1 <= int(n) <= len(pool)}
+        kept = [v for i, v in enumerate(pool, 1) if i in picks]
+        log.info("vidiq.video_filter", kept=len(kept), of=len(pool))
+        return kept
+    except Exception as exc:
+        log.warning("vidiq.video_filter_failed", error=str(exc)[:200])
+    return videos
+
+
 class VidIQTool:
     """Async vidIQ MCP client returning a YouTubeDemandReport. Never raises."""
 
@@ -624,6 +688,9 @@ class VidIQTool:
                         videos.setdefault(video.video_id, video)
 
         ranked = sorted(videos.values(), key=lambda v: v.view_count, reverse=True)
+        # Judged against the brief, not the seed: keyword breadth is fine for
+        # measuring demand but admits off-subject videos through shared stems.
+        ranked = await filter_relevant_videos(topic, ranked)
         report = YouTubeDemandReport(
             topic=topic, search_seed=seed, seed_keyword=seed_kw,
             keywords=keywords[: settings.vidiq_max_keywords],
@@ -647,7 +714,9 @@ class VidIQTool:
         title = video.title or ""
         if _ENTERTAINMENT_RE.search(title) or _MILITARY_RE.search(title):
             return False
-        if video.duration_seconds < settings.vidiq_min_video_seconds:
+        if not (settings.vidiq_min_video_seconds
+                <= video.duration_seconds
+                <= settings.vidiq_max_video_seconds):
             return False
         title_stems = _stems(title)
         return len(title_stems & vocabulary) >= 2 and bool(title_stems & seed_stems)

@@ -128,6 +128,10 @@ class Settings(BaseSettings):
     vidiq_max_keywords: int = 10             # additional keywords kept beyond the seed
     vidiq_max_videos: int = 10               # videos kept in the report
     vidiq_min_video_seconds: int = 240       # 4 min — drops Shorts and clips
+    # Ceiling matches the corpus pipeline (youtube_fetcher _MAX_DURATION_SECONDS).
+    # Without it, multi-hour live news streams qualified as 'long-form' and
+    # crowded out actual documentaries.
+    vidiq_max_video_seconds: int = 3600      # 60 min
     vidiq_cache_ttl_seconds: int = 7 * 24 * 3600
     vidiq_timeout_seconds: float = 45.0      # per HTTP request
     vidiq_total_timeout_seconds: float = 180.0  # whole report build
