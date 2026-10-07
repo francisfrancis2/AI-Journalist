@@ -34,6 +34,20 @@ _AGENT_SOURCES = [
         ("corpus_builder_extract", "corpus_builder_synthesise"),
         include_full_run_logic=False,
     ),
+    # Standalone agents: outside the LangGraph pipeline, but runtime agents all
+    # the same. They were absent from the manual, so the generated docs did not
+    # describe the Idea Generator or the Research Hub synthesiser at all.
+    ManualSource(
+        "Idea Generator Agent",
+        "backend/agents/idea_generator.py",
+        ("idea_generator_shared", "idea_generator_documentary", "idea_generator_expert"),
+    ),
+    ManualSource(
+        "Research Report Synthesizer",
+        "backend/services/research_report.py",
+        (),
+        include_full_run_logic=False,
+    ),
 ]
 
 

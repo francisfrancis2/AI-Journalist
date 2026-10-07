@@ -22,7 +22,7 @@ Workflow:
 ### Model Configuration
 
 - `ChatAnthropic(model=settings.claude_model, max_tokens=1024, temperature=0.1)`
-- `ChatAnthropic(model=settings.claude_model, max_tokens=2048, temperature=0.1)`
+- `ChatAnthropic(model=settings.claude_model, max_tokens=8192, temperature=0.1)`
 
 ### Structured Outputs
 
@@ -34,27 +34,28 @@ Workflow:
 - `InsufficientBenchmarkCorpusError.def __init__(self, *, library_key: str, have: int, need: int, fetched_videos: int=0, new_videos: int=0, missing_transcripts: int=0, extraction_failures: int=0)`
 - `_PatternSynthesisOutput.def _coerce_str_to_list(cls, v: object)`
 - `CorpusBuilderAgent.def __init__(self, db: AsyncSession)`
+- `CorpusBuilderAgent.async def _fresh_session(self)`
 - `CorpusBuilderAgent.async def _extract_structure(self, title: str, transcript: str)`
 - `CorpusBuilderAgent.async def _synthesise_patterns(self, docs: list[BIReferenceDocORM], structures: list[DocStructure], titles: list[str], channel_label: str='Business Insider')`
 - `CorpusBuilderAgent.async def _get_next_version(self, library_key: str)`
 - `CorpusBuilderAgent.async def _save_library(self, library: BIPatternLibrary, library_key: str)`
 - `CorpusBuilderAgent.def _structure_from_doc(doc: BIReferenceDocORM)`
-- `CorpusBuilderAgent.async def refresh_latest_fraction(self, max_docs: int=50, library_key: str='bi', channel_label: str='Business Insider', channel_identifier: Optional[str]=None, refresh_fraction: float=0.25)`
-- `CorpusBuilderAgent.async def build(self, max_docs: int=125, library_key: str='bi', channel_label: str='Business Insider', channel_identifier: Optional[str]=None)`
+- `CorpusBuilderAgent.async def refresh_latest_fraction(self, max_docs: int=125, library_key: str='bi', channel_label: str='Business Insider', channel_identifier: Optional[str]=None, refresh_fraction: float=0.25)`
+- `CorpusBuilderAgent.async def build(self, max_docs: int=125, library_key: str='bi', channel_label: str='Business Insider', channel_identifier: Optional[str]=None, published_after: Optional[str]=None)`
 
 ### Editable Prompt Files
 
 **Prompt file:** `backend/prompts/corpus_builder_extract.md`
 
 ```markdown
-You are a documentary structure analyst. Given a YouTube documentary transcript,
+You are a documentary structure extraction specialist. Given a YouTube documentary transcript,
 extract its structural features. Be precise and data-driven.
 ```
 
 **Prompt file:** `backend/prompts/corpus_builder_synthesise.md`
 
 ```markdown
-You are a documentary research analyst. Given structural data from multiple
+You are a documentary research synthesist. Given structural data from multiple
 {channel_label} YouTube documentaries, synthesise the common patterns that make them successful.
 Focus on patterns that are consistent across the corpus and actionable for scoring new storylines.
 ```
