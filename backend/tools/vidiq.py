@@ -260,6 +260,83 @@ async def distill_search_seed(prompt: str) -> str:
     return text
 
 
+# ── keyword relevance filter ──────────────────────────────────────────────────
+
+# Terms that are never about a subject, only about a category of content. These
+# are rejected without spending a model call.
+_GENERIC_KEYWORDS = {
+    "news", "world news", "latest news", "business news", "breaking news",
+    "daily news", "today news", "geopolitics", "politics", "documentary",
+    "shorts", "vlog", "podcast", "interview", "explained", "facts",
+}
+
+_RELEVANCE_SYSTEM = (
+    "You filter YouTube keywords for a documentary research tool.\n"
+    "Given a SUBJECT and a numbered list of keywords, return the numbers of the "
+    "keywords that are genuinely about that subject.\n"
+    "A keyword qualifies if a video ranking for it would plausibly be about the "
+    "subject. It does not need to repeat the subject's words: for the subject "
+    "'UAE logistics', 'jebel ali port' and 'truck drivers' both qualify.\n"
+    "Reject keywords that are merely adjacent — a bare place name, a news "
+    "category, or an abstract condition with no link to the subject. For the "
+    "subject 'UAE logistics', reject 'dubai', 'world news' and a bare 'crisis'; "
+    "keep 'logistics crisis'.\n"
+    "Return ONLY comma-separated numbers, for example: 1,3,4. "
+    "Return NONE if nothing qualifies."
+)
+
+
+async def filter_relevant_keywords(
+    subject: str, keywords: list[YouTubeKeyword]
+) -> list[YouTubeKeyword]:
+    """Keep only keywords a video would plausibly be about for this subject.
+
+    vidIQ expands a seed into related terms, and the expansion drifts toward
+    high-volume head terms — a logistics subject returns 'dubai' and
+    'geopolitics' alongside 'jebel ali port'. Feeding those to the video search
+    and to the Angle Writer is worse than returning fewer keywords.
+
+    Stem matching cannot do this: 'truck drivers' is relevant to 'UAE logistics'
+    while sharing no word with it. So relevance is judged, with a deterministic
+    generic blocklist first to avoid paying for the obvious cases.
+
+    Fails open — on any error the blocklist-filtered set is returned, never an
+    empty list.
+    """
+    pre = [k for k in keywords if k.keyword.strip().lower() not in _GENERIC_KEYWORDS]
+    if not pre or not subject.strip():
+        return pre
+
+    try:
+        from langchain_anthropic import ChatAnthropic
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        listing = "\n".join(f"{i}. {k.keyword}" for i, k in enumerate(pre, 1))
+        llm = ChatAnthropic(
+            model=settings.claude_haiku_model,
+            api_key=settings.anthropic_api_key,
+            max_tokens=64,
+            temperature=0,
+        )
+        reply = await llm.ainvoke([
+            SystemMessage(content=_RELEVANCE_SYSTEM),
+            HumanMessage(content=f"SUBJECT: {subject}\n\nKEYWORDS:\n{listing}"),
+        ])
+        raw = reply.content if isinstance(reply.content, str) else str(reply.content)
+        if "none" in raw.strip().lower():
+            log.info("vidiq.keyword_filter", subject=subject, kept=0, of=len(pre))
+            return []
+        picks = {int(n) for n in re.findall(r"\d+", raw) if 1 <= int(n) <= len(pre)}
+        kept = [k for i, k in enumerate(pre, 1) if i in picks]
+        if kept:
+            log.info("vidiq.keyword_filter", subject=subject, kept=len(kept), of=len(pre))
+            return kept
+        log.warning("vidiq.keyword_filter_empty", subject=subject)
+    except Exception as exc:
+        log.warning("vidiq.keyword_filter_failed", error=str(exc)[:200])
+    return pre
+
+
 class VidIQTool:
     """Async vidIQ MCP client returning a YouTubeDemandReport. Never raises."""
 
@@ -514,6 +591,11 @@ class VidIQTool:
                                 for row in kw_payload.get("relatedKeywords") or [])
                     if k and k.estimated_monthly_search > 0]
         keywords.sort(key=lambda k: k.estimated_monthly_search, reverse=True)
+
+        # Filter BEFORE the video search, not just before the report is capped:
+        # an off-subject keyword that reaches _video_search_keywords spends a
+        # billed call fetching videos about the wrong thing.
+        keywords = await filter_relevant_keywords(seed, keywords)
 
         vocabulary = set(_stems(seed))
         for kw in keywords:
