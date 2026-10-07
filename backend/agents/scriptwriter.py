@@ -25,7 +25,6 @@ from backend.services.llm_cache import cached_system
 from backend.services.research_report import ResearchReportSynthesizer
 from backend.services.duration_targets import (
     WORDS_PER_MINUTE,
-    duration_prompt_block,
     duration_target_for,
 )
 from backend.services.library_knowledge import (
@@ -305,10 +304,9 @@ class ScriptwriterAgent:
         )
         if storyline.tone != treatment["tone"]:
             storyline = storyline.model_copy(update={"tone": treatment["tone"]})
-        duration_scale = duration_target.seconds / max(
-            storyline.total_estimated_duration_seconds,
-            1,
-        )
+        # Act durations are left as the approved storyline planned them rather
+        # than being rescaled to hit a total runtime.
+        duration_scale = 1.0
 
         log.info(
             "scriptwriter.start",
@@ -341,12 +339,11 @@ class ScriptwriterAgent:
             }
             for act in storyline.acts
         ]
-        duration_contract = (
-            f"{duration_prompt_block(duration_target, role='Scriptwriter')}"
-            f"Target total word count for the complete script: {duration_target.target_word_count}.\n"
-            "Each act must stay close to its target word count; do not write a generic "
-            "10-minute act when this is a 5-minute or 15-minute request.\n\n"
-        )
+        # The script is written to the story, not to a clock. The requested
+        # duration still travels in metadata for reporting, but no word-count or
+        # runtime target is put in front of the model: a story that needs seven
+        # minutes should not be compressed into five.
+        duration_contract = ""
         act_arc = "\n".join(
             (
                 f"Act {act['act_number']}: {act['act_title']} "

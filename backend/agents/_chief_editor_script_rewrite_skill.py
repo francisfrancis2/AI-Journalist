@@ -19,7 +19,6 @@ from backend.models.research import AnalysisResult, ResearchPackage
 from backend.models.story import FinalScript, ScriptAuditReport, ScriptSection
 from backend.services.duration_targets import (
     WORDS_PER_MINUTE,
-    duration_prompt_block,
     duration_target_for,
 )
 from backend.services.library_knowledge import (
@@ -239,12 +238,10 @@ class ScriptRewriteSkill:
                 + load_prompt("team_voice_profile")
                 + "\n=== END TEAM VOICE PROFILE ===\n\n"
             )
-        duration_contract = (
-            f"{duration_prompt_block(duration_target, role='Chief Editor Script Rewrite')}"
-            f"Target total word count: {duration_target.target_word_count}. "
-            "Preserve or adjust each section so the rewritten script stays aligned "
-            "with the requested runtime.\n\n"
-        )
+        # Rewrites fix the issues the audit raised; they do not re-impose a
+        # runtime the scriptwriter was deliberately freed from.
+        duration_contract = ""
+
 
         log.info(
             "chief_editor.script_rewrite.start",

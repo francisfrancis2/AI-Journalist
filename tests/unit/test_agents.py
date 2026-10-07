@@ -555,8 +555,11 @@ class TestScriptwriterAgent:
         prompt = _text(messages[0]) + "\n" + _text(messages[1])
         assert "CHIEF EDITOR RECOMMENDATIONS TO APPLY WHILE WRITING" in prompt
         assert "mandatory editorial direction" in prompt
-        assert "Requested duration: 15 minutes" in prompt
-        assert "Target total word count for the complete script: 2220" in prompt
+        # The scriptwriter no longer receives a runtime or word-count target:
+        # scripts are written to the story. Planning stages (e.g. the chapter
+        # structure test above) still assert their duration block.
+        assert "Requested duration" not in prompt
+        assert "Target total word count" not in prompt
 
 
 # ── ScriptAuditSkill ──────────────────────────────────────────────────────────
