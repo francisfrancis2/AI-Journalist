@@ -419,12 +419,24 @@ async def _mark_generation_failed(
     code: str,
     detail: str,
 ) -> bool:
+    # Every code the pipeline can emit needs an entry here. Four of them had no
+    # message and fell through to a generic "could not complete. Please retry.",
+    # which is what a user sees for the two most likely production failures --
+    # a run interrupted by a deploy, and the spend ceiling being reached. The
+    # generic line hid the cause and made the failure undiagnosable from the UI.
     messages = {
         "insufficient_evidence": "Not enough independently verified evidence was available to produce ideas.",
         "research_timed_out": "Research exceeded its time budget. Please retry the run.",
         "synthesis_timed_out": "Idea synthesis exceeded its time budget. Please retry the run.",
         "repair_timed_out": "Idea validation could not finish in time. Please retry the run.",
         "generation_timed_out": "Idea generation reached the five-minute limit. Please retry the run.",
+        "interrupted": (
+            "The server restarted while this run was in progress and it could not "
+            "resume. Nothing was charged for the unfinished work. Please retry."
+        ),
+        "idea_generation_lease_lost": (
+            "The worker running this generation stopped responding. Please retry."
+        ),
     }
     log.error("idea_generator.failed", run_id=str(run_id), code=code, error=detail)
     completed_at = _utc_now()
@@ -441,7 +453,14 @@ async def _mark_generation_failed(
                 stage="failed",
                 stage_progress=100,
                 error_code=code,
-                error_message=messages.get(code, "Idea generation could not complete. Please retry."),
+                # Codes without a fixed message fall back to the detail the
+                # pipeline attached -- BudgetExceeded, for instance, carries the
+                # actual dollar figures -- and only then to a generic line.
+                error_message=(
+                    messages.get(code)
+                    or (detail[:300] if detail else None)
+                    or "Idea generation could not complete. Please retry."
+                ),
                 completed_at=completed_at,
                 heartbeat_at=completed_at,
                 lease_expires_at=None,
@@ -836,8 +855,21 @@ async def delete_idea_generation(
     current_user: UserORM = Depends(get_current_user),
 ) -> None:
     run = await _load_run(db, run_id, current_user.id)
-    if run.status in {IdeaRunStatus.QUEUED.value, IdeaRunStatus.RUNNING.value}:
-        raise HTTPException(status_code=409, detail="An active run cannot be deleted")
+    # "Active" has to mean a worker is genuinely still on it. Checking status
+    # alone made a run whose worker had died -- killed by a deploy or a machine
+    # restart -- undeletable: it stayed RUNNING until recovery got to it, and
+    # every delete returned 409 with nothing the user could do about it. A live
+    # lease is the real test, so an abandoned run can be cleared immediately.
+    lease_expires_at = run.lease_expires_at
+    worker_is_live = (
+        lease_expires_at is not None
+        and lease_expires_at.replace(tzinfo=lease_expires_at.tzinfo or timezone.utc) > _utc_now()
+    )
+    if run.status in {IdeaRunStatus.QUEUED.value, IdeaRunStatus.RUNNING.value} and worker_is_live:
+        raise HTTPException(
+            status_code=409,
+            detail="This run is still generating. Wait for it to finish, or retry it once it stops.",
+        )
     await db.execute(delete(IdeaGenerationRunORM).where(IdeaGenerationRunORM.id == run.id))
     await db.commit()
 

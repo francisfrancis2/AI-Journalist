@@ -421,3 +421,95 @@ async def test_non_admin_sees_only_their_own_runs_without_attribution(
     runs = response.json()
     assert len(runs) == 1, "a non-admin must not see another user's runs"
     assert runs[0]["owner_email"] is None, "attribution is for admins only"
+
+
+@pytest.mark.asyncio
+async def test_run_abandoned_by_a_dead_worker_can_be_deleted(api_client, db_session) -> None:
+    """A deploy kills the worker; the run must not be undeletable until recovery.
+
+    Checking status alone left a RUNNING run with an expired lease permanently
+    rejecting delete with 409, which is what a user hit after a restart.
+    """
+    caller = (await db_session.execute(select(UserORM).where(UserORM.is_admin.is_(True)))).scalars().first()
+    run = _leased_run(
+        caller.id,
+        lease_expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        attempt_count=1,
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    response = await api_client.delete(f"/api/v1/idea-generations/{run.id}")
+    assert response.status_code == 204, response.text
+
+
+@pytest.mark.asyncio
+async def test_run_with_a_live_worker_is_still_protected(api_client, db_session) -> None:
+    caller = (await db_session.execute(select(UserORM).where(UserORM.is_admin.is_(True)))).scalars().first()
+    run = _leased_run(
+        caller.id,
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+        attempt_count=1,
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    response = await api_client.delete(f"/api/v1/idea-generations/{run.id}")
+    assert response.status_code == 409
+    assert "still generating" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_failure_codes_do_not_fall_back_to_the_generic_message(
+    db_session, monkeypatch
+) -> None:
+    """The generic line hid the two most likely production failures.
+
+    A run interrupted by a deploy, and a lost worker lease, both produced
+    "Idea generation could not complete. Please retry." -- which tells a user
+    nothing and made the failure undiagnosable from the UI.
+    """
+    from backend.api.routes import idea_generations as routes
+
+    monkeypatch.setattr(routes, "AsyncSessionLocal", lambda: _SessionContext(db_session))
+    generic = "Idea generation could not complete. Please retry."
+
+    for code in ("interrupted", "idea_generation_lease_lost", "synthesis_timed_out"):
+        run = _leased_run(
+            uuid.uuid4(),
+            lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+            attempt_count=1,
+        )
+        db_session.add(run)
+        await db_session.commit()
+
+        marked = await routes._mark_generation_failed(run.id, "worker-v1", code=code, detail="")
+        assert marked, f"{code} should mark the run failed"
+        await db_session.refresh(run)
+
+        assert run.status == "failed"
+        assert run.error_code == code
+        assert run.error_message != generic, f"{code} still falls back to the generic message"
+        assert len(run.error_message) > 20, f"{code} message is not informative"
+
+
+@pytest.mark.asyncio
+async def test_budget_exceeded_reports_the_actual_figures(db_session, monkeypatch) -> None:
+    """BudgetExceeded carries dollar amounts; they must reach the user."""
+    from backend.api.routes import idea_generations as routes
+
+    monkeypatch.setattr(routes, "AsyncSessionLocal", lambda: _SessionContext(db_session))
+    run = _leased_run(
+        uuid.uuid4(),
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+        attempt_count=1,
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    detail = "synthesis needs up to $0.42 but only $0.08 of the run budget is left"
+    await routes._mark_generation_failed(run.id, "worker-v1", code="budget_exceeded", detail=detail)
+    await db_session.refresh(run)
+
+    assert run.error_code == "budget_exceeded"
+    assert "$0.42" in run.error_message, "the spend figures must survive into the UI"
