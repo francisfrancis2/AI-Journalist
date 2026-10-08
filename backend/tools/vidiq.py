@@ -149,25 +149,43 @@ def _video_search_keywords(keywords: list[YouTubeKeyword], seed_stems: set[str],
                            limit: int) -> list[YouTubeKeyword]:
     """Pick which related keywords also get a video search.
 
-    NOT simply the highest-volume ones. The top terms by volume are broad head
-    terms ("drone", "drones", "logistics") whose best-performing videos are
-    consumer product roundups, not subject-matter programming. Specificity is
-    what makes the video set usable, so rank by: overlap with the seed first,
-    then multi-word terms, then volume.
+    This used to REQUIRE a stem overlap with the distilled seed, which selected
+    for exactly the wrong thing. For the seed "UAE logistics" it threw away
+    "dp world" and "dubai trucking" -- the two terms that actually name the
+    subject -- because neither string contains "uae" or "logis", while keeping
+    "behind the scenes logistics" and "logistics operations", whose only merit
+    was repeating a seed word. The video search then returned generic freight
+    content and filter_relevant_videos correctly rejected all of it, so a story
+    came back with keywords and no videos at all.
+
+    Two things make that rule unnecessary. filter_relevant_keywords has already
+    confirmed, with a model, that every keyword here is about the subject -- so
+    a second lexical test adds no signal. And a local synonym or a named entity
+    is precisely what makes a good video query: "jebel ali" finds UAE port
+    programming that "uae logistics" does not.
+
+    So overlap is now a tie-breaker rather than a gate, and ranking prefers
+    terms that ADD specificity over ones that restate the seed:
+
+      1. not phrased as a generic activity (see _PROCESS_WORDS)
+      2. contributes stems the seed does not already have
+      3. search volume
+
+    Single words are still excluded: a bare subject noun returns head-term
+    roundups whatever its volume.
     """
     candidates = []
     for kw in keywords:
+        if len(kw.keyword.split()) < 2:
+            continue
+        words = {w for w in re.findall(r"[a-z]{3,}", kw.keyword.lower())}
         stems = _stems(kw.keyword)
-        overlap = len(stems & seed_stems)
-        if not overlap:
-            continue                               # unrelated head term, e.g. "logistics"
-        words = len(kw.keyword.split())
-        if words < 2:
-            continue                               # the bare subject noun is too broad
-        candidates.append((overlap, words > 1, kw.estimated_monthly_search, kw))
+        specific = not (words & _PROCESS_WORDS)
+        adds_stems = bool(stems - seed_stems)
+        candidates.append((specific, adds_stems, kw.estimated_monthly_search, kw))
     candidates.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
     picked = [row[3] for row in candidates[:limit]]
-    # Fall back to plain volume order only if nothing specific qualified.
+    # Fall back to plain volume order only if every keyword was a single word.
     return picked or keywords[:limit]
 
 
@@ -270,6 +288,16 @@ _GENERIC_KEYWORDS = {
     "shorts", "vlog", "podcast", "interview", "explained", "facts",
 }
 
+# Words that mark a keyword as describing an activity in the abstract rather than
+# naming a subject. Used to DEMOTE in ranking, not to exclude: "logistics
+# operations" is a real search term, it just makes a worse video query than
+# "dp world" does.
+_PROCESS_WORDS = {
+    "operations", "operation", "process", "processes", "management", "basics",
+    "course", "courses", "tutorial", "explained", "behind", "scenes", "career",
+    "careers", "salary", "jobs", "job", "training", "certification", "guide",
+}
+
 _RELEVANCE_SYSTEM = (
     "You filter YouTube keywords for a documentary research tool.\n"
     "Given a SUBJECT and a numbered list of keywords, return the numbers of the "
@@ -343,8 +371,8 @@ _VIDEO_RELEVANCE_SYSTEM = (
     "the videos closely aligned to that brief.\n"
     "Be strict. A video qualifies only if it is about the brief's actual subject "
     "AND its context. A video about the general activity elsewhere does not "
-    "qualify: for a brief about UAE logistics, 'Dubai Truck Driver Life' "
-    "qualifies and 'How to Become a Truck Driver in America' does not.\n"
+    "qualify: for a brief about UAE logistics, 'Inside DP World's Jebel Ali "
+    "Port' qualifies and 'How to Become a Truck Driver in America' does not.\n"
     "Regional context counts as part of the subject. A video about a place, "
     "route, port or institution central to the brief qualifies even if it does "
     "not repeat the brief's words.\n"
@@ -389,12 +417,14 @@ async def filter_relevant_videos(
             HumanMessage(content=f"BRIEF: {brief}\n\nVIDEOS:\n{listing}"),
         ])
         raw = reply.content if isinstance(reply.content, str) else str(reply.content)
-        if "none" in raw.strip().lower():
-            log.info("vidiq.video_filter", kept=0, of=len(pool))
-            return []
+        # Read the numbers first. A substring test for "none" ran ahead of this
+        # and would discard real picks on a reply like "Nonetheless, 4, 7"; an
+        # explicit selection now always wins, and "none" only decides the case
+        # where the model named no videos at all.
         picks = {int(n) for n in re.findall(r"\d+", raw) if 1 <= int(n) <= len(pool)}
         kept = [v for i, v in enumerate(pool, 1) if i in picks]
-        log.info("vidiq.video_filter", kept=len(kept), of=len(pool))
+        log.info("vidiq.video_filter", kept=len(kept), of=len(pool),
+                 verdict="none" if not picks else "selection")
         return kept
     except Exception as exc:
         log.warning("vidiq.video_filter_failed", error=str(exc)[:200])
@@ -706,7 +736,19 @@ class VidIQTool:
 
     @staticmethod
     def _on_topic(video: YouTubeVideo, vocabulary: set[str], seed_stems: set[str]) -> bool:
-        """Title must carry >=2 topic stems including one from the seed.
+        """Cheap pre-filter: format and a loose topicality check.
+
+        This used to require two vocabulary stems AND one from the seed, which
+        made it a second lexical gate biased the same way as the old
+        _video_search_keywords: "Inside DP World's Jebel Ali Port" carries no
+        "uae" or "logis" stem, so the most on-subject result available was
+        discarded before anything could judge it.
+
+        Subject alignment is now decided by filter_relevant_videos, which reads
+        the brief and is strict and accurate. This function keeps only the jobs
+        a model should not be paid to do -- duration band, obvious format
+        exclusions, and dropping titles with no connection to the topic
+        vocabulary at all. Permissive here, strict there.
 
         Title-only on purpose: descriptions mention anything in passing, so
         matching them lets unrelated content through on a single stray word.
@@ -718,8 +760,7 @@ class VidIQTool:
                 <= video.duration_seconds
                 <= settings.vidiq_max_video_seconds):
             return False
-        title_stems = _stems(title)
-        return len(title_stems & vocabulary) >= 2 and bool(title_stems & seed_stems)
+        return bool(_stems(title) & vocabulary)
 
     @staticmethod
     def _to_keyword(row: dict) -> Optional[YouTubeKeyword]:

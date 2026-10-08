@@ -9,9 +9,19 @@ subsequent requests that share the exact prefix. langchain-anthropic forwards
 Use ``cached_text(text)`` for any Anthropic content-block prefix and
 ``cached_system(text)`` for a LangChain system prompt whose content repeats
 across several calls (e.g. the scriptwriter writing each act of one story).
-The cached prefix must clear the model minimum (~4096 tokens for Opus, ~2048
-for Sonnet) to actually cache — below that the breakpoint is a silent no-op,
-not an error.
+The cached prefix must clear the model minimum to actually cache — below it the
+breakpoint is a silent no-op, not an error. Measured 2026-10-08 against the
+models this app uses (two identical calls, reading cache_read_input_tokens on
+the second):
+
+    claude-opus-4-7     ~1024   no-op at 600, cached at 1100
+    claude-sonnet-4-6   ~1024   no-op at 600, cached at 1100
+    claude-haiku-4-5    ~4096   no-op at 3000, cached at 4200
+
+Haiku's bar is four times Sonnet's, which is the opposite of what you might
+assume from its price. A short system prompt that caches fine on Sonnet will
+silently fail to cache on Haiku, so re-measure after moving a call between
+tiers rather than trusting the breakpoint to carry over.
 """
 
 from __future__ import annotations

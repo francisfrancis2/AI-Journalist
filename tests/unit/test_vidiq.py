@@ -69,9 +69,17 @@ class TestTopicFilter:
     def test_keeps_on_topic_long_form(self):
         assert self._check("Drone Delivery Was Supposed to be the Future")
 
-    def test_rejects_single_stem_match(self):
-        # "drone" alone is not enough signal — this is how MURDER DRONES got in.
-        assert not self._check("Vortex Cannon vs Drone")
+    def test_keeps_a_loose_match_for_the_model_to_judge(self):
+        """_on_topic is a cheap pre-filter now, not the relevance decision.
+
+        Demanding two vocabulary stems plus a seed stem also discarded the best
+        results: "Inside DP World's Jebel Ali Port" carries no seed stem for the
+        seed "UAE logistics", so the most on-subject video available never
+        reached filter_relevant_videos. Loose matches are passed through and
+        judged there instead; "Vortex Cannon vs Drone" is rejected by the model,
+        not by stem arithmetic.
+        """
+        assert self._check("Vortex Cannon vs Drone")
 
     def test_rejects_entertainment_formats(self):
         assert not self._check("MURDER DRONES - Episode 1: Cargo Delivery")
@@ -83,25 +91,45 @@ class TestTopicFilter:
     def test_rejects_shorts_below_duration_floor(self):
         assert not self._check("Cargo Drone Delivery Explained", seconds=120)
 
-    def test_requires_a_seed_stem(self):
-        # Two vocabulary hits but neither from the seed.
-        assert not self._check("Heavy Lift Logistics Explained")
+    def test_keeps_vocabulary_matches_without_a_seed_stem(self):
+        """A local synonym or named entity rarely repeats the seed's words."""
+        assert self._check("Heavy Lift Logistics Explained")
+
+    def test_still_rejects_a_title_with_no_topic_connection(self):
+        """The pre-filter's one remaining job: drop the entirely unrelated."""
+        assert not self._check("Sourdough Starter Masterclass")
 
 
 class TestVideoSearchKeywordSelection:
     """Broad head terms must not drive the video search."""
 
-    def test_prefers_specific_multiword_terms_over_raw_volume(self):
+    def test_excludes_single_word_head_terms(self):
         keywords = [
             _kw("drone", 290_155),          # head term, single word
             _kw("drones", 110_700),         # head term, single word
-            _kw("logistics", 66_734),       # no seed overlap
             _kw("drone delivery", 22_810),  # specific
-            _kw("cargo drones", 4_008),     # specific, two seed stems
+            _kw("cargo drones", 4_008),     # specific
         ]
         picked = [k.keyword for k in _video_search_keywords(keywords, {"cargo", "drone"}, 2)]
-        assert "drone" not in picked and "logistics" not in picked
-        assert "cargo drones" in picked          # two seed stems ranks first
+        assert "drone" not in picked and "drones" not in picked
+
+    def test_does_not_exclude_a_named_entity_that_misses_the_seed(self):
+        """The regression that returned keywords and zero videos.
+
+        For the seed "UAE logistics", requiring a stem overlap discarded
+        "dp world" -- the UAE's port operator, the most on-subject term vidIQ
+        returned -- while keeping "logistics operations", whose only merit was
+        repeating a seed word. The generic searches then returned generic
+        videos, which the relevance filter correctly rejected, leaving none.
+        """
+        keywords = [
+            _kw("truck drivers", 23_371),
+            _kw("dp world", 15_240),
+            _kw("logistics operations", 4_165),
+        ]
+        picked = [k.keyword for k in _video_search_keywords(keywords, {"uae", "logis"}, 2)]
+        assert "dp world" in picked
+        assert "logistics operations" not in picked, "generic phrasing must rank last"
 
     def test_falls_back_when_nothing_specific_qualifies(self):
         keywords = [_kw("drone", 100), _kw("drones", 90)]

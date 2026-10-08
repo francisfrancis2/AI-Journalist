@@ -210,6 +210,23 @@ def _walk_rows(value: Any, path: str = "") -> list[tuple[str, dict[str, Any]]]:
     return rows
 
 
+def _row_get(row: dict[str, Any], *names: str) -> Any:
+    """Case-insensitive lookup across a vidIQ row.
+
+    vidIQ is inconsistent between tools: the keyword tool returns ``keyword``
+    while the video tool returns ``VideoTitle`` and ``VideoId``. A
+    lowercase-only lookup therefore found no title on any video row, so every
+    one fell back to the literal label "YouTube opportunity signal" and the
+    real title surfaced only as a raw key/value dump in the UI.
+    """
+    lowered = {str(key).lower(): value for key, value in row.items()}
+    for name in names:
+        value = lowered.get(name.lower())
+        if value not in (None, ""):
+            return value
+    return None
+
+
 def _prepare_signals(raw: dict[str, Any] | None) -> list[PreparedSignal]:
     if not raw:
         return []
@@ -220,10 +237,7 @@ def _prepare_signals(raw: dict[str, Any] | None) -> list[PreparedSignal]:
             if len(signals) >= 60:
                 break
             topic = str(
-                row.get("keyword")
-                or row.get("title")
-                or row.get("question")
-                or row.get("name")
+                _row_get(row, "keyword", "videoTitle", "title", "question", "name")
                 or "YouTube opportunity signal"
             )
             signal_type = (
@@ -254,13 +268,22 @@ def _prepare_signals(raw: dict[str, Any] | None) -> list[PreparedSignal]:
                     window_days=int(raw.get("window_days") or 30),
                     metric=metric,
                     values=_safe_json(row),
-                    source_url=row.get("url") or row.get("videoUrl"),
+                    source_url=_video_url(row),
                     domain="youtube.com" if "video" in group or "outlier" in group else None,
                     reliability="medium",
                     raw_reference={"group": group, "path": path},
                 )
             )
     return signals
+
+
+def _video_url(row: dict[str, Any]) -> str | None:
+    """A watchable link for a signal row, built from the id when none is given."""
+    url = _row_get(row, "url", "videoUrl")
+    if url:
+        return str(url)
+    video_id = _row_get(row, "videoId", "id")
+    return f"https://www.youtube.com/watch?v={video_id}" if video_id else None
 
 
 def _is_current_uae_source(source: PreparedSource) -> bool:

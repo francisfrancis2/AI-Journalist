@@ -114,14 +114,58 @@ function RunClock({ run, active }: { run: IdeaGenerationRun; active: boolean }) 
   );
 }
 
+// vidIQ rows carry plumbing alongside the useful numbers. Thumbnail URLs, raw
+// ids and etags were being printed verbatim, which is what made the signal
+// block unreadable; the title is already shown above as the signal's heading.
+const SIGNAL_NOISE_KEY =
+  /thumbnail|etag|kind|^id$|videoid|channelid|playlistid|url$|^videotitle$|^title$/i;
+
+// Human labels for the keys worth showing. Anything not listed falls back to
+// title-casing, so a new vidIQ field still renders sensibly.
+const SIGNAL_LABEL: Record<string, string> = {
+  countryvolume: "UAE searches/mo",
+  estimated_monthly_search: "Searches/mo",
+  viewcount: "Views",
+  viewspeed: "Views/hour",
+  viewsperhour: "Views/hour",
+  growth: "Growth",
+  competition: "Competition",
+  overall: "Score",
+  channeltitle: "Channel",
+  channelcountry: "Channel country",
+  videopublishedat: "Published",
+  publishedat: "Published",
+  duration: "Length",
+};
+
+function formatSignalValue(key: string, value: string | number | boolean): string {
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (typeof value === "number") {
+    // vidIQ returns publish dates as unix seconds, which printed as "1790684203".
+    if (/publish|date/i.test(key) && value > 1_000_000_000) {
+      return new Date(value * 1000).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    }
+    return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(1);
+  }
+  return String(value);
+}
+
 function SignalSummary({ values }: { values: Record<string, unknown> }) {
   const entries = Object.entries(values)
-    .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
-    .slice(0, 4);
+    .filter(([key, value]) =>
+      !SIGNAL_NOISE_KEY.test(key) && ["string", "number", "boolean"].includes(typeof value))
+    .slice(0, 4) as [string, string | number | boolean][];
   if (!entries.length) return null;
   return (
     <span style={{ color: "var(--color-text-tertiary)" }}>
-      {entries.map(([key, value]) => `${titleCase(key)}: ${String(value)}`).join(" · ")}
+      {entries
+        .map(([key, value]) =>
+          `${SIGNAL_LABEL[key.toLowerCase()] ?? titleCase(key)} ${formatSignalValue(key, value)}`)
+        .join(" · ")}
     </span>
   );
 }
@@ -338,16 +382,6 @@ export default function IdeaGeneratorPage() {
     ([name]) => name !== "google_trends"
   );
 
-  // Measured API spend for the run, reported by the backend's cost ledger.
-  // Absent on older runs recorded before cost was tracked, so it is optional.
-  const spend = useMemo(() => {
-    const metrics = run?.usage_metrics as Record<string, unknown> | undefined;
-    const cost = metrics?.cost_usd;
-    const budget = metrics?.budget_usd;
-    if (typeof cost !== "number" || typeof budget !== "number") return null;
-    return { cost, budget };
-  }, [run?.usage_metrics]);
-
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
       <header style={{ height: 52, display: "flex", alignItems: "center", padding: "0 28px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
@@ -421,17 +455,6 @@ export default function IdeaGeneratorPage() {
                   <div style={{ height: "100%", width: `${run.stage_progress}%`, background: run.status === "failed" ? "var(--color-danger)" : "var(--color-action)", transition: "width 0.4s ease" }} />
                 </div>
                 <RunClock run={run} active={!!isActive} />
-                {spend && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                    <span
-                      className="chip"
-                      title={`This run is capped at $${spend.budget.toFixed(2)} of API credits. Generation stops rather than exceeding it.`}
-                      style={{ padding: "4px 9px", cursor: "help" }}
-                    >
-                      Cost: ${spend.cost.toFixed(2)} of ${spend.budget.toFixed(2)} cap
-                    </span>
-                  </div>
-                )}
                 {providers.length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
                     {providers.map(([name, provider]) => (
