@@ -36,6 +36,84 @@ function titleCase(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function formatClock(totalSeconds: number): string {
+  const safe = Math.max(0, Math.round(totalSeconds));
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Time estimate and countdown for a generation run.
+ *
+ * Generation is a polled background job, so the server only reports progress
+ * every few seconds. Ticking locally between polls keeps the countdown moving
+ * and stops the bar from looking stalled while a long phase is still working.
+ * The budget shown is the server's own ceiling, so the bar filling completely
+ * means the run is about to be abandoned rather than merely running late.
+ */
+function RunClock({ run, active }: { run: IdeaGenerationRun; active: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!active) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [active]);
+
+  const startedAt = run.started_at ? new Date(run.started_at).getTime() : null;
+  const budget = run.estimated_total_seconds;
+  if (startedAt === null || !budget) return null;
+
+  // A finished run freezes at its real duration; only a live one tracks the clock.
+  const endedAt = run.completed_at ? new Date(run.completed_at).getTime() : null;
+  const elapsed = Math.max(0, ((active || endedAt === null ? now : endedAt) - startedAt) / 1000);
+  const remaining = Math.max(0, budget - elapsed);
+  const usedPct = Math.min(100, (elapsed / budget) * 100);
+
+  const barColor = !active
+    ? run.status === "completed"
+      ? "var(--color-success)"
+      : "var(--color-danger)"
+    : usedPct >= 85
+      ? "var(--color-warning)"
+      : "var(--color-action)";
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: 10,
+          fontSize: "var(--text-xs)",
+          lineHeight: "var(--text-xs-lh)",
+          color: "var(--color-text-tertiary)",
+        }}
+      >
+        <span>
+          {active ? "Elapsed" : "Took"} {formatClock(elapsed)} of {formatClock(budget)} budget
+        </span>
+        {active && (
+          <span style={{ color: usedPct >= 85 ? "var(--color-warning)" : "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" }}>
+            {remaining > 0 ? `${formatClock(remaining)} left` : "finishing\u2026"}
+          </span>
+        )}
+      </div>
+      <div
+        role="progressbar"
+        aria-label="Time used of the generation budget"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(budget)}
+        aria-valuenow={Math.round(Math.min(elapsed, budget))}
+        aria-valuetext={`${formatClock(elapsed)} of ${formatClock(budget)} used`}
+        style={{ height: 3, background: "var(--color-background-tertiary)", borderRadius: 3, marginTop: 5, overflow: "hidden" }}
+      >
+        <div style={{ height: "100%", width: `${usedPct}%`, background: barColor, transition: "width 1s linear" }} />
+      </div>
+    </div>
+  );
+}
+
 function SignalSummary({ values }: { values: Record<string, unknown> }) {
   const entries = Object.entries(values)
     .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
@@ -260,6 +338,16 @@ export default function IdeaGeneratorPage() {
     ([name]) => name !== "google_trends"
   );
 
+  // Measured API spend for the run, reported by the backend's cost ledger.
+  // Absent on older runs recorded before cost was tracked, so it is optional.
+  const spend = useMemo(() => {
+    const metrics = run?.usage_metrics as Record<string, unknown> | undefined;
+    const cost = metrics?.cost_usd;
+    const budget = metrics?.budget_usd;
+    if (typeof cost !== "number" || typeof budget !== "number") return null;
+    return { cost, budget };
+  }, [run?.usage_metrics]);
+
   return (
     <div style={{ minHeight: "100%", background: "var(--color-background-tertiary)" }}>
       <header style={{ height: 52, display: "flex", alignItems: "center", padding: "0 28px", background: "var(--color-background-primary)", borderBottom: "0.5px solid var(--color-border-tertiary)" }}>
@@ -330,8 +418,20 @@ export default function IdeaGeneratorPage() {
                   <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>{run.stage_progress}%</span>
                 </div>
                 <div style={{ height: 4, background: "var(--color-background-tertiary)", borderRadius: 4, marginTop: 10, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${run.stage_progress}%`, background: run.status === "failed" ? "var(--color-danger)" : "var(--color-action)" }} />
+                  <div style={{ height: "100%", width: `${run.stage_progress}%`, background: run.status === "failed" ? "var(--color-danger)" : "var(--color-action)", transition: "width 0.4s ease" }} />
                 </div>
+                <RunClock run={run} active={!!isActive} />
+                {spend && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+                    <span
+                      className="chip"
+                      title={`This run is capped at $${spend.budget.toFixed(2)} of API credits. Generation stops rather than exceeding it.`}
+                      style={{ padding: "4px 9px", cursor: "help" }}
+                    >
+                      Cost: ${spend.cost.toFixed(2)} of ${spend.budget.toFixed(2)} cap
+                    </span>
+                  </div>
+                )}
                 {providers.length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
                     {providers.map(([name, provider]) => (

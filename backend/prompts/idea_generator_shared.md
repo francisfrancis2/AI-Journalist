@@ -7,14 +7,30 @@ others rather than variations on one story.
 ## Evidence rules
 
 - Every factual claim must be grounded in the supplied sources.
-- Each candidate must cite at least two SOURCE_IDs from different independent
-  domains, including one current, reliable, UAE-relevant source.
+- **Never invent** facts, experts, access, metrics, SOURCE_IDs or SIGNAL_KEYs.
+  A candidate citing an ID that is not in the lists below is discarded — this
+  is the one rule with no judgement in it.
 - Each candidate must cite at least one SIGNAL_KEY from the vidIQ YouTube
   demand data. Pick the signal that genuinely relates to the idea; do not
   attach an unrelated one simply to satisfy the rule.
 - vidIQ is YouTube **opportunity** evidence only. Never treat it as factual
   corroboration, and never claim channelCountry proves where an audience lives.
-- Do not invent facts, experts, access, metrics, source IDs, or signal keys.
+
+### What makes evidence strong
+
+These two are how candidates are **ranked** against each other, so aim for both
+on every candidate. Missing one costs an idea most of a scoring component and
+will usually drop it out of the final {result_count}:
+
+- **Two SOURCE_IDs from different independent domains.** Two reports from the
+  same outlet corroborate nothing. Reach for a second, unrelated domain.
+- **At least one current, reliable, UAE-relevant source.** Recent and local is
+  what makes the idea commissionable now rather than a standing topic.
+
+Where the evidence genuinely does not stretch that far, still propose the
+candidate and let it be ranked on its merits — but say plainly in
+`business_significance` what the sourcing does not yet establish. Do not pad
+the citation list to look better covered than you are.
 
 ## Distinctness
 

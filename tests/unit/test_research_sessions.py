@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from backend.config import settings
+from backend.agents.research import ResearchAgent
 from backend.models.research import ResearchPackage
 from backend.services.research_report import ResearchReportSynthesizer
 from backend.tools.anthropic_deep_research import (
@@ -134,7 +135,7 @@ async def test_run_standalone_returns_report_and_citations(mocker):
     assert "existing consolidated report" not in sent_instruction.lower()
     assert "## Recommended Next Steps" not in sent_instruction
     assert request["model"] == settings.claude_model
-    assert request["tools"][0]["max_uses"] == 12
+    assert request["tools"][0]["max_uses"] == 2
     assert request["messages"][0]["content"][-1]["cache_control"] == {
         "type": "ephemeral"
     }
@@ -181,7 +182,7 @@ Findings here.
 
 
 @pytest.mark.asyncio
-async def test_deep_research_honors_explicit_lower_search_budget(mocker):
+async def test_deep_research_clamps_explicit_search_budget_to_two(mocker):
     tool = AnthropicDeepResearchTool()
     mock_client = AsyncMock()
     mock_client.messages.create = AsyncMock(
@@ -191,14 +192,14 @@ async def test_deep_research_honors_explicit_lower_search_budget(mocker):
 
     await tool.run_standalone(prompt="UAE business", max_uses=3)
 
-    assert mock_client.messages.create.call_args.kwargs["tools"][0]["max_uses"] == 3
+    assert mock_client.messages.create.call_args.kwargs["tools"][0]["max_uses"] == 2
 
 
-def test_deep_research_path_budgets_keep_hub_depth():
-    assert settings.anthropic_deep_research_max_uses == 12
-    assert settings.anthropic_deep_research_pipeline_max_uses == 3
-    assert settings.anthropic_deep_research_idea_max_uses == 3
-    assert settings.anthropic_deep_research_enrichment_max_uses == 3
+def test_deep_research_path_budgets_are_capped_at_two():
+    assert settings.anthropic_deep_research_max_uses == 2
+    assert settings.anthropic_deep_research_pipeline_max_uses == 2
+    assert settings.anthropic_deep_research_idea_max_uses == 2
+    assert settings.anthropic_deep_research_enrichment_max_uses == 2
 
 
 def test_research_report_synthesizer_uses_sonnet(mocker):
@@ -207,6 +208,15 @@ def test_research_report_synthesizer_uses_sonnet(mocker):
     ResearchReportSynthesizer()
 
     assert constructor.call_args.kwargs["model"] == settings.claude_model
+
+
+def test_research_hub_report_synthesizer_uses_haiku(mocker):
+    constructor = mocker.patch("backend.agents.research.ResearchReportSynthesizer")
+    mocker.patch("backend.agents.research.ChatAnthropic")
+
+    ResearchAgent()
+
+    constructor.assert_called_once_with(model=settings.claude_haiku_model)
 
 
 @pytest.mark.asyncio

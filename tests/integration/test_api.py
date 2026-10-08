@@ -11,6 +11,7 @@ import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from backend.api.deps import get_current_user
 from backend.api.main import create_app
@@ -19,6 +20,17 @@ from backend.db.database import get_db
 from backend.models.benchmark import BIReferenceDocORM
 from backend.models.story import StoryORM, StoryStatus, StoryTone
 from backend.models.user import UserORM
+
+
+class _SessionContext:
+    def __init__(self, session):
+        self._session = session
+
+    async def __aenter__(self):
+        return self._session
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
 
 
 @asynccontextmanager
@@ -181,6 +193,79 @@ class TestStoriesCreate:
         operation_mock.assert_awaited_once()
         assert operation_mock.await_args.kwargs["operation_type"] == "initial_angles"
         assert operation_mock.await_args.kwargs["fetch_vidiq"] is True
+
+    @pytest.mark.asyncio
+    async def test_initial_story_ideation_uses_and_persists_shared_research_agent(
+        self, api_client, db_session, mocker
+    ):
+        from backend.agents.angles_and_hooks import fallback_ideation_output
+        from backend.api.routes import stories
+        from backend.models.research import RawSource, ResearchPackage, SourceType
+
+        user = (await db_session.execute(select(UserORM))).scalars().one()
+        story = StoryORM(
+            id=uuid.uuid4(),
+            title="Story: UAE logistics",
+            topic="How UAE logistics is changing",
+            status=StoryStatus.IDEATING,
+            tone=StoryTone.EXPLANATORY,
+            owner_user_id=user.id,
+            ideation_stage="angles",
+            ideation_chat_data=[],
+            ideation_operation_data={"type": "initial_angles", "status": "running"},
+        )
+        db_session.add(story)
+        await db_session.commit()
+
+        package = ResearchPackage(topic=story.topic)
+        package.add_source(
+            RawSource(
+                source_type=SourceType.WEB_SEARCH,
+                title="Current UAE logistics evidence",
+                url="https://example.com/uae-logistics",
+                content="Named current evidence about logistics operations in the UAE.",
+            )
+        )
+        shared_research = AsyncMock(return_value=package)
+        lightweight_research = AsyncMock()
+        separate_vidiq = AsyncMock()
+        mocker.patch.object(stories, "_gather_initial_ideation_package", shared_research)
+        mocker.patch.object(stories, "_fresh_research_pack", lightweight_research)
+        mocker.patch.object(stories, "_fetch_initial_youtube_demand", separate_vidiq)
+        mocker.patch.object(
+            stories,
+            "_run_story_planning_agent",
+            AsyncMock(
+                return_value=fallback_ideation_output(
+                    topic=story.topic,
+                    stage=stories.IdeationStage.ANGLES,
+                )
+            ),
+        )
+        mocker.patch(
+            "backend.db.database.AsyncSessionLocal",
+            new=lambda: _SessionContext(db_session),
+        )
+
+        await stories._run_ideation_operation(
+            story_id=str(story.id),
+            user_message="Generate initial angles",
+            stage_value="angles",
+            operation_type="initial_angles",
+            fetch_research=True,
+            fetch_vidiq=True,
+        )
+        await db_session.refresh(story)
+
+        shared_research.assert_awaited_once_with(
+            topic=story.topic,
+            include_vidiq=True,
+        )
+        lightweight_research.assert_not_awaited()
+        separate_vidiq.assert_not_awaited()
+        assert story.research_data is not None
+        assert story.research_data["topic"] == story.topic
+        assert story.research_data["total_sources"] == 1
 
 
 class TestStoriesList:

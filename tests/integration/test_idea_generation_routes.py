@@ -1,5 +1,6 @@
 """API lifecycle tests for the persisted Idea Generator workspace."""
 
+import asyncio
 from unittest.mock import AsyncMock
 import uuid
 
@@ -14,6 +15,17 @@ from backend.models.idea_generation import (
 from backend.models.research_session import ResearchSessionORM
 from backend.models.story import StoryORM
 from backend.models.user import UserORM
+
+
+class _SessionContext:
+    def __init__(self, session):
+        self._session = session
+
+    async def __aenter__(self):
+        return self._session
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
 
 
 @pytest.mark.asyncio
@@ -60,6 +72,46 @@ async def test_one_active_run_is_reused_for_repeated_lucky_clicks(api_client, mo
     assert second.status_code == 202
     assert second.json()["id"] == first.json()["id"]
     assert second.json()["format"] == "documentary"
+
+
+@pytest.mark.asyncio
+async def test_generation_deadline_records_terminal_failure(api_client, db_session, monkeypatch) -> None:
+    from backend.api.routes import idea_generations as routes
+
+    user = (await db_session.execute(select(UserORM))).scalars().one()
+    run = IdeaGenerationRunORM(
+        user_id=user.id,
+        idempotency_key=str(uuid.uuid4()),
+        request_hash="d" * 64,
+        format="documentary",
+        status="queued",
+        stage="queued",
+        stage_progress=0,
+        coverage_level="partial",
+        coverage_reasons=[],
+        provider_statuses={},
+        candidate_metrics={},
+        usage_metrics={},
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    class SlowAgent:
+        async def generate(self, idea_format, *, on_stage=None):
+            await asyncio.sleep(1)
+
+    monkeypatch.setattr(routes, "AsyncSessionLocal", lambda: _SessionContext(db_session))
+    monkeypatch.setattr(routes, "_get_agent", lambda: SlowAgent())
+    monkeypatch.setattr(routes.settings, "idea_generator_total_timeout_seconds", 0.01)
+
+    await routes._run_generation(run.id)
+    await db_session.refresh(run)
+
+    assert run.status == "failed"
+    assert run.stage == "failed"
+    assert run.stage_progress == 100
+    assert run.error_code == "generation_timed_out"
+    assert "five-minute limit" in run.error_message
 
 
 async def _persist_idea(db_session, *, idea_format: str) -> GeneratedIdeaORM:

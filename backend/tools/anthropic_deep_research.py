@@ -20,6 +20,7 @@ from anthropic import AsyncAnthropic
 from pydantic import BaseModel, Field
 
 from backend.config import settings
+from backend.services.cost_ledger import record_anthropic_usage
 from backend.services.llm_cache import cached_text
 
 log = structlog.get_logger(__name__)
@@ -146,6 +147,19 @@ class AnthropicDeepResearchTool:
             # tool results accumulate instead of reprocessing it at full rate.
             *cached_text(request),
         ]
+        requested_max_uses = (
+            max_uses
+            if max_uses is not None
+            else settings.anthropic_deep_research_max_uses
+        )
+        # All callers share the same product-level ceiling.  Keeping the clamp
+        # here prevents a future route or environment override from silently
+        # restoring a larger search loop on one workspace.
+        effective_max_uses = min(
+            requested_max_uses,
+            settings.anthropic_deep_research_max_uses,
+            2,
+        )
         response = await self._client.messages.create(
             model=self._model,
             max_tokens=settings.claude_max_tokens,
@@ -153,15 +167,15 @@ class AnthropicDeepResearchTool:
                 {
                     "type": "web_search_20250305",
                     "name": "web_search",
-                    "max_uses": (
-                        max_uses
-                        if max_uses is not None
-                        else settings.anthropic_deep_research_max_uses
-                    ),
+                    "max_uses": effective_max_uses,
                 }
             ],
             messages=[{"role": "user", "content": content}],
         )
+        # Charge the run's budget before the result is used, so a ledger-bound
+        # caller sees this spend when it reserves the next phase. A no-op when
+        # the caller has not opened a ledger.
+        record_anthropic_usage(phase="research:deep", model=self._model, usage=response.usage)
         report, citations = _extract_text_and_citations(response.content)
         report = _remove_recommended_next_steps(report)
         if not report:

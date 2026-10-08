@@ -6,9 +6,10 @@ import asyncio
 import hashlib
 import json
 import re
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
 
 import structlog
@@ -18,6 +19,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agents.research import ResearchAgent
 from backend.config import settings
+from backend.services.cost_ledger import (
+    BudgetExceeded,
+    CostLedger,
+    estimate_tokens,
+    ledger_config,
+    use_ledger,
+)
 from backend.services.prompt_loader import load_prompt
 from backend.models.idea_generation import IdeaFormat
 from backend.models.research import RawSource, ResearchPackage
@@ -281,20 +289,52 @@ def _score_candidate(
     sources = [source_map[source_id] for source_id in candidate.source_ids if source_id in source_map]
     signals = [signal_map[key] for key in candidate.signal_keys if key in signal_map]
     domains = {source.domain for source in sources if source.domain}
-    if len(sources) < 2 or len(domains) < 2:
-        return None, "fewer_than_two_independent_domains"
-    if not any(_is_current_uae_source(source) for source in sources):
-        return None, "missing_current_reliable_uae_source"
+
+    # Two independent domains and a current UAE source used to be pass/fail
+    # gates here. That made validation, rather than the brief, decide how many
+    # ideas a run produced — a five-candidate synthesis routinely yielded two.
+    # They are scored below instead: a thinly sourced idea ranks beneath a
+    # well-sourced one rather than vanishing. The criteria still reach the
+    # model as requirements in idea_generator_shared.md, so they shape what
+    # gets written instead of what survives.
+    #
+    # Two things stay hard, because neither is a matter of degree: a candidate
+    # whose SOURCE_IDs resolve to nothing is citing evidence that does not
+    # exist, and editorial policy is a line rather than a score.
+    if not sources:
+        return None, "no_resolvable_sources"
     if _policy_conflict(candidate):
         return None, "editorial_policy_conflict"
 
+    independent_sourcing = len(sources) >= 2 and len(domains) >= 2
+    current_uae = any(_is_current_uae_source(source) for source in sources)
+    if not (independent_sourcing and current_uae):
+        log.info(
+            "idea_generator.soft_criteria_missed",
+            title=candidate.title[:80],
+            independent_sourcing=independent_sourcing,
+            current_uae_source=current_uae,
+            source_count=len(sources),
+            domain_count=len(domains),
+        )
+
     uae = min(20.0, 12.0 + 2.0 * sum(source.is_uae_relevant for source in sources))
-    timeliness = min(20.0, 10.0 + 3.0 * sum(_is_current_uae_source(source) for source in sources))
+    # Missing either former gate costs most of that component's points, so the
+    # ranking still prefers candidates that meet both.
+    timeliness = (
+        min(20.0, 10.0 + 3.0 * sum(_is_current_uae_source(source) for source in sources))
+        if current_uae
+        else 4.0
+    )
     youtube = min(15.0, 5.0 + 2.5 * len(signals)) if signals else 3.0
     significance = min(15.0, 8.0 + len(candidate.business_significance) / 180.0 + len(sources))
     editorial = min(15.0, 8.0 + len(candidate.central_tension) / 120.0 + len(candidate.format_details))
     feasibility = min(10.0, 5.0 + len(candidate.format_details))
-    evidence = min(5.0, 1.0 + len(domains) + 0.5 * sum(source.credibility == "high" for source in sources))
+    evidence = (
+        min(5.0, 1.0 + len(domains) + 0.5 * sum(source.credibility == "high" for source in sources))
+        if independent_sourcing
+        else 0.0
+    )
     breakdown = {
         "uae_relevance": round(uae, 1),
         "timeliness": round(timeliness, 1),
@@ -319,41 +359,62 @@ def _score_candidate(
     )
 
 
-def _source_digest(sources: list[PreparedSource]) -> str:
+def _source_digest(
+    sources: list[PreparedSource],
+    *,
+    limit: int = 40,
+    excerpt_chars: int = 650,
+) -> str:
     rows = []
-    for source in sources[:40]:
+    for source in sources[:limit]:
         rows.append(
             f"SOURCE_ID={source.reference_id}\nTitle: {source.title}\n"
             f"Domain: {source.domain or 'unknown'} | Published: {source.published_at or 'unknown'} | "
             f"Credibility: {source.credibility} | UAE-relevant: {source.is_uae_relevant}\n"
-            f"Evidence: {source.excerpt[:650]}"
+            f"Evidence: {source.excerpt[:excerpt_chars]}"
         )
     return "\n\n".join(rows)
 
 
-def _signal_digest(signals: list[PreparedSignal]) -> str:
+def _signal_digest(signals: list[PreparedSignal], *, limit: int = 35) -> str:
     return "\n".join(
         f"SIGNAL_KEY={signal.key} | {signal.signal_type} | {signal.topic} | "
         f"Geography meaning: {signal.geography_meaning or 'not geographic'} | "
         f"Values: {json.dumps(signal.values, default=str)[:450]}"
-        for signal in signals[:35]
+        for signal in signals[:limit]
     )
 
 
+class _Deadline:
+    """A single wall-clock ceiling that every phase of a run must fit inside.
 
-async def _bounded(awaitable):
-    """Fail the research phase loudly rather than letting the watchdog sweep it.
-
-    Without a bound, a slow deep-research pass runs past the watchdog's 30-minute
-    staleness threshold and the run is marked failed with a generic "interrupted"
-    message that says nothing about the cause.
+    Per-phase budgets are nominal: :meth:`allot` hands out the smaller of the
+    phase budget and the time actually left. That way a phase that overruns
+    cannot borrow time from the ones after it, and the run as a whole cannot
+    outlast the ceiling — which is what makes "never more than five minutes" a
+    guarantee rather than the sum of four hopeful numbers.
     """
+
+    def __init__(self, total_seconds: float) -> None:
+        self._expires_at = time.monotonic() + max(0.0, total_seconds)
+
+    @property
+    def remaining(self) -> float:
+        return max(0.0, self._expires_at - time.monotonic())
+
+    def allot(self, phase_budget: float) -> float:
+        return min(float(phase_budget), self.remaining)
+
+
+async def _bounded(awaitable, *, timeout: float, error_code: str):
+    """Apply an attributable wall-clock bound to an external phase."""
     try:
-        return await asyncio.wait_for(
-            awaitable, timeout=settings.idea_generator_research_timeout_seconds
-        )
+        return await asyncio.wait_for(awaitable, timeout=timeout)
     except asyncio.TimeoutError as exc:
-        raise RuntimeError("research_timed_out") from exc
+        raise RuntimeError(error_code) from exc
+
+
+StageCallback = Callable[[str, int], Awaitable[None]]
 
 
 _SUBJECT_STOP = {
@@ -388,28 +449,58 @@ def _same_subject(a: "IdeaCandidate", b: "IdeaCandidate", threshold: float = 0.2
 
 
 class IdeaGeneratorAgent:
-    """Researches, verifies, ranks, and returns exactly five supported ideas."""
+    """Researches, verifies, ranks, and returns supported UAE business ideas."""
 
     def __init__(self) -> None:
-        # Claude Opus 4.7 is a reasoning model: `temperature` was removed from
-        # its API and sending it returns 400 invalid_request_error. Every other
-        # agent here already omits it on Opus; this one was missed, which failed
-        # every generation with "Idea generation could not complete."
-        # max_tokens must fit the whole CandidateSet in one response. At
-        # idea_generator_candidate_count=8, the schema's text fields alone can
-        # reach ~10.5k tokens before JSON overhead; the previous 7000 ceiling
-        # truncated the model mid-tool-call, so LangChain received empty tool
-        # arguments and every run died on "1 validation error for CandidateSet:
-        # candidates Field required [input_value={}]".
+        # Idea synthesis is structured evidence summarisation, so Sonnet gives
+        # materially lower latency than Opus while preserving the same schema
+        # and deterministic validation below.
         llm = ChatAnthropic(
-            model=settings.claude_opus_model,
+            model=settings.claude_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=16000,
+            max_tokens=settings.idea_generator_synthesis_max_tokens,
         )
         self._structured_llm = llm.with_structured_output(CandidateSet)
+        repair_llm = ChatAnthropic(
+            model=settings.claude_model,
+            api_key=settings.anthropic_api_key,
+            max_tokens=settings.idea_generator_repair_max_tokens,
+        )
+        self._repair_structured_llm = repair_llm.with_structured_output(CandidateSet)
         self._research = ResearchAgent()
 
-    async def generate(self, idea_format: IdeaFormat) -> IdeaGenerationResult:
+    async def generate(
+        self,
+        idea_format: IdeaFormat,
+        *,
+        on_stage: StageCallback | None = None,
+    ) -> IdeaGenerationResult:
+        """Run one generation inside a fresh spend ceiling and wall-clock deadline.
+
+        The ledger is published on the context for the whole run, so the research
+        tools charge their own spend without needing it passed down to them.
+        """
+        ledger = CostLedger(budget_usd=settings.idea_generator_max_cost_usd)
+        deadline = _Deadline(
+            settings.idea_generator_total_timeout_seconds
+            - settings.idea_generator_persist_reserve_seconds
+        )
+        with use_ledger(ledger):
+            return await self._generate(
+                idea_format,
+                on_stage=on_stage,
+                ledger=ledger,
+                deadline=deadline,
+            )
+
+    async def _generate(
+        self,
+        idea_format: IdeaFormat,
+        *,
+        on_stage: StageCallback | None,
+        ledger: CostLedger,
+        deadline: _Deadline,
+    ) -> IdeaGenerationResult:
         format_label = "documentary" if idea_format == IdeaFormat.DOCUMENTARY else "expert interview video"
         research_prompt = (
             "Identify current, evidence-backed business developments and emerging topics in the "
@@ -420,23 +511,32 @@ class IdeaGeneratorAgent:
             "filmable change. Keep discussion of the UAE, its government, rulers and institutions neutral "
             "or constructive; reject a topic if compliance would require hiding or distorting evidence."
         )
-        package, vidiq_raw = await _bounded(asyncio.gather(
-            self._research.gather_package(
-                prompt=research_prompt,
-                deep=True,
-                include_vidiq=False,
-                rss_country="AE",
-                deep_max_uses=settings.anthropic_deep_research_idea_max_uses,
-                # This caps only Anthropic server-side web-search uses. Tavily,
-                # NewsAPI, RSS, scraping, and the retained source count are not
-                # reduced, so verification still has the full evidence pool.
+        package, vidiq_raw = await _bounded(
+            asyncio.gather(
+                self._research.gather_initial_package(
+                    prompt=research_prompt,
+                    deep=True,
+                    include_vidiq=False,
+                    rss_country="AE",
+                    deep_max_uses=settings.anthropic_deep_research_idea_max_uses,
+                    # This caps only Anthropic server-side web-search uses.
+                    # Tavily, NewsAPI, RSS, scraping, and retained source count
+                    # are unchanged.
+                ),
+                # Idea discovery needs broad UAE trend/outlier signals rather
+                # than the Research workspace's single-topic demand report.
+                # It still runs inside the shared initial research phase.
+                VidIQTool().fetch_idea_trends(window_days=30),
             ),
-            VidIQTool().fetch_idea_trends(window_days=30),
-        ))
+            timeout=deadline.allot(settings.idea_generator_research_timeout_seconds),
+            error_code="research_timed_out",
+        )
         sources = _prepare_sources(package)
         signals = _prepare_signals(vidiq_raw)
         if len({source.domain for source in sources if source.domain}) < 2:
             raise RuntimeError("insufficient_evidence")
+        if on_stage is not None:
+            await on_stage("synthesizing_ideas", 65)
 
         source_map = {source.reference_id: source for source in sources}
         signal_map = {signal.key: signal for signal in signals}
@@ -460,28 +560,8 @@ class IdeaGeneratorAgent:
             + load_prompt(format_prompt_name)
         )
 
-        for attempt in range(settings.idea_generator_max_synthesis_attempts):
-            synthesis_calls += 1
-            recovery = (
-                f"\nPrevious validation rejected candidates for: {json.dumps(rejected)}. Replace them with "
-                "better-supported, genuinely distinct candidates using only the supplied evidence."
-                if attempt and rejected
-                else ""
-            )
-            result = await self._structured_llm.ainvoke(
-                [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(
-                        content=(
-                            f"Today is {datetime.now(timezone.utc).date().isoformat()}.\n"
-                            f"Requested format: {idea_format.value}.\n\nFACTUAL SOURCES:\n{_source_digest(sources)}\n\n"
-                            f"VIDIQ OPPORTUNITY SIGNALS:\n{_signal_digest(signals) or '(vidIQ unavailable)'}"
-                            f"{recovery}"
-                        )
-                    ),
-                ]
-            )
-            for candidate in result.candidates:
+        def accept_candidates(candidates: list[IdeaCandidate]) -> None:
+            for candidate in candidates:
                 if any(existing.candidate.title.casefold() == candidate.title.casefold() for existing in accepted):
                     rejected["duplicate_title"] = rejected.get("duplicate_title", 0) + 1
                     continue
@@ -490,8 +570,128 @@ class IdeaGeneratorAgent:
                     rejected[reason or "validation_failed"] = rejected.get(reason or "validation_failed", 0) + 1
                     continue
                 accepted.append(scored)
-            if len(accepted) >= settings.idea_generator_result_count:
+
+        def _synthesis_human(limit: int, excerpt_chars: int) -> str:
+            return (
+                f"Today is {datetime.now(timezone.utc).date().isoformat()}.\n"
+                f"Requested format: {idea_format.value}.\n\nFACTUAL SOURCES:\n"
+                f"{_source_digest(sources, limit=limit, excerpt_chars=excerpt_chars)}\n\n"
+                f"VIDIQ OPPORTUNITY SIGNALS:\n{_signal_digest(signals) or '(vidIQ unavailable)'}"
+            )
+
+        # Research has already charged the ledger, so what is left here is the
+        # real headroom. Prefer a thinner evidence digest over a failed run:
+        # step the payload down until its worst case fits, and only refuse when
+        # even the smallest digest would breach the ceiling.
+        synthesis_payload_steps = ((40, 650), (30, 450), (20, 320))
+        human_content = _synthesis_human(*synthesis_payload_steps[0])
+        for step in synthesis_payload_steps:
+            human_content = _synthesis_human(*step)
+            if ledger.affords(
+                model=settings.claude_model,
+                input_tokens=estimate_tokens(system_prompt + human_content),
+                max_output_tokens=settings.idea_generator_synthesis_max_tokens,
+            ):
+                if step != synthesis_payload_steps[0]:
+                    log.warning(
+                        "idea_generator.synthesis_payload_trimmed",
+                        source_limit=step[0],
+                        excerpt_chars=step[1],
+                        remaining_usd=round(ledger.remaining_usd, 4),
+                    )
                 break
+        else:
+            # Re-run the check as a reservation so the failure carries the
+            # actual dollar figures rather than a bare code.
+            ledger.reserve(
+                phase="synthesis",
+                model=settings.claude_model,
+                input_tokens=estimate_tokens(system_prompt + human_content),
+                max_output_tokens=settings.idea_generator_synthesis_max_tokens,
+            )
+
+        synthesis_calls += 1
+        result = await _bounded(
+            self._structured_llm.ainvoke(
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=human_content),
+                ],
+                config=ledger_config("synthesis"),
+            ),
+            timeout=deadline.allot(settings.idea_generator_synthesis_timeout_seconds),
+            error_code="synthesis_timed_out",
+        )
+        accept_candidates(result.candidates)
+
+        # Never repeat the full six-candidate synthesis. If deterministic
+        # validation leaves a deficit, request only the missing candidates with
+        # a compact evidence subset and a much smaller time/output budget.
+        if (
+            len(accepted) < settings.idea_generator_result_count
+            and settings.idea_generator_max_synthesis_attempts > 1
+        ):
+            missing = settings.idea_generator_result_count - len(accepted)
+            repair_system_prompt = (
+                load_prompt("idea_generator_shared").format(
+                    candidate_count=missing,
+                    result_count=missing,
+                )
+                + "\n\n"
+                + load_prompt(format_prompt_name)
+            )
+            existing_titles = [item.candidate.title for item in accepted]
+            repair_human = (
+                f"Create exactly {missing} replacement candidate(s).\n"
+                f"Do not repeat these accepted titles: {json.dumps(existing_titles)}.\n"
+                f"Previous validation failures: {json.dumps(rejected)}.\n\n"
+                "Use only these compact factual references:\n"
+                f"{_source_digest(sources, limit=20, excerpt_chars=400)}\n\n"
+                "VIDIQ SIGNALS:\n"
+                f"{_signal_digest(signals, limit=15) or '(vidIQ unavailable)'}"
+            )
+            # Repair is a top-up, never the thing that breaks a run. If either
+            # ceiling is too tight for it, ship what validation already
+            # accepted and say why in the metrics.
+            repair_time = deadline.allot(settings.idea_generator_repair_timeout_seconds)
+            repair_affordable = ledger.affords(
+                model=settings.claude_model,
+                input_tokens=estimate_tokens(repair_system_prompt + repair_human),
+                max_output_tokens=settings.idea_generator_repair_max_tokens,
+            )
+            if not repair_affordable:
+                log.warning(
+                    "idea_generator.repair_skipped_budget",
+                    remaining_usd=round(ledger.remaining_usd, 4),
+                )
+                rejected["repair_skipped_budget"] = rejected.get("repair_skipped_budget", 0) + 1
+            elif repair_time < 5:
+                log.warning("idea_generator.repair_skipped_deadline", remaining_seconds=round(repair_time, 1))
+                rejected["repair_skipped_deadline"] = rejected.get("repair_skipped_deadline", 0) + 1
+            else:
+                try:
+                    synthesis_calls += 1
+                    repair = await _bounded(
+                        self._repair_structured_llm.ainvoke(
+                            [
+                                SystemMessage(content=repair_system_prompt),
+                                HumanMessage(content=repair_human),
+                            ],
+                            config=ledger_config("repair"),
+                        ),
+                        timeout=repair_time,
+                        error_code="repair_timed_out",
+                    )
+                    accept_candidates(repair.candidates)
+                except RuntimeError as exc:
+                    if str(exc) != "repair_timed_out" or not accepted:
+                        raise
+                    rejected["repair_timed_out"] = rejected.get("repair_timed_out", 0) + 1
+
+        if not accepted:
+            raise RuntimeError("insufficient_evidence")
+        if on_stage is not None:
+            await on_stage("validating_and_ranking_ideas", 82)
 
         # Distinctness is a hard requirement, not a ranking preference. The
         # previous pass preferred one idea per sector and then back-filled the
@@ -541,6 +741,8 @@ class IdeaGeneratorAgent:
         coverage_reasons = ["google_trends_not_configured"]
         if not vidiq_raw:
             coverage_reasons.append("vidiq_unavailable")
+        if len(selected) < settings.idea_generator_result_count:
+            coverage_reasons.append("partial_idea_count")
         return IdeaGenerationResult(
             ideas=selected,
             sources=sources,
@@ -556,6 +758,7 @@ class IdeaGeneratorAgent:
                 "synthesis_calls": synthesis_calls,
                 "vidiq_credits_spent": int((vidiq_raw or {}).get("credits_spent") or 0),
                 "deep_research_web_search_requests": package.deep_research_web_search_requests,
+                **ledger.snapshot(),
             },
         )
 

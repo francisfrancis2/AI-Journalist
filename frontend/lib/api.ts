@@ -596,6 +596,11 @@ export interface IdeaGenerationRun {
   previous_run_id: string | null;
   error_code: string | null;
   error_message: string | null;
+  started_at: string | null;
+  /** Wall-clock ceiling for the whole run, in seconds. */
+  estimated_total_seconds: number;
+  /** When the run will be abandoned if it has not finished. */
+  deadline_at: string | null;
   ideas: GeneratedIdea[];
   created_at: string;
   updated_at: string;

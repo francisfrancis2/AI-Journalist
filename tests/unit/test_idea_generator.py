@@ -94,12 +94,50 @@ def test_scoring_requires_two_independent_domains_and_current_uae_evidence() -> 
     assert scored.signal_ids == [signal.id]
 
 
-def test_scoring_rejects_single_domain_even_with_two_source_ids() -> None:
-    first = _source("s1", "example.ae", uae=True)
-    second = _source("s2", "example.ae", uae=True)
-    scored, reason = _score_candidate(_candidate(), {"s1": first, "s2": second}, {})
+def test_scoring_keeps_a_single_domain_candidate_but_ranks_it_lower() -> None:
+    """Thin sourcing is a scoring penalty, not a rejection.
+
+    Enforcing it meant validation decided how many ideas a run produced. The
+    criterion now lives in the prompt and in the ranking.
+    """
+    # Hold UAE relevance and recency equal so only domain independence differs.
+    weak, reason = _score_candidate(
+        _candidate(),
+        {"s1": _source("s1", "example.ae", uae=True), "s2": _source("s2", "example.ae", uae=True)},
+        {},
+    )
+    assert reason is None
+    assert weak is not None
+
+    strong, _ = _score_candidate(
+        _candidate(),
+        {"s1": _source("s1", "example.ae", uae=True), "s2": _source("s2", "gulfnews.com", uae=True)},
+        {},
+    )
+    assert strong is not None
+    assert strong.score > weak.score, "two independent domains must outrank one"
+
+
+def test_scoring_keeps_a_candidate_with_no_current_uae_source_but_ranks_it_lower() -> None:
+    # Both non-UAE, so no source can be "current UAE"; domains stay independent.
+    stale_first = _source("s1", "reuters.com", uae=False)
+    stale_second = _source("s2", "ft.com", uae=False)
+    stale, reason = _score_candidate(_candidate(), {"s1": stale_first, "s2": stale_second}, {})
+    assert reason is None
+    assert stale is not None
+
+    current_first = _source("s1", "wam.ae", uae=True)
+    current_second = _source("s2", "reuters.com", uae=False)
+    current, _ = _score_candidate(_candidate(), {"s1": current_first, "s2": current_second}, {})
+    assert current is not None
+    assert current.score > stale.score, "a current UAE source must outrank none"
+
+
+def test_scoring_rejects_a_candidate_whose_sources_do_not_exist() -> None:
+    """Citing an ID that resolves to nothing is a hallucination, not a weak idea."""
+    scored, reason = _score_candidate(_candidate(), {}, {})
     assert scored is None
-    assert reason == "fewer_than_two_independent_domains"
+    assert reason == "no_resolvable_sources"
 
 
 def test_scoring_rejects_explicit_uae_institutional_attack_framing() -> None:
@@ -123,10 +161,10 @@ async def test_vidiq_idea_trends_fail_open_when_disabled(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_idea_generator_passes_three_search_deep_research_budget(mocker) -> None:
+async def test_idea_generator_uses_shared_initial_research_with_two_search_budget(mocker) -> None:
     agent = IdeaGeneratorAgent.__new__(IdeaGeneratorAgent)
     gather = AsyncMock(return_value=ResearchPackage(topic="UAE business"))
-    agent._research = SimpleNamespace(gather_package=gather)
+    agent._research = SimpleNamespace(gather_initial_package=gather)
     mocker.patch(
         "backend.agents.idea_generator.VidIQTool.fetch_idea_trends",
         new=AsyncMock(return_value=None),
@@ -135,5 +173,73 @@ async def test_idea_generator_passes_three_search_deep_research_budget(mocker) -
     with pytest.raises(RuntimeError, match="insufficient_evidence"):
         await agent.generate(IdeaFormat.DOCUMENTARY)
 
-    assert gather.await_args.kwargs["deep_max_uses"] == 3
+    assert gather.await_args.kwargs["deep_max_uses"] == 2
     assert gather.await_args.kwargs["deep_max_uses"] == settings.anthropic_deep_research_idea_max_uses
+
+
+def test_idea_generator_synthesis_uses_sonnet(mocker) -> None:
+    constructor = mocker.patch("backend.agents.idea_generator.ChatAnthropic")
+    mocker.patch("backend.agents.idea_generator.ResearchAgent")
+
+    IdeaGeneratorAgent()
+
+    assert constructor.call_count == 2
+    assert all(
+        call.kwargs["model"] == settings.claude_model
+        for call in constructor.call_args_list
+    )
+
+
+class TestRunCeilings:
+    """The 5-minute deadline and the $1 spend cap."""
+
+    def test_deadline_clamps_a_phase_to_the_time_left(self) -> None:
+        from backend.agents.idea_generator import _Deadline
+
+        deadline = _Deadline(10)
+        # A phase budget larger than the ceiling is cut down to it, so the sum
+        # of the phase budgets can never outlast the run as a whole.
+        assert deadline.allot(300) == pytest.approx(10, abs=0.5)
+        # A phase that fits is handed its full budget.
+        assert deadline.allot(3) == pytest.approx(3)
+
+    def test_expired_deadline_allots_nothing(self) -> None:
+        from backend.agents.idea_generator import _Deadline
+
+        assert _Deadline(0).allot(300) == 0
+
+    def test_phase_budgets_fit_inside_the_ceiling(self) -> None:
+        """The nominal budgets plus the persist reserve must not exceed 5 minutes."""
+        assert settings.idea_generator_total_timeout_seconds <= 300
+        assert (
+            settings.idea_generator_research_timeout_seconds
+            + settings.idea_generator_persist_reserve_seconds
+            < settings.idea_generator_total_timeout_seconds
+        )
+
+    @pytest.mark.asyncio
+    async def test_generate_opens_a_spend_ledger_for_the_whole_run(self, mocker) -> None:
+        """Research tools must be able to charge the run without being passed the ledger."""
+        from backend.services.cost_ledger import current_ledger
+
+        seen: dict[str, object] = {}
+
+        async def gather(**kwargs):
+            seen["ledger"] = current_ledger()
+            return ResearchPackage(topic="UAE business")
+
+        agent = IdeaGeneratorAgent.__new__(IdeaGeneratorAgent)
+        agent._research = SimpleNamespace(gather_initial_package=gather)
+        mocker.patch(
+            "backend.agents.idea_generator.VidIQTool.fetch_idea_trends",
+            new=AsyncMock(return_value=None),
+        )
+
+        with pytest.raises(RuntimeError, match="insufficient_evidence"):
+            await agent.generate(IdeaFormat.DOCUMENTARY)
+
+        ledger = seen["ledger"]
+        assert ledger is not None, "research ran outside the run's ledger"
+        assert ledger.budget_usd == settings.idea_generator_max_cost_usd
+        # And the context is clean afterwards, so one run cannot charge another.
+        assert current_ledger() is None

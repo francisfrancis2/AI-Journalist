@@ -126,6 +126,42 @@ def _mark_latest_ideation_message_failed(chat_data: object, error_message: str, 
     return history
 
 
+async def mark_interrupted_idea_generations_failed() -> int:
+    """Fail in-process Idea jobs immediately when a new backend starts.
+
+    Idea generation currently runs as a FastAPI background task. A queued or
+    running row that exists before this process begins has no task attached to
+    it and can never finish on this process, so waiting for the periodic stale
+    threshold only creates a long-lived false spinner.
+    """
+    now = datetime.now(timezone.utc)
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(IdeaGenerationRunORM).where(
+                IdeaGenerationRunORM.status.in_([
+                    IdeaRunStatus.QUEUED.value,
+                    IdeaRunStatus.RUNNING.value,
+                ])
+            )
+        )
+        interrupted = list(result.scalars().all())
+        for idea_run in interrupted:
+            idea_run.status = IdeaRunStatus.FAILED.value
+            idea_run.stage = "failed"
+            idea_run.stage_progress = 100
+            idea_run.error_code = "interrupted"
+            idea_run.error_message = _STALE_IDEA_GENERATION_MESSAGE
+            idea_run.completed_at = now
+        await session.commit()
+
+    if interrupted:
+        log.warning(
+            "watchdog.marked_interrupted_idea_generation_failed",
+            count=len(interrupted),
+        )
+    return len(interrupted)
+
+
 async def mark_stale_pipelines_failed() -> int:
     """Update stale pipeline records. Returns total affected row count."""
     now = datetime.now(timezone.utc)

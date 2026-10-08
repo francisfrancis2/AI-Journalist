@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import structlog
@@ -16,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.api.deps import get_current_user
 from backend.config import settings
+from backend.services.cost_ledger import BudgetExceeded
 from backend.db.database import AsyncSessionLocal, get_db
 from backend.models.idea_generation import (
     CoverageLevel,
@@ -107,7 +109,6 @@ def _idea_read(idea: GeneratedIdeaORM) -> GeneratedIdeaRead:
         score_breakdown=idea.score_breakdown or {},
         score=idea.score,
         strength=idea.strength,
-        confidence=idea.confidence,
         coverage=idea.coverage or {},
         verification_gaps=idea.verification_gaps or [],
         state=idea.state,
@@ -138,7 +139,14 @@ def _run_read(run: IdeaGenerationRunORM) -> IdeaGenerationRunRead:
         ideas=[_idea_read(idea) for idea in run.ideas],
         created_at=run.created_at,
         updated_at=run.updated_at,
+        started_at=run.started_at,
         completed_at=run.completed_at,
+        estimated_total_seconds=settings.idea_generator_total_timeout_seconds,
+        deadline_at=(
+            run.started_at + timedelta(seconds=settings.idea_generator_total_timeout_seconds)
+            if run.started_at is not None
+            else None
+        ),
     )
 
 
@@ -170,51 +178,21 @@ async def _load_idea(db: AsyncSession, idea_id: uuid.UUID, user_id: uuid.UUID) -
     return idea
 
 
-async def _run_generation(run_id: uuid.UUID) -> None:
+async def _set_generation_stage(run_id: uuid.UUID, stage: str, progress: int) -> None:
     async with AsyncSessionLocal() as db:
         run = await db.get(IdeaGenerationRunORM, run_id)
-        if run is None:
+        if run is None or run.status != IdeaRunStatus.RUNNING.value:
             return
-        run.status = IdeaRunStatus.RUNNING.value
-        run.stage = "researching_uae_business_trends"
-        run.stage_progress = 15
-        run.started_at = _utc_now()
+        run.stage = stage
+        run.stage_progress = progress
         await db.commit()
-        idea_format = IdeaFormat(run.format)
 
-    try:
-        result = await _get_agent().generate(idea_format)
-    except Exception as exc:
-        code = "insufficient_evidence" if str(exc) == "insufficient_evidence" else "generation_failed"
-        # Flatten newlines: a pydantic ValidationError puts the offending field
-        # path on later lines, and the console renderer stops at the first one —
-        # which is why failures logged as a bare "1 validation error for X" with
-        # no indication of which field was at fault.
-        detail = " | ".join(str(exc).split("\n"))[:600]
-        log.error("idea_generator.failed", run_id=str(run_id), code=code, error=detail)
-        async with AsyncSessionLocal() as db:
-            run = await db.get(IdeaGenerationRunORM, run_id)
-            if run is None:
-                return
-            run.status = IdeaRunStatus.FAILED.value
-            run.stage = "failed"
-            run.stage_progress = 100
-            run.error_code = code
-            run.error_message = (
-                "Not enough independently verified evidence was available to produce five ideas."
-                if code == "insufficient_evidence"
-                else "Idea generation could not complete. Please retry."
-            )
-            run.completed_at = _utc_now()
-            await db.commit()
-        return
 
+async def _persist_generation_result(run_id: uuid.UUID, result) -> None:
     async with AsyncSessionLocal() as db:
         run = await db.get(IdeaGenerationRunORM, run_id)
-        if run is None:
+        if run is None or run.status != IdeaRunStatus.RUNNING.value:
             return
-        run.stage = "ranking_verified_ideas"
-        run.stage_progress = 85
         source_rows: dict[uuid.UUID, IdeaSourceORM] = {}
         for source in result.sources:
             row = IdeaSourceORM(
@@ -276,7 +254,6 @@ async def _run_generation(run_id: uuid.UUID) -> None:
                 score_breakdown=scored.score_breakdown,
                 score=scored.score,
                 strength=scored.strength,
-                confidence=scored.confidence,
                 coverage={"level": "partial", "reasons": result.coverage_reasons},
                 verification_gaps=candidate.verification_gaps,
                 sources=[source_rows[item] for item in scored.source_ids if item in source_rows],
@@ -295,6 +272,76 @@ async def _run_generation(run_id: uuid.UUID) -> None:
         run.error_message = None
         run.completed_at = _utc_now()
         await db.commit()
+
+
+async def _mark_generation_failed(run_id: uuid.UUID, *, code: str, detail: str) -> None:
+    messages = {
+        "insufficient_evidence": "Not enough independently verified evidence was available to produce ideas.",
+        "research_timed_out": "Research exceeded its time budget. Please retry the run.",
+        "synthesis_timed_out": "Idea synthesis exceeded its time budget. Please retry the run.",
+        "repair_timed_out": "Idea validation could not finish in time. Please retry the run.",
+        "generation_timed_out": "Idea generation reached the five-minute limit. Please retry the run.",
+    }
+    log.error("idea_generator.failed", run_id=str(run_id), code=code, error=detail)
+    async with AsyncSessionLocal() as db:
+        run = await db.get(IdeaGenerationRunORM, run_id)
+        if run is None:
+            return
+        run.status = IdeaRunStatus.FAILED.value
+        run.stage = "failed"
+        run.stage_progress = 100
+        run.error_code = code
+        run.error_message = messages.get(code, "Idea generation could not complete. Please retry.")
+        run.completed_at = _utc_now()
+        await db.commit()
+
+
+async def _run_generation(run_id: uuid.UUID) -> None:
+    async with AsyncSessionLocal() as db:
+        run = await db.get(IdeaGenerationRunORM, run_id)
+        if run is None:
+            return
+        run.status = IdeaRunStatus.RUNNING.value
+        run.stage = "researching_uae_business_trends"
+        run.stage_progress = 15
+        run.started_at = _utc_now()
+        await db.commit()
+        idea_format = IdeaFormat(run.format)
+
+    async def execute() -> None:
+        async def on_stage(stage: str, progress: int) -> None:
+            await _set_generation_stage(run_id, stage, progress)
+
+        result = await _get_agent().generate(idea_format, on_stage=on_stage)
+        await _set_generation_stage(run_id, "saving_ideas", 92)
+        await _persist_generation_result(run_id, result)
+
+    try:
+        await asyncio.wait_for(
+            execute(),
+            timeout=settings.idea_generator_total_timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        await _mark_generation_failed(
+            run_id,
+            code="generation_timed_out",
+            detail="overall idea-generation deadline exceeded",
+        )
+    except Exception as exc:
+        known_codes = {
+            "insufficient_evidence",
+            "research_timed_out",
+            "synthesis_timed_out",
+            "repair_timed_out",
+            "budget_exceeded",
+        }
+        code = str(exc) if str(exc) in known_codes else "generation_failed"
+        # Flatten multiline validation errors so logs retain the failing field.
+        detail = " | ".join(str(exc).split("\n"))[:600]
+        if isinstance(exc, BudgetExceeded):
+            # The bare code says nothing useful to whoever is reading the UI.
+            detail = exc.detail
+        await _mark_generation_failed(run_id, code=code, detail=detail)
 
 
 async def _create_run(

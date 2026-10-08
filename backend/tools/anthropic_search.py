@@ -27,6 +27,7 @@ from anthropic import AsyncAnthropic
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from backend.config import settings
+from backend.services.cost_ledger import record_anthropic_usage
 from backend.models.research import RawSource, SourceCredibility, SourceType
 
 log = structlog.get_logger(__name__)
@@ -195,6 +196,8 @@ class AnthropicSearchTool:
         except Exception as exc:
             log.warning("anthropic_search.api_error", query=query, error=str(exc))
             raise
+
+        record_anthropic_usage(phase="research:search", model=self._model, usage=response.usage)
 
         # Concatenate all text blocks (the model may emit text between searches)
         text_parts: list[str] = []

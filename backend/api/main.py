@@ -34,6 +34,7 @@ from backend.models.benchmark import BIReferenceDocORM
 from backend.models.user import UserORM
 from backend.services.admin_notifications import cleanup_admin_notifications
 from backend.services.stale_pipeline_watchdog import (
+    mark_interrupted_idea_generations_failed,
     mark_stale_pipelines_failed,
     run_watchdog_loop,
 )
@@ -218,6 +219,7 @@ def create_app() -> FastAPI:
         await _cleanup_old_admin_notifications()
         # Catch zombies left over from the previous machine generation BEFORE
         # accepting traffic, so users see "failed" status instead of "stuck".
+        await mark_interrupted_idea_generations_failed()
         await mark_stale_pipelines_failed()
         # Then schedule periodic scans for the lifetime of this machine.
         watchdog_task["handle"] = asyncio.create_task(run_watchdog_loop())

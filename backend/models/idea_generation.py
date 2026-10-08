@@ -293,7 +293,13 @@ class IdeaGenerationRunRead(StrictSchema):
     ideas: list[GeneratedIdeaRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    # Clock for the client-side progress estimate. The run is a polled
+    # background job, so the UI needs the deadline rather than a live stream:
+    # it can tick a countdown locally between polls.
+    estimated_total_seconds: int = 0
+    deadline_at: Optional[datetime] = None
 
 
 class IdeaGenerationRunListItem(StrictSchema):

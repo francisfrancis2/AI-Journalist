@@ -7,6 +7,7 @@ import pytest
 
 from backend.agents.angles_and_hooks import compact_ideation_context
 from backend.agents.research import ResearchAgent
+from backend.config import settings
 from backend.models.research import (
     ResearchPackage,
     SourceType,
@@ -160,22 +161,23 @@ class TestVidIQLifecycle:
     async def test_research_report_vidiq_is_opt_in_and_forwarded(self):
         agent = ResearchAgent.__new__(ResearchAgent)
         package = ResearchPackage(topic="UAE business")
-        agent.gather_package = AsyncMock(return_value=package)
+        agent.gather_initial_package = AsyncMock(return_value=package)
         agent._synthesizer = SimpleNamespace(
-            synthesize=AsyncMock(return_value=("# Report", []))
+            model=settings.claude_haiku_model,
+            synthesize=AsyncMock(return_value=("# Report", [])),
         )
 
         await agent.run_report(prompt="UAE business")
-        assert agent.gather_package.await_args.kwargs["include_vidiq"] is False
+        assert agent.gather_initial_package.await_args.kwargs["include_vidiq"] is False
 
-        agent.gather_package.reset_mock()
+        agent.gather_initial_package.reset_mock()
         await agent.run_report(
             prompt="UAE business with seed evidence",
             include_vidiq=True,
             vidiq_topic="UAE business",
         )
-        assert agent.gather_package.await_args.kwargs["include_vidiq"] is True
-        assert agent.gather_package.await_args.kwargs["vidiq_topic"] == "UAE business"
+        assert agent.gather_initial_package.await_args.kwargs["include_vidiq"] is True
+        assert agent.gather_initial_package.await_args.kwargs["vidiq_topic"] == "UAE business"
 
     def test_later_ideation_context_reuses_saved_snapshot(self):
         story = SimpleNamespace(

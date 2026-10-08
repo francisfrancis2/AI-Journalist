@@ -20,6 +20,8 @@ Responsibilities:
 ### Model Configuration
 
 - `ChatAnthropic(model=settings.claude_haiku_model, max_tokens=1536, temperature=0.2)`
+- Research Hub report consolidation and follow-ups: `ResearchReportSynthesizer(model=settings.claude_haiku_model)`
+- Anthropic deep-research retrieval remains on `settings.claude_model` (Sonnet).
 
 ### Structured Outputs
 
@@ -268,8 +270,7 @@ async def run(self, state: dict) -> dict:
             duration_target=duration_target,
             deep=True,
             deep_prompt=self._deep_prompt(topic, state),
-            # Pipeline research uses a lighter deep-research cap than the
-            # Research Tab (run_report) to control per-story cost/latency.
+            # All workspaces share the same product-wide two-search ceiling.
             deep_max_uses=settings.anthropic_deep_research_pipeline_max_uses,
             include_vidiq=False,
         )

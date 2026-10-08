@@ -19,6 +19,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from backend.config import settings
+from backend.services.cost_ledger import ledger_config
 from backend.models.research import (
     RawSource,
     ResearchPackage,
@@ -156,7 +157,12 @@ class ResearchAgent:
         # settings.enable_deep_research so cost stays tunable.
         self._deep_research = AnthropicDeepResearchTool()
         self._vidiq = VidIQTool()
-        self._synthesizer = ResearchReportSynthesizer()
+        # Research Hub report consolidation and follow-up re-synthesis are
+        # summarisation workloads; keep them on Haiku. Deep research retrieval
+        # remains on Sonnet inside AnthropicDeepResearchTool.
+        self._synthesizer = ResearchReportSynthesizer(
+            model=settings.claude_haiku_model,
+        )
 
     async def _plan_queries(
         self,
@@ -189,7 +195,7 @@ class ResearchAgent:
             SystemMessage(content=load_prompt("research")),
             HumanMessage(content=user_prompt),
         ]
-        return await self._structured_llm.ainvoke(messages)
+        return await self._structured_llm.ainvoke(messages, config=ledger_config("research:plan"))
 
     @staticmethod
     def _normalise_sources(plan: ResearchPlan) -> set[str]:
@@ -337,8 +343,7 @@ class ResearchAgent:
             duration_target=duration_target,
             deep=True,
             deep_prompt=self._deep_prompt(topic, state),
-            # Pipeline research uses a lighter deep-research cap than the
-            # Research Tab (run_report) to control per-story cost/latency.
+            # All workspaces share the same product-wide two-search ceiling.
             deep_max_uses=settings.anthropic_deep_research_pipeline_max_uses,
             include_vidiq=False,
         )
@@ -540,8 +545,8 @@ class ResearchAgent:
     ) -> ResearchPackage:
         """Gather the shared evidence package without generating a prose report.
 
-        ``deep_max_uses`` caps Anthropic deep-research searches. Left unset it
-        uses the full Research Workspace budget, which is the slowest setting.
+        ``deep_max_uses`` caps Anthropic deep-research searches. The tool layer
+        also enforces the product-wide maximum of two searches.
         """
         topic = prompt.strip()
         state = {"topic": topic}
@@ -579,6 +584,32 @@ class ResearchAgent:
         package.research_duration_seconds = time.monotonic() - start
         return package
 
+    async def gather_initial_package(
+        self,
+        *,
+        prompt: str,
+        deep: bool = True,
+        include_vidiq: bool = False,
+        vidiq_topic: str | None = None,
+        rss_country: str = "US",
+        deep_max_uses: int | None = None,
+    ) -> ResearchPackage:
+        """Shared initial evidence operation for Research and Idea Generator.
+
+        Both workspaces enter the same planner, provider fan-out, deduplication,
+        scraping, and deep-research path. Callers may add workspace-specific
+        enrichment after this operation, but must not reimplement source
+        collection themselves.
+        """
+        return await self.gather_package(
+            prompt=prompt,
+            deep=deep,
+            include_vidiq=include_vidiq,
+            vidiq_topic=vidiq_topic,
+            rss_country=rss_country,
+            deep_max_uses=deep_max_uses,
+        )
+
     async def run_report(
         self,
         *,
@@ -602,7 +633,8 @@ class ResearchAgent:
         for the initial Research workspace report; the default stays disabled
         so follow-ups and other callers cannot accidentally refetch it.
         """
-        package = await self.gather_package(
+        gather = self.gather_initial_package if existing_report is None else self.gather_package
+        package = await gather(
             prompt=prompt,
             deep=deep,
             include_vidiq=include_vidiq,
@@ -627,7 +659,7 @@ class ResearchAgent:
             report_markdown=report,
             citations=citations,
             package=package,
-            model=settings.claude_model,
+            model=self._synthesizer.model,
             web_search_requests=package.deep_research_web_search_requests,
         )
 
@@ -664,7 +696,8 @@ class ResearchAgent:
                         content="You identify missing evidence for a documentary script."
                     ),
                     HumanMessage(content=user_prompt),
-                ]
+                ],
+                config=ledger_config("research:gaps"),
             )
         except Exception as exc:
             log.warning("researcher.detect_gaps_failed", error=str(exc))

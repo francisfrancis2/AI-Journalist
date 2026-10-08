@@ -39,9 +39,12 @@ class Settings(BaseSettings):
     enable_anthropic_search: bool = True
     anthropic_search_max_uses_per_query: int = 3   # caps cost per query call
     anthropic_search_max_queries: int = 4          # caps how many planned queries we send
-    anthropic_deep_research_max_uses: int = 12     # Research Hub: depth is the product
-    anthropic_deep_research_pipeline_max_uses: int = 3  # Story path; all other source-provider limits stay unchanged
-    anthropic_deep_research_idea_max_uses: int = 3  # Idea Generator path; all other source-provider limits stay unchanged
+    # Hard product policy: no initial-research path may use more than two
+    # Anthropic server-side web searches.  The tool layer clamps explicit
+    # overrides to this value as a second line of defence.
+    anthropic_deep_research_max_uses: int = 2
+    anthropic_deep_research_pipeline_max_uses: int = 2
+    anthropic_deep_research_idea_max_uses: int = 2
 
     # ── Unified Research Agent (deep research always-on + writer enrichment) ───
     # When True, ResearchAgent.run always folds an Anthropic deep-research report
@@ -55,7 +58,7 @@ class Settings(BaseSettings):
     # the Research Tab already cover the evidence base.
     enable_writer_research_enrichment: bool = False
     research_enrichment_max_queries: int = 4              # caps queries per enrichment pass
-    anthropic_deep_research_enrichment_max_uses: int = 3  # Story writer enrichment (when enabled)
+    anthropic_deep_research_enrichment_max_uses: int = 2  # Story writer enrichment (when enabled)
 
     # ── Team voice profile ────────────────────────────────────────────────────
     # When True, Angles & Hooks / Chapter Writer / Scriptwriter / Chief Editor rewrite
@@ -138,16 +141,36 @@ class Settings(BaseSettings):
 
     # ── Idea Generator V2 ────────────────────────────────────────────────────
     enable_idea_generator: bool = True
-    idea_generator_candidate_count: int = 6
+    idea_generator_candidate_count: int = 5
     idea_generator_result_count: int = 3
-    idea_generator_max_synthesis_attempts: int = 2
+    idea_generator_max_synthesis_attempts: int = 2  # one full pass + at most one compact repair
     # Google Trends is deliberately not implemented in V2 yet. Keep this false
     # until a supported access route is added; the API reports partial coverage.
     enable_google_trends: bool = False
-    # Wall-clock bound on the research phase. Must stay below the stale-pipeline
-    # watchdog's STALE_THRESHOLD_MINUTES (30), so a slow run fails with an
-    # attributable error instead of being swept up as "interrupted".
-    idea_generator_research_timeout_seconds: int = 1500
+    # The Idea Generator has a hard five-minute terminal SLA.  These inner
+    # budgets leave time for persistence and terminal-state cleanup.
+    # The 5-minute ceiling. This one bound wraps research, synthesis, repair and
+    # persistence (see _run_generation), so a run cannot exceed it end to end.
+    idea_generator_total_timeout_seconds: int = 300
+    # Per-phase nominal budgets. Each is additionally clamped to the time left
+    # before the ceiling, so these can be generous without risking the ceiling.
+    # Measured on 2026-10-08: research 101s, synthesis 203s at 6 candidates and
+    # 16k max_tokens. Synthesis latency tracks output tokens almost linearly,
+    # so candidate_count and synthesis_max_tokens are the levers that move it.
+    idea_generator_research_timeout_seconds: int = 150
+    idea_generator_synthesis_timeout_seconds: int = 195
+    idea_generator_repair_timeout_seconds: int = 20
+    # Held back from the phase budgets so writing ideas to the database cannot
+    # be the step that breaches the ceiling.
+    idea_generator_persist_reserve_seconds: int = 12
+    # Output ceilings. These bound both worst-case cost and synthesis latency;
+    # too low truncates the structured response mid-object and fails the parse.
+    idea_generator_synthesis_max_tokens: int = 10000
+    idea_generator_repair_max_tokens: int = 6000
+    # Hard spend ceiling for one idea-generation run, enforced pre-flight by
+    # backend/services/cost_ledger.py: a phase is refused when its worst case
+    # will not fit what is left, rather than reported after the fact.
+    idea_generator_max_cost_usd: float = 1.0
 
     # ── YouTube / Benchmarking ────────────────────────────────────────────────
     youtube_api_key: Optional[str] = Field(None, env="YOUTUBE_API_KEY")

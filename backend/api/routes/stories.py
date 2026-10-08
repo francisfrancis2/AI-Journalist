@@ -24,6 +24,7 @@ from backend.agents.angles_and_hooks import (
     IdeationOutput,
     fallback_ideation_output,
 )
+from backend.agents._research_enrichment import get_research_agent
 from backend.agents.chapter_writer import ChapterWriterAgent
 from backend.agents.chief_editor_evaluator import ChiefEditorEvaluatorAgent
 from backend.agents.scriptwriter import ScriptwriterAgent
@@ -344,8 +345,45 @@ def _merged_fresh_context(live_context: str, attachment_context: str) -> str:
     )
 
 
+def _format_ideation_source_context(
+    sources: list[RawSource],
+    *,
+    limit: int = 12,
+) -> str:
+    """Format a shared ResearchPackage or lightweight follow-up for ideation."""
+    seen: set[str] = set()
+    lines: list[str] = []
+    for source in sources:
+        key = source.url or source.title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        source_type = getattr(source.source_type, "value", str(source.source_type))
+        credibility = getattr(source.credibility, "value", str(source.credibility))
+        provider = source.metadata.get("provider") or source_type
+        preview = source.content.strip()
+        preview = preview[:420] + ("..." if len(preview) > 420 else "")
+        lines.append(
+            "\n".join(
+                [
+                    f"  {len(lines) + 1}. {source.title}",
+                    f"     Provider: {provider} | Credibility: {credibility} | URL: {source.url or 'N/A'}",
+                    f"     Preview: {preview or 'No preview available'}",
+                ]
+            )
+        )
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
 async def _fresh_research_pack(message: str, topic: str) -> tuple[str, list[RawSource], list[IdeationSourceLink]]:
-    """Run lightweight live search and return prompt context plus source links."""
+    """Run lightweight follow-up search and return context plus source links.
+
+    Initial Story Ideation uses the shared ResearchAgent instead. This helper is
+    intentionally limited to later user-directed ideation follow-ups and never
+    fetches vidIQ.
+    """
     query = f"{topic} {message}".strip()
     fetches: list[tuple[str, Any]] = [
         (
@@ -380,33 +418,22 @@ async def _fresh_research_pack(message: str, topic: str) -> tuple[str, list[RawS
             if isinstance(candidate, RawSource):
                 sources.append(candidate)
 
-    seen: set[str] = set()
-    lines: list[str] = []
-    for source in sources:
-        if not isinstance(source, RawSource):
-            continue
-        key = source.url or source.title.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        source_type = getattr(source.source_type, "value", str(source.source_type))
-        credibility = getattr(source.credibility, "value", str(source.credibility))
-        provider = source.metadata.get("provider") or source_type
-        preview = source.content.strip()
-        preview = preview[:420] + ("..." if len(preview) > 420 else "")
-        lines.append(
-            "\n".join(
-                [
-                    f"  {len(lines) + 1}. {source.title}",
-                    f"     Provider: {provider} | Credibility: {credibility} | URL: {source.url or 'N/A'}",
-                    f"     Preview: {preview or 'No preview available'}",
-                ]
-            )
-        )
-        if len(lines) >= 12:
-            break
+    return _format_ideation_source_context(sources), sources, _source_links_from_sources(sources)
 
-    return "\n".join(lines), sources, _source_links_from_sources(sources)
+
+async def _gather_initial_ideation_package(
+    *,
+    topic: str,
+    include_vidiq: bool,
+) -> ResearchPackage:
+    """Use the same initial ResearchAgent operation as Research and Ideas."""
+    return await get_research_agent().gather_initial_package(
+        prompt=topic,
+        deep=True,
+        include_vidiq=include_vidiq,
+        vidiq_topic=topic,
+        deep_max_uses=settings.anthropic_deep_research_pipeline_max_uses,
+    )
 
 
 async def _fresh_research_context(message: str, topic: str) -> str:
@@ -728,6 +755,7 @@ async def _run_ideation_operation(
         if attachment_sources:
             sources.extend(_source_links_from_sources(attachment_sources, limit=6))
         youtube_demand: Optional[YouTubeDemandReport] = None
+        initial_research_package: ResearchPackage | None = None
         if fetch_vidiq and story.youtube_demand_data:
             try:
                 youtube_demand = YouTubeDemandReport.model_validate(
@@ -736,7 +764,27 @@ async def _run_ideation_operation(
             except Exception as exc:
                 log.warning("ideation.saved_vidiq_invalid", error=str(exc)[:200])
         should_fetch_vidiq = fetch_vidiq and youtube_demand is None
-        if fetch_research and should_fetch_vidiq:
+        if fetch_research and operation_type == "initial_angles":
+            initial_research_package = await _gather_initial_ideation_package(
+                topic=story.topic,
+                include_vidiq=should_fetch_vidiq,
+            )
+            if youtube_demand is not None and initial_research_package.youtube_demand is None:
+                initial_research_package.youtube_demand = youtube_demand
+                seen_urls = {
+                    source.url for source in initial_research_package.sources if source.url
+                }
+                for source in demand_report_to_sources(youtube_demand):
+                    initial_research_package.add_source_deduped(source, seen_urls)
+            youtube_demand = initial_research_package.youtube_demand
+            fresh_context = _merged_fresh_context(
+                _format_ideation_source_context(initial_research_package.sources),
+                attachment_context,
+            )
+            for source in attachment_sources:
+                initial_research_package.add_source(source)
+            sources.extend(_source_links_from_sources(initial_research_package.sources))
+        elif fetch_research and should_fetch_vidiq:
             (live_context, _, live_sources), youtube_demand = await asyncio.gather(
                 _fresh_research_pack(user_message, story.topic),
                 _fetch_initial_youtube_demand(story.topic),
@@ -785,6 +833,8 @@ async def _run_ideation_operation(
         if operation_type != "chat":
             values["tone"] = output.decided_tone
             values["target_duration_minutes"] = output.target_duration_minutes
+        if initial_research_package is not None:
+            values["research_data"] = initial_research_package.model_dump(mode="json")
         if selected_angle is not None:
             values["selected_angle"] = selected_angle.strip()
             values["ideation_stage"] = IdeationStage.HOOK.value

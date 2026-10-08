@@ -747,7 +747,7 @@ Initial per-run ceilings should be configuration, not prompt instructions:
 
 All ceilings require measurement during a provider spike. They are not guarantees of provider pricing.
 
-Initial latency budgets are a 300-second p95 target and configurable 360-second hard deadline: up to 90 seconds for parallel discovery providers, up to 120 seconds for the bounded deep-research branch running concurrently, up to 60 seconds for shortlist verification/enrichment, and up to 60 seconds for extraction/synthesis/validation. A branch that misses its budget records a capability failure and does not hold the run beyond the hard deadline.
+The user-visible hard limit is five minutes. The backend applies a 290-second run-wide deadline so terminal-state persistence fits inside that limit: up to 165 seconds for shared multi-source research and vidIQ, up to 90 seconds for the full Sonnet synthesis, up to 25 seconds for an optional compact repair, with the remaining time reserved for validation and persistence. A branch that misses its budget records an attributable failure and never leaves the run spinning beyond the deadline.
 
 ## 9. Progress and provider state contract
 

@@ -82,13 +82,12 @@ def _structured_citations(package: ResearchPackage, limit: int = 40) -> list[Dee
 
 
 class ResearchReportSynthesizer:
-    """Single-call Sonnet synthesis of a consolidated research report."""
+    """Single-call synthesis of a consolidated research report."""
 
-    def __init__(self) -> None:
-        # Consolidating retrieved evidence is summarisation rather than the
-        # high-stakes editorial reasoning reserved for Opus.
+    def __init__(self, *, model: str | None = None) -> None:
+        self.model = model or settings.claude_model
         self._llm = ChatAnthropic(
-            model=settings.claude_model,
+            model=self.model,
             api_key=settings.anthropic_api_key,
             max_tokens=settings.claude_max_tokens,
         )

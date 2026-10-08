@@ -290,7 +290,7 @@ def _settings_section() -> str:
 
         - `claude_opus_model`: high-stakes generation model option.
         - `claude_model`: default creative and analytical model used by most agents.
-        - `claude_haiku_model`: faster model used for lightweight tasks.
+        - `claude_haiku_model`: faster model used for lightweight tasks, including Research Hub report consolidation and follow-ups.
         - `quality_score_threshold`: legacy scored evaluation threshold for older payloads.
         - `script_audit_score_threshold`: legacy scored script-audit threshold for older payloads.
         - `max_refinement_cycles`: storyline refinement attempts before scripting.

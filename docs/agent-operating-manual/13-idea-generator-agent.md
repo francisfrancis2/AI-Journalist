@@ -12,7 +12,8 @@ Evidence-first UAE business idea generation agent (V2).
 
 ### Model Configuration
 
-- `ChatAnthropic(model=settings.claude_opus_model, max_tokens=16000)`
+- Main synthesis: `ChatAnthropic(model=settings.claude_model, max_tokens=12000)`
+- Compact repair: `ChatAnthropic(model=settings.claude_model, max_tokens=6000)`
 
 ### Structured Outputs
 
