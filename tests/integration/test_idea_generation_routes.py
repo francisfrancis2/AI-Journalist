@@ -1,6 +1,7 @@
 """API lifecycle tests for the persisted Idea Generator workspace."""
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 import uuid
 
@@ -112,6 +113,123 @@ async def test_generation_deadline_records_terminal_failure(api_client, db_sessi
     assert run.stage_progress == 100
     assert run.error_code == "generation_timed_out"
     assert "five-minute limit" in run.error_message
+
+
+def _leased_run(user_id: uuid.UUID, *, lease_expires_at: datetime, attempt_count: int) -> IdeaGenerationRunORM:
+    now = datetime.now(timezone.utc)
+    return IdeaGenerationRunORM(
+        user_id=user_id,
+        idempotency_key=str(uuid.uuid4()),
+        request_hash="l" * 64,
+        format="documentary",
+        status="running",
+        stage="synthesizing_ideas",
+        stage_progress=65,
+        coverage_level="partial",
+        coverage_reasons=[],
+        provider_statuses={},
+        candidate_metrics={},
+        usage_metrics={},
+        worker_id="worker-v1",
+        heartbeat_at=now,
+        lease_expires_at=lease_expires_at,
+        attempt_count=attempt_count,
+        started_at=now,
+    )
+
+
+@pytest.mark.asyncio
+async def test_other_backend_startup_preserves_live_idea_worker_lease(
+    db_session,
+    monkeypatch,
+) -> None:
+    from backend.api.routes import idea_generations as routes
+
+    run = _leased_run(
+        uuid.uuid4(),
+        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+        attempt_count=1,
+    )
+    db_session.add(run)
+    await db_session.commit()
+    scheduled_ids: list[uuid.UUID] = []
+
+    monkeypatch.setattr(routes, "AsyncSessionLocal", lambda: _SessionContext(db_session))
+    monkeypatch.setattr(routes, "_schedule_generation", lambda run_id: scheduled_ids.append(run_id) or True)
+
+    scheduled = await routes.recover_expired_idea_generations()
+    await db_session.refresh(run)
+
+    assert scheduled == 0
+    assert scheduled_ids == []
+    assert run.status == "running"
+    assert run.worker_id == "worker-v1"
+    assert run.error_code is None
+
+
+@pytest.mark.asyncio
+async def test_expired_idea_worker_lease_is_recovered_by_one_new_worker(
+    db_session,
+    monkeypatch,
+) -> None:
+    from backend.api.routes import idea_generations as routes
+
+    run = _leased_run(
+        uuid.uuid4(),
+        lease_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        attempt_count=1,
+    )
+    db_session.add(run)
+    await db_session.commit()
+    original_started_at = run.started_at
+    scheduled_ids: list[uuid.UUID] = []
+
+    monkeypatch.setattr(routes, "AsyncSessionLocal", lambda: _SessionContext(db_session))
+    monkeypatch.setattr(routes, "_WORKER_ID", "worker-v2")
+    monkeypatch.setattr(routes, "_schedule_generation", lambda run_id: scheduled_ids.append(run_id) or True)
+
+    scheduled = await routes.recover_expired_idea_generations()
+    claim = await routes._claim_generation_run(run.id)
+    second_claim = await routes._claim_generation_run(run.id)
+    await db_session.refresh(run)
+
+    assert scheduled == 1
+    assert scheduled_ids == [run.id]
+    assert claim is not None
+    assert claim[:2] == (routes.IdeaFormat.DOCUMENTARY, 2)
+    assert second_claim is None
+    assert run.status == "running"
+    assert run.worker_id == "worker-v2"
+    assert run.attempt_count == 2
+    assert run.started_at.replace(tzinfo=timezone.utc) == original_started_at
+
+
+@pytest.mark.asyncio
+async def test_expired_idea_run_fails_only_after_recovery_attempt_is_exhausted(
+    db_session,
+    monkeypatch,
+) -> None:
+    from backend.api.routes import idea_generations as routes
+
+    run = _leased_run(
+        uuid.uuid4(),
+        lease_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        attempt_count=routes.settings.idea_generator_max_worker_attempts,
+    )
+    db_session.add(run)
+    await db_session.commit()
+
+    monkeypatch.setattr(routes, "AsyncSessionLocal", lambda: _SessionContext(db_session))
+    monkeypatch.setattr(routes, "_schedule_generation", lambda run_id: True)
+
+    scheduled = await routes.recover_expired_idea_generations()
+    await db_session.refresh(run)
+
+    assert scheduled == 0
+    assert run.status == "failed"
+    assert run.error_code == "interrupted"
+    assert run.worker_id is None
+    assert run.lease_expires_at is None
 
 
 async def _persist_idea(db_session, *, idea_format: str) -> GeneratedIdeaORM:

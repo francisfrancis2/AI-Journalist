@@ -160,6 +160,14 @@ class Settings(BaseSettings):
     idea_generator_research_timeout_seconds: int = 150
     idea_generator_synthesis_timeout_seconds: int = 195
     idea_generator_repair_timeout_seconds: int = 20
+    # Background work is coordinated through a database lease so two app
+    # versions can safely share one database. A live worker refreshes its lease
+    # on a shorter heartbeat; another worker may reclaim the run only after the
+    # lease expires. One automatic recovery is allowed after the initial try.
+    idea_generator_worker_lease_seconds: int = 45
+    idea_generator_worker_heartbeat_seconds: int = 10
+    idea_generator_recovery_poll_seconds: int = 10
+    idea_generator_max_worker_attempts: int = 2
     # Held back from the phase budgets so writing ideas to the database cannot
     # be the step that breaches the ceiling.
     idea_generator_persist_reserve_seconds: int = 12

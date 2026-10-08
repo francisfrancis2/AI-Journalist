@@ -34,7 +34,6 @@ from backend.models.benchmark import BIReferenceDocORM
 from backend.models.user import UserORM
 from backend.services.admin_notifications import cleanup_admin_notifications
 from backend.services.stale_pipeline_watchdog import (
-    mark_interrupted_idea_generations_failed,
     mark_stale_pipelines_failed,
     run_watchdog_loop,
 )
@@ -208,7 +207,10 @@ def create_app() -> FastAPI:
         return response
 
     # ── Startup / Shutdown ────────────────────────────────────────────────────
-    watchdog_task: dict[str, asyncio.Task | None] = {"handle": None}
+    lifecycle_tasks: dict[str, asyncio.Task | None] = {
+        "watchdog": None,
+        "idea_recovery": None,
+    }
 
     @app.on_event("startup")
     async def on_startup() -> None:
@@ -217,24 +219,31 @@ def create_app() -> FastAPI:
         await _seed_admin()
         log.info("app.database_ready")
         await _cleanup_old_admin_notifications()
-        # Catch zombies left over from the previous machine generation BEFORE
-        # accepting traffic, so users see "failed" status instead of "stuck".
-        await mark_interrupted_idea_generations_failed()
+        # Idea jobs are owned by renewable database leases. Startup may schedule
+        # queued work or reclaim an expired lease, but it must never cancel a
+        # healthy job being run by another V1/V2 backend process.
+        await idea_generations_router.recover_expired_idea_generations()
         await mark_stale_pipelines_failed()
         # Then schedule periodic scans for the lifetime of this machine.
-        watchdog_task["handle"] = asyncio.create_task(run_watchdog_loop())
+        lifecycle_tasks["watchdog"] = asyncio.create_task(run_watchdog_loop())
+        lifecycle_tasks["idea_recovery"] = asyncio.create_task(
+            idea_generations_router.run_idea_generation_recovery_loop()
+        )
         await _seed_benchmark_corpus_if_empty()
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:
         log.info("app.shutdown")
-        handle = watchdog_task.get("handle")
-        if handle is not None and not handle.done():
+        handles = [
+            handle
+            for handle in lifecycle_tasks.values()
+            if handle is not None and not handle.done()
+        ]
+        for handle in handles:
             handle.cancel()
-            try:
-                await handle
-            except (asyncio.CancelledError, Exception):
-                pass
+        if handles:
+            await asyncio.gather(*handles, return_exceptions=True)
+        await idea_generations_router.shutdown_idea_generation_workers()
 
     # ── Health check ──────────────────────────────────────────────────────────
     @app.get("/health", tags=["System"])

@@ -7,13 +7,13 @@ exception is raised, so `_run_pipeline`'s `except` block never fires, the
 story remains in whatever non-terminal status the per-node writer last set,
 and `error_message` stays NULL. From the user's side it looks frozen forever.
 
-This module scans for active pipeline stories whose `updated_at` timestamp is
+This module scans for active story and research operations whose `updated_at` timestamp is
 older than the staleness threshold and marks them FAILED with a clear message.
 Angle-selection pauses are different: the user may legitimately take time to
 approve an angle, so they are allowed to sit for six hours before being marked
-as stopped, not failed. It runs once at FastAPI startup (catching zombies from
-the previous machine generation) and then every WATCHDOG_INTERVAL_SECONDS
-thereafter.
+as stopped, not failed. Idea Generator jobs are deliberately excluded because
+their renewable worker leases and recovery loop handle multi-process ownership.
+This watchdog runs at startup and then every WATCHDOG_INTERVAL_SECONDS.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ from sqlalchemy import select, update
 
 from backend.db.database import AsyncSessionLocal
 from backend.models.research_session import ResearchSessionORM, ResearchSessionStatus
-from backend.models.idea_generation import IdeaGenerationRunORM, IdeaRunStatus
 from backend.models.story import StoryORM, StoryStatus
 
 log = structlog.get_logger(__name__)
@@ -57,9 +56,6 @@ _STALE_IDEATION_MESSAGE = (
 )
 _STALE_SCRIPT_GENERATION_MESSAGE = (
     "Script generation was interrupted before completing. Please try again."
-)
-_STALE_IDEA_GENERATION_MESSAGE = (
-    "Idea generation was interrupted before completing. Please retry the run."
 )
 _SCRIPT_GENERATION_OPERATION = "script_generation"
 
@@ -126,42 +122,6 @@ def _mark_latest_ideation_message_failed(chat_data: object, error_message: str, 
     return history
 
 
-async def mark_interrupted_idea_generations_failed() -> int:
-    """Fail in-process Idea jobs immediately when a new backend starts.
-
-    Idea generation currently runs as a FastAPI background task. A queued or
-    running row that exists before this process begins has no task attached to
-    it and can never finish on this process, so waiting for the periodic stale
-    threshold only creates a long-lived false spinner.
-    """
-    now = datetime.now(timezone.utc)
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(
-            select(IdeaGenerationRunORM).where(
-                IdeaGenerationRunORM.status.in_([
-                    IdeaRunStatus.QUEUED.value,
-                    IdeaRunStatus.RUNNING.value,
-                ])
-            )
-        )
-        interrupted = list(result.scalars().all())
-        for idea_run in interrupted:
-            idea_run.status = IdeaRunStatus.FAILED.value
-            idea_run.stage = "failed"
-            idea_run.stage_progress = 100
-            idea_run.error_code = "interrupted"
-            idea_run.error_message = _STALE_IDEA_GENERATION_MESSAGE
-            idea_run.completed_at = now
-        await session.commit()
-
-    if interrupted:
-        log.warning(
-            "watchdog.marked_interrupted_idea_generation_failed",
-            count=len(interrupted),
-        )
-    return len(interrupted)
-
-
 async def mark_stale_pipelines_failed() -> int:
     """Update stale pipeline records. Returns total affected row count."""
     now = datetime.now(timezone.utc)
@@ -214,24 +174,6 @@ async def mark_stale_pipelines_failed() -> int:
                 now,
             )
 
-        stale_idea_result = await session.execute(
-            select(IdeaGenerationRunORM).where(
-                IdeaGenerationRunORM.status.in_([
-                    IdeaRunStatus.QUEUED.value,
-                    IdeaRunStatus.RUNNING.value,
-                ]),
-                IdeaGenerationRunORM.updated_at < stale_pipeline_threshold,
-            )
-        )
-        stale_idea_runs = list(stale_idea_result.scalars().all())
-        for idea_run in stale_idea_runs:
-            idea_run.status = IdeaRunStatus.FAILED.value
-            idea_run.stage = "failed"
-            idea_run.stage_progress = 100
-            idea_run.error_code = "interrupted"
-            idea_run.error_message = _STALE_IDEA_GENERATION_MESSAGE
-            idea_run.completed_at = now
-
         ideation_result = await session.execute(
             select(StoryORM).where(
                 StoryORM.status == StoryStatus.IDEATING.value,
@@ -265,7 +207,6 @@ async def mark_stale_pipelines_failed() -> int:
         stale_pipeline_count = stale_pipeline_result.rowcount or 0
         expired_angle_count = expired_angle_result.rowcount or 0
         stale_research_count = len(stale_research_sessions)
-        stale_idea_count = len(stale_idea_runs)
 
     if stale_pipeline_count:
         log.warning("watchdog.marked_stale_failed", count=stale_pipeline_count)
@@ -273,8 +214,6 @@ async def mark_stale_pipelines_failed() -> int:
         log.warning("watchdog.marked_stale_research_failed", count=stale_research_count)
     if stale_ideation_count:
         log.warning("watchdog.marked_stale_ideation_failed", count=stale_ideation_count)
-    if stale_idea_count:
-        log.warning("watchdog.marked_stale_idea_generation_failed", count=stale_idea_count)
     if expired_angle_count:
         log.info(
             "watchdog.marked_angle_selection_expired",
@@ -286,7 +225,6 @@ async def mark_stale_pipelines_failed() -> int:
         + expired_angle_count
         + stale_research_count
         + stale_ideation_count
-        + stale_idea_count
     )
 
 

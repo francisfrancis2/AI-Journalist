@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
-from sqlalchemy import delete, select
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -41,6 +41,16 @@ from backend.models.user import UserORM
 log = structlog.get_logger(__name__)
 router = APIRouter()
 _idea_agent = None
+_WORKER_ID = uuid.uuid4().hex
+_GENERATION_TASKS: dict[uuid.UUID, asyncio.Task] = {}
+_INTERRUPTED_MESSAGE = (
+    "Idea generation was interrupted more than once before completing. "
+    "Please retry the run."
+)
+
+
+class IdeaGenerationLeaseLost(RuntimeError):
+    """Raised inside a worker that no longer owns its Idea run."""
 
 
 def _utc_now() -> datetime:
@@ -178,21 +188,130 @@ async def _load_idea(db: AsyncSession, idea_id: uuid.UUID, user_id: uuid.UUID) -
     return idea
 
 
-async def _set_generation_stage(run_id: uuid.UUID, stage: str, progress: int) -> None:
+def _lease_expiry(now: datetime) -> datetime:
+    return now + timedelta(seconds=settings.idea_generator_worker_lease_seconds)
+
+
+async def _claim_generation_run(
+    run_id: uuid.UUID,
+) -> tuple[IdeaFormat, int, datetime] | None:
+    """Atomically claim a queued run or an expired lease.
+
+    The conditional UPDATE is the cross-process lock. If V1 and V2 discover the
+    same recoverable row, only one receives it from RETURNING; the other exits
+    without making provider calls.
+    """
+    now = _utc_now()
+    expired = or_(
+        IdeaGenerationRunORM.lease_expires_at.is_(None),
+        IdeaGenerationRunORM.lease_expires_at <= now,
+    )
     async with AsyncSessionLocal() as db:
-        run = await db.get(IdeaGenerationRunORM, run_id)
-        if run is None or run.status != IdeaRunStatus.RUNNING.value:
-            return
-        run.stage = stage
-        run.stage_progress = progress
+        result = await db.execute(
+            update(IdeaGenerationRunORM)
+            .where(
+                IdeaGenerationRunORM.id == run_id,
+                IdeaGenerationRunORM.attempt_count < settings.idea_generator_max_worker_attempts,
+                or_(
+                    IdeaGenerationRunORM.status == IdeaRunStatus.QUEUED.value,
+                    and_(
+                        IdeaGenerationRunORM.status == IdeaRunStatus.RUNNING.value,
+                        expired,
+                    ),
+                ),
+            )
+            .values(
+                status=IdeaRunStatus.RUNNING.value,
+                stage="researching_uae_business_trends",
+                stage_progress=15,
+                worker_id=_WORKER_ID,
+                heartbeat_at=now,
+                lease_expires_at=_lease_expiry(now),
+                attempt_count=IdeaGenerationRunORM.attempt_count + 1,
+                # Preserve the original wall-clock deadline on recovery.
+                started_at=func.coalesce(IdeaGenerationRunORM.started_at, now),
+                completed_at=None,
+                error_code=None,
+                error_message=None,
+                updated_at=now,
+            )
+            .returning(
+                IdeaGenerationRunORM.format,
+                IdeaGenerationRunORM.attempt_count,
+                IdeaGenerationRunORM.started_at,
+            )
+        )
+        claimed = result.first()
         await db.commit()
+    if claimed is None:
+        return None
+    started_at = claimed[2]
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    return IdeaFormat(claimed[0]), int(claimed[1]), started_at
 
 
-async def _persist_generation_result(run_id: uuid.UUID, result) -> None:
+async def _renew_generation_lease(run_id: uuid.UUID, worker_id: str) -> bool:
+    now = _utc_now()
     async with AsyncSessionLocal() as db:
-        run = await db.get(IdeaGenerationRunORM, run_id)
-        if run is None or run.status != IdeaRunStatus.RUNNING.value:
-            return
+        result = await db.execute(
+            update(IdeaGenerationRunORM)
+            .where(
+                IdeaGenerationRunORM.id == run_id,
+                IdeaGenerationRunORM.status == IdeaRunStatus.RUNNING.value,
+                IdeaGenerationRunORM.worker_id == worker_id,
+            )
+            .values(
+                heartbeat_at=now,
+                lease_expires_at=_lease_expiry(now),
+                updated_at=now,
+            )
+        )
+        await db.commit()
+        return (result.rowcount or 0) == 1
+
+
+async def _set_generation_stage(
+    run_id: uuid.UUID,
+    worker_id: str,
+    stage: str,
+    progress: int,
+) -> bool:
+    now = _utc_now()
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            update(IdeaGenerationRunORM)
+            .where(
+                IdeaGenerationRunORM.id == run_id,
+                IdeaGenerationRunORM.status == IdeaRunStatus.RUNNING.value,
+                IdeaGenerationRunORM.worker_id == worker_id,
+            )
+            .values(
+                stage=stage,
+                stage_progress=progress,
+                heartbeat_at=now,
+                lease_expires_at=_lease_expiry(now),
+                updated_at=now,
+            )
+        )
+        await db.commit()
+        return (result.rowcount or 0) == 1
+
+
+async def _persist_generation_result(run_id: uuid.UUID, worker_id: str, result) -> bool:
+    async with AsyncSessionLocal() as db:
+        owned_run = await db.execute(
+            select(IdeaGenerationRunORM)
+            .where(
+                IdeaGenerationRunORM.id == run_id,
+                IdeaGenerationRunORM.status == IdeaRunStatus.RUNNING.value,
+                IdeaGenerationRunORM.worker_id == worker_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+        run = owned_run.scalar_one_or_none()
+        if run is None:
+            return False
         source_rows: dict[uuid.UUID, IdeaSourceORM] = {}
         for source in result.sources:
             row = IdeaSourceORM(
@@ -271,10 +390,20 @@ async def _persist_generation_result(run_id: uuid.UUID, result) -> None:
         run.error_code = None
         run.error_message = None
         run.completed_at = _utc_now()
+        run.heartbeat_at = run.completed_at
+        run.lease_expires_at = None
+        run.worker_id = None
         await db.commit()
+        return True
 
 
-async def _mark_generation_failed(run_id: uuid.UUID, *, code: str, detail: str) -> None:
+async def _mark_generation_failed(
+    run_id: uuid.UUID,
+    worker_id: str,
+    *,
+    code: str,
+    detail: str,
+) -> bool:
     messages = {
         "insufficient_evidence": "Not enough independently verified evidence was available to produce ideas.",
         "research_timed_out": "Research exceeded its time budget. Please retry the run.",
@@ -283,50 +412,132 @@ async def _mark_generation_failed(run_id: uuid.UUID, *, code: str, detail: str) 
         "generation_timed_out": "Idea generation reached the five-minute limit. Please retry the run.",
     }
     log.error("idea_generator.failed", run_id=str(run_id), code=code, error=detail)
+    completed_at = _utc_now()
     async with AsyncSessionLocal() as db:
-        run = await db.get(IdeaGenerationRunORM, run_id)
-        if run is None:
-            return
-        run.status = IdeaRunStatus.FAILED.value
-        run.stage = "failed"
-        run.stage_progress = 100
-        run.error_code = code
-        run.error_message = messages.get(code, "Idea generation could not complete. Please retry.")
-        run.completed_at = _utc_now()
+        result = await db.execute(
+            update(IdeaGenerationRunORM)
+            .where(
+                IdeaGenerationRunORM.id == run_id,
+                IdeaGenerationRunORM.status == IdeaRunStatus.RUNNING.value,
+                IdeaGenerationRunORM.worker_id == worker_id,
+            )
+            .values(
+                status=IdeaRunStatus.FAILED.value,
+                stage="failed",
+                stage_progress=100,
+                error_code=code,
+                error_message=messages.get(code, "Idea generation could not complete. Please retry."),
+                completed_at=completed_at,
+                heartbeat_at=completed_at,
+                lease_expires_at=None,
+                worker_id=None,
+                updated_at=completed_at,
+            )
+        )
         await db.commit()
+        return (result.rowcount or 0) == 1
+
+
+async def _generation_heartbeat(run_id: uuid.UUID, worker_id: str) -> None:
+    while True:
+        await asyncio.sleep(settings.idea_generator_worker_heartbeat_seconds)
+        if not await _renew_generation_lease(run_id, worker_id):
+            raise IdeaGenerationLeaseLost("idea_generation_lease_lost")
+
+
+async def _execute_with_heartbeat(run_id: uuid.UUID, worker_id: str, execute) -> None:
+    generation_task = asyncio.create_task(execute())
+    heartbeat_task = asyncio.create_task(_generation_heartbeat(run_id, worker_id))
+    tasks = {generation_task, heartbeat_task}
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        if generation_task in done:
+            await generation_task
+            return
+        error = heartbeat_task.exception()
+        if error is not None:
+            raise error
+        raise IdeaGenerationLeaseLost("idea_generation_heartbeat_stopped")
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _run_generation(run_id: uuid.UUID) -> None:
-    async with AsyncSessionLocal() as db:
-        run = await db.get(IdeaGenerationRunORM, run_id)
-        if run is None:
-            return
-        run.status = IdeaRunStatus.RUNNING.value
-        run.stage = "researching_uae_business_trends"
-        run.stage_progress = 15
-        run.started_at = _utc_now()
-        await db.commit()
-        idea_format = IdeaFormat(run.format)
+    claim = await _claim_generation_run(run_id)
+    if claim is None:
+        log.info(
+            "idea_generator.claim_skipped",
+            run_id=str(run_id),
+            worker_id=_WORKER_ID,
+        )
+        return
+    idea_format, attempt_count, started_at = claim
+    worker_id = _WORKER_ID
+    log.info(
+        "idea_generator.claimed",
+        run_id=str(run_id),
+        worker_id=worker_id,
+        attempt=attempt_count,
+    )
 
     async def execute() -> None:
         async def on_stage(stage: str, progress: int) -> None:
-            await _set_generation_stage(run_id, stage, progress)
+            if not await _set_generation_stage(run_id, worker_id, stage, progress):
+                raise IdeaGenerationLeaseLost("idea_generation_lease_lost")
 
         result = await _get_agent().generate(idea_format, on_stage=on_stage)
-        await _set_generation_stage(run_id, "saving_ideas", 92)
-        await _persist_generation_result(run_id, result)
+        if not await _set_generation_stage(run_id, worker_id, "saving_ideas", 92):
+            raise IdeaGenerationLeaseLost("idea_generation_lease_lost")
+        if not await _persist_generation_result(run_id, worker_id, result):
+            raise IdeaGenerationLeaseLost("idea_generation_lease_lost")
+
+    remaining_seconds = max(
+        0.0,
+        settings.idea_generator_total_timeout_seconds
+        - (_utc_now() - started_at).total_seconds(),
+    )
+    if remaining_seconds <= 0:
+        await _mark_generation_failed(
+            run_id,
+            worker_id,
+            code="generation_timed_out",
+            detail="overall idea-generation deadline expired before recovery",
+        )
+        return
 
     try:
         await asyncio.wait_for(
-            execute(),
-            timeout=settings.idea_generator_total_timeout_seconds,
+            _execute_with_heartbeat(run_id, worker_id, execute),
+            timeout=remaining_seconds,
         )
     except asyncio.TimeoutError:
         await _mark_generation_failed(
             run_id,
+            worker_id,
             code="generation_timed_out",
             detail="overall idea-generation deadline exceeded",
         )
+    except IdeaGenerationLeaseLost:
+        # A different process reclaimed this run after our lease expired. The
+        # replacement worker now owns terminal persistence, so this stale worker
+        # must stop without overwriting its status.
+        log.warning(
+            "idea_generator.lease_lost",
+            run_id=str(run_id),
+            worker_id=worker_id,
+        )
+    except asyncio.CancelledError:
+        # Shutdown/reload intentionally leaves the lease in place. Another live
+        # backend will reclaim it after expiry and restart the bounded run.
+        log.info(
+            "idea_generator.worker_cancelled",
+            run_id=str(run_id),
+            worker_id=worker_id,
+        )
+        raise
     except Exception as exc:
         known_codes = {
             "insufficient_evidence",
@@ -341,14 +552,125 @@ async def _run_generation(run_id: uuid.UUID) -> None:
         if isinstance(exc, BudgetExceeded):
             # The bare code says nothing useful to whoever is reading the UI.
             detail = exc.detail
-        await _mark_generation_failed(run_id, code=code, detail=detail)
+        await _mark_generation_failed(
+            run_id,
+            worker_id,
+            code=code,
+            detail=detail,
+        )
+
+
+def _schedule_generation(run_id: uuid.UUID) -> bool:
+    existing = _GENERATION_TASKS.get(run_id)
+    if existing is not None and not existing.done():
+        return False
+
+    task = asyncio.create_task(
+        _run_generation(run_id),
+        name=f"idea-generation-{run_id}",
+    )
+    _GENERATION_TASKS[run_id] = task
+
+    def _finished(finished: asyncio.Task) -> None:
+        if _GENERATION_TASKS.get(run_id) is finished:
+            _GENERATION_TASKS.pop(run_id, None)
+        if finished.cancelled():
+            return
+        error = finished.exception()
+        if error is not None:
+            log.error(
+                "idea_generator.worker_crashed",
+                run_id=str(run_id),
+                error=str(error),
+            )
+
+    task.add_done_callback(_finished)
+    return True
+
+
+async def recover_expired_idea_generations() -> int:
+    """Schedule queued work and reclaim only runs whose worker lease expired."""
+    now = _utc_now()
+    active_statuses = [IdeaRunStatus.QUEUED.value, IdeaRunStatus.RUNNING.value]
+    expired = or_(
+        IdeaGenerationRunORM.lease_expires_at.is_(None),
+        IdeaGenerationRunORM.lease_expires_at <= now,
+    )
+    async with AsyncSessionLocal() as db:
+        exhausted_result = await db.execute(
+            update(IdeaGenerationRunORM)
+            .where(
+                IdeaGenerationRunORM.status.in_(active_statuses),
+                IdeaGenerationRunORM.attempt_count >= settings.idea_generator_max_worker_attempts,
+                or_(
+                    IdeaGenerationRunORM.status == IdeaRunStatus.QUEUED.value,
+                    expired,
+                ),
+            )
+            .values(
+                status=IdeaRunStatus.FAILED.value,
+                stage="failed",
+                stage_progress=100,
+                error_code="interrupted",
+                error_message=_INTERRUPTED_MESSAGE,
+                completed_at=now,
+                heartbeat_at=now,
+                lease_expires_at=None,
+                worker_id=None,
+                updated_at=now,
+            )
+        )
+        candidates = await db.execute(
+            select(IdeaGenerationRunORM.id).where(
+                IdeaGenerationRunORM.status.in_(active_statuses),
+                IdeaGenerationRunORM.attempt_count < settings.idea_generator_max_worker_attempts,
+                or_(
+                    IdeaGenerationRunORM.status == IdeaRunStatus.QUEUED.value,
+                    and_(
+                        IdeaGenerationRunORM.status == IdeaRunStatus.RUNNING.value,
+                        expired,
+                    ),
+                ),
+            )
+        )
+        run_ids = list(candidates.scalars().all())
+        await db.commit()
+
+    scheduled = sum(1 for run_id in run_ids if _schedule_generation(run_id))
+    if scheduled:
+        log.info(
+            "idea_generator.recovery_scheduled",
+            worker_id=_WORKER_ID,
+            count=scheduled,
+        )
+    exhausted = exhausted_result.rowcount or 0
+    if exhausted:
+        log.warning("idea_generator.recovery_exhausted", count=exhausted)
+    return scheduled
+
+
+async def run_idea_generation_recovery_loop() -> None:
+    while True:
+        try:
+            await recover_expired_idea_generations()
+        except Exception as exc:
+            log.error("idea_generator.recovery_loop_error", error=str(exc))
+        await asyncio.sleep(settings.idea_generator_recovery_poll_seconds)
+
+
+async def shutdown_idea_generation_workers() -> None:
+    tasks = [task for task in _GENERATION_TASKS.values() if not task.done()]
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    _GENERATION_TASKS.clear()
 
 
 async def _create_run(
     *,
     payload: IdeaGenerationCreate,
     idempotency_key: str,
-    background_tasks: BackgroundTasks,
     db: AsyncSession,
     user_id: uuid.UUID,
 ) -> IdeaGenerationRunORM:
@@ -402,14 +724,13 @@ async def _create_run(
     db.add(run)
     await db.commit()
     await db.refresh(run)
-    background_tasks.add_task(_run_generation, run.id)
+    _schedule_generation(run.id)
     return await _load_run(db, run.id, user_id)
 
 
 @router.post("", response_model=IdeaGenerationRunRead, status_code=status.HTTP_202_ACCEPTED)
 async def create_idea_generation(
     payload: IdeaGenerationCreate,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
@@ -422,7 +743,6 @@ async def create_idea_generation(
     run = await _create_run(
         payload=payload,
         idempotency_key=key,
-        background_tasks=background_tasks,
         db=db,
         user_id=current_user.id,
     )
@@ -470,7 +790,6 @@ async def get_idea_generation(
 @router.post("/{run_id}/retry", response_model=IdeaGenerationRunRead, status_code=status.HTTP_202_ACCEPTED)
 async def retry_idea_generation(
     run_id: uuid.UUID,
-    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> IdeaGenerationRunRead:
@@ -481,7 +800,6 @@ async def retry_idea_generation(
     run = await _create_run(
         payload=payload,
         idempotency_key=str(uuid.uuid4()),
-        background_tasks=background_tasks,
         db=db,
         user_id=current_user.id,
     )

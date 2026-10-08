@@ -5,7 +5,6 @@ import pytest
 
 from backend.models.story import StoryORM, StoryStatus, StoryTone
 from backend.models.research_session import ResearchSessionORM, ResearchSessionStatus
-from backend.models.idea_generation import IdeaGenerationRunORM, IdeaRunStatus
 from backend.services import stale_pipeline_watchdog as watchdog
 
 
@@ -55,39 +54,6 @@ def _research_session(operation_started_at: datetime) -> ResearchSessionORM:
         created_at=operation_started_at,
         updated_at=operation_started_at,
     )
-
-
-def _idea_run(status: IdeaRunStatus, created_at: datetime) -> IdeaGenerationRunORM:
-    return IdeaGenerationRunORM(
-        id=uuid.uuid4(),
-        user_id=uuid.uuid4(),
-        idempotency_key=str(uuid.uuid4()),
-        request_hash="a" * 64,
-        format="documentary",
-        status=status.value,
-        stage="researching_uae_business_trends",
-        stage_progress=15,
-        created_at=created_at,
-        updated_at=created_at,
-    )
-
-
-@pytest.mark.asyncio
-async def test_startup_recovery_immediately_fails_interrupted_idea_run(db_session, monkeypatch):
-    monkeypatch.setattr(watchdog, "AsyncSessionLocal", lambda: _SessionContext(db_session))
-    idea_run = _idea_run(IdeaRunStatus.RUNNING, datetime.now(timezone.utc))
-    db_session.add(idea_run)
-    await db_session.commit()
-
-    affected = await watchdog.mark_interrupted_idea_generations_failed()
-    await db_session.refresh(idea_run)
-
-    assert affected == 1
-    assert idea_run.status == IdeaRunStatus.FAILED.value
-    assert idea_run.stage == "failed"
-    assert idea_run.stage_progress == 100
-    assert idea_run.error_code == "interrupted"
-    assert idea_run.completed_at is not None
 
 
 @pytest.mark.asyncio
