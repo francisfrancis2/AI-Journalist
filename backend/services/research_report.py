@@ -170,9 +170,13 @@ separately — weave the factual ones together, deduplicating overlapping facts.
 
 These questions belong only in "What the Audience Is Asking", summarised as the
 themes people keep raising. They are evidence that a question is live and widely
-asked — never evidence of any answer. Do not treat them as findings, do not cite
-them, and do not let them contradict the sourced material above. Omit the
-section entirely when no questions were collected."""
+asked — never evidence of any answer.
+
+Keep them out of "Key Findings" and "Supporting Evidence" entirely: a forum
+thread is not support for a claim, and writing that discussions "confirm" or
+"show" something turns a question into a finding. Do not cite them, do not name
+subreddits as sources, and do not let them contradict the sourced material
+above. Omit the section entirely when no questions were collected."""
 
         # Research sessions already persist each completed prompt/report pair.
         # Reconstruct that append-only conversation so the prior turn remains
