@@ -607,6 +607,11 @@ class VidIQTool:
         if not ok:
             return None
 
+        # Three calls, 15 credits. A fourth -- KEYWORD_TOOL in "rising" mode --
+        # was removed: it is global with no geography or topic filter, so it
+        # returned sport and entertainment head terms ("spain vs england",
+        # "mighty mike plays") that made up 58% of the signal set and were cited
+        # by an idea exactly zero times across the runs on record.
         calls = [
             (
                 "uae_country_keywords",
@@ -621,17 +626,16 @@ class VidIQTool:
                 "United Arab Emirates search volume",
             ),
             (
-                "global_rising_keywords",
-                KEYWORD_TOOL,
-                {"mode": "rising", "period": "month", "language": "en", "limit": 30},
-                "Global YouTube keyword momentum; not UAE-specific",
-            ),
-            (
                 "uae_channel_trending_videos",
                 TRENDING_TOOL,
                 {
+                    # No titleQuery. vidIQ matches it as a literal phrase, not
+                    # as keywords, so the five-word subject string returned
+                    # {"videos": []} on every run -- measured 2026-10-08:
+                    # 5 words -> 0, 2 words -> 0, "Dubai" -> 20, omitted -> 20.
+                    # channelCountry already constrains this to UAE channels,
+                    # and synthesis cites only the rows relevant to an idea.
                     "videoFormat": "long",
-                    "titleQuery": "UAE business economy technology entrepreneurship",
                     "channelCountry": "AE",
                     "videoTitleLanguage": "en",
                     "videoPublishedAfter": since,

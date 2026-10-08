@@ -343,3 +343,81 @@ async def test_confirmed_handoffs_copy_evidence_without_running_during_preview(
     research_task.assert_awaited_once()
     session = (await db_session.execute(select(ResearchSessionORM))).scalars().one()
     assert len(session.seed_evidence_data["sources"]) == 1
+
+
+def _completed_run(user_id: uuid.UUID, *, fmt: str = "documentary") -> IdeaGenerationRunORM:
+    now = datetime.now(timezone.utc)
+    return IdeaGenerationRunORM(
+        user_id=user_id,
+        idempotency_key=str(uuid.uuid4()),
+        request_hash="c" * 64,
+        format=fmt,
+        status="completed",
+        stage="completed",
+        stage_progress=100,
+        coverage_level="partial",
+        coverage_reasons=[],
+        provider_statuses={},
+        candidate_metrics={},
+        usage_metrics={},
+        started_at=now,
+        completed_at=now,
+    )
+
+
+@pytest.mark.asyncio
+async def test_admin_sees_every_users_idea_runs_attributed_by_owner(
+    api_client, db_session
+) -> None:
+    """Idea history follows the research-session rule: admins see all, attributed.
+
+    Before this, the listing was unconditionally scoped to the caller, so idea
+    generation was the one workflow an admin had no visibility into.
+    """
+    admin = (await db_session.execute(select(UserORM).where(UserORM.is_admin.is_(True)))).scalars().first()
+    other = UserORM(
+        id=uuid.uuid4(),
+        email="other@example.com",
+        hashed_password="not-a-real-hash",
+        is_active=True,
+        is_admin=False,
+    )
+    db_session.add(other)
+    db_session.add(_completed_run(admin.id))
+    db_session.add(_completed_run(other.id, fmt="expert_interview"))
+    await db_session.commit()
+
+    response = await api_client.get("/api/v1/idea-generations")
+    assert response.status_code == 200
+    runs = response.json()
+    emails = {run["owner_email"] for run in runs}
+    assert emails == {admin.email, "other@example.com"}, "admin must see both users' runs"
+
+
+@pytest.mark.asyncio
+async def test_non_admin_sees_only_their_own_runs_without_attribution(
+    api_client, db_session
+) -> None:
+    caller = (await db_session.execute(select(UserORM).where(UserORM.is_admin.is_(True)))).scalars().first()
+    other = UserORM(
+        id=uuid.uuid4(),
+        email="stranger@example.com",
+        hashed_password="not-a-real-hash",
+        is_active=True,
+        is_admin=False,
+    )
+    db_session.add(other)
+    db_session.add(_completed_run(caller.id))
+    db_session.add(_completed_run(other.id))
+    await db_session.commit()
+
+    # The fixture's user is the one the request authenticates as, so dropping
+    # its admin flag exercises the non-admin branch without a second client.
+    caller.is_admin = False
+    await db_session.commit()
+
+    response = await api_client.get("/api/v1/idea-generations")
+    assert response.status_code == 200
+    runs = response.json()
+    assert len(runs) == 1, "a non-admin must not see another user's runs"
+    assert runs[0]["owner_email"] is None, "attribution is for admins only"

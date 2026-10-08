@@ -160,15 +160,30 @@ def _run_read(run: IdeaGenerationRunORM) -> IdeaGenerationRunRead:
     )
 
 
-async def _load_run(db: AsyncSession, run_id: uuid.UUID, user_id: uuid.UUID) -> IdeaGenerationRunORM:
-    result = await db.execute(
+async def _load_run(
+    db: AsyncSession,
+    run_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    allow_any_owner: bool = False,
+) -> IdeaGenerationRunORM:
+    """Load a run with its ideas, sources and signals.
+
+    ``allow_any_owner`` is for admin reads only. Admins see every user's idea
+    history in the listing, so opening one has to work too. Mutations -- retry
+    and delete -- stay owner-scoped whoever is asking.
+    """
+    stmt = (
         select(IdeaGenerationRunORM)
         .options(
             selectinload(IdeaGenerationRunORM.ideas).selectinload(GeneratedIdeaORM.sources),
             selectinload(IdeaGenerationRunORM.ideas).selectinload(GeneratedIdeaORM.signals),
         )
-        .where(IdeaGenerationRunORM.id == run_id, IdeaGenerationRunORM.user_id == user_id)
+        .where(IdeaGenerationRunORM.id == run_id)
     )
+    if not allow_any_owner:
+        stmt = stmt.where(IdeaGenerationRunORM.user_id == user_id)
+    result = await db.execute(stmt)
     run = result.scalar_one_or_none()
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Idea generation run not found")
@@ -755,13 +770,18 @@ async def list_idea_generations(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> list[IdeaGenerationRunListItem]:
-    result = await db.execute(
-        select(IdeaGenerationRunORM)
+    # Admins see every user's idea history (attributed by owner email);
+    # everyone else sees only their own runs. Same rule as research sessions.
+    stmt = (
+        select(IdeaGenerationRunORM, UserORM.email)
         .options(selectinload(IdeaGenerationRunORM.ideas))
-        .where(IdeaGenerationRunORM.user_id == current_user.id)
+        .outerjoin(UserORM, IdeaGenerationRunORM.user_id == UserORM.id)
         .order_by(IdeaGenerationRunORM.created_at.desc())
         .limit(limit)
     )
+    if not current_user.is_admin:
+        stmt = stmt.where(IdeaGenerationRunORM.user_id == current_user.id)
+    result = await db.execute(stmt)
     return [
         IdeaGenerationRunListItem(
             id=run.id,
@@ -773,8 +793,9 @@ async def list_idea_generations(
             created_at=run.created_at,
             updated_at=run.updated_at,
             error_message=run.error_message,
+            owner_email=owner_email if current_user.is_admin else None,
         )
-        for run in result.scalars().all()
+        for run, owner_email in result.all()
     ]
 
 
@@ -784,7 +805,9 @@ async def get_idea_generation(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> IdeaGenerationRunRead:
-    return _run_read(await _load_run(db, run_id, current_user.id))
+    return _run_read(
+        await _load_run(db, run_id, current_user.id, allow_any_owner=current_user.is_admin)
+    )
 
 
 @router.post("/{run_id}/retry", response_model=IdeaGenerationRunRead, status_code=status.HTTP_202_ACCEPTED)

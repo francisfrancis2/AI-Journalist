@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Download,
   FileText,
+  Lightbulb,
   Loader2,
   Search,
   Trash2,
@@ -17,6 +18,8 @@ import Link from "next/link";
 import { format } from "date-fns";
 import {
   apiClient,
+  type IdeaGenerationRunSummary,
+  type IdeaRunStatus,
   type ResearchSessionStatus,
   type ResearchSessionSummary,
   type Story,
@@ -30,6 +33,7 @@ type HistoryFilter =
   | "all"
   | "story"
   | "research"
+  | "idea"
   | "drafts"
   | "completed"
   | "in_progress"
@@ -64,12 +68,27 @@ type ResearchHistoryItem = {
   research: ResearchSessionSummary;
 };
 
-type HistoryItem = StoryHistoryItem | ResearchHistoryItem;
+type IdeaHistoryItem = {
+  kind: "idea";
+  id: string;
+  title: string;
+  subtitle: string;
+  createdAt: string;
+  updatedAt: string;
+  ownerEmail: string | null | undefined;
+  status: IdeaRunStatus | string;
+  href: string;
+  searchText: string;
+  idea: IdeaGenerationRunSummary;
+};
+
+type HistoryItem = StoryHistoryItem | ResearchHistoryItem | IdeaHistoryItem;
 
 const HISTORY_FILTERS: { value: HistoryFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "story", label: "New Stories" },
   { value: "research", label: "Researches" },
+  { value: "idea", label: "Idea Runs" },
   { value: "drafts", label: "Drafts" },
   { value: "completed", label: "Completed" },
   { value: "in_progress", label: "In progress" },
@@ -125,21 +144,29 @@ function ResearchStatusBadge({ status }: { status: ResearchSessionStatus | strin
   return <span className="badge badge-neutral" style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>Pending</span>;
 }
 
+const TYPE_BADGE: Record<HistoryItem["kind"], { className: string; label: string }> = {
+  story: { className: "badge badge-neutral", label: "New Story" },
+  research: { className: "badge badge-active", label: "Research" },
+  idea: { className: "badge badge-active", label: "Idea Run" },
+};
+
 function TypeBadge({ kind }: { kind: HistoryItem["kind"] }) {
-  const isStory = kind === "story";
+  const { className, label } = TYPE_BADGE[kind];
   return (
     <span
-      className={isStory ? "badge badge-neutral" : "badge badge-active"}
+      className={className}
       style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", whiteSpace: "nowrap" }}
     >
-      {isStory ? <FileText size={10} /> : <Search size={10} />}
-      {isStory ? "New Story" : "Research"}
+      {kind === "story" ? <FileText size={10} /> : kind === "research" ? <Search size={10} /> : <Lightbulb size={10} />}
+      {label}
     </span>
   );
 }
 
 function HistoryStatusBadge({ item }: { item: HistoryItem }) {
   if (item.kind === "story") return <StoryStatusBadge status={item.status} />;
+  // Idea runs share the research vocabulary -- queued / running / completed /
+  // failed -- so they render with the same badge rather than a third variant.
   return <ResearchStatusBadge status={item.status} />;
 }
 
@@ -171,13 +198,14 @@ function researchStatusLabel(status: ResearchSessionStatus | string): string {
 
 function isItemInProgress(item: HistoryItem): boolean {
   if (item.kind === "story") return !isTerminalStoryStatus(item.status);
-  return item.status === "pending" || item.status === "running";
+  return item.status === "pending" || item.status === "queued" || item.status === "running";
 }
 
 function matchesHistoryFilter(item: HistoryItem, filter: HistoryFilter): boolean {
   if (filter === "all") return true;
   if (filter === "story") return item.kind === "story";
   if (filter === "research") return item.kind === "research";
+  if (filter === "idea") return item.kind === "idea";
   if (filter === "drafts") return item.kind === "story" && item.status === "ideating";
   if (filter === "completed") return item.status === "completed";
   if (filter === "in_progress") return isItemInProgress(item);
@@ -205,6 +233,39 @@ function storyToHistoryItem(story: Story): StoryHistoryItem {
     href: storyHref(story),
     searchText: [title, subtitle, ownerEmail].filter(Boolean).join(" ").toLowerCase(),
     story,
+  };
+}
+
+const IDEA_FORMAT_LABEL: Record<string, string> = {
+  documentary: "Documentary",
+  expert_interview: "Expert Interview",
+};
+
+function ideaToHistoryItem(run: IdeaGenerationRunSummary): IdeaHistoryItem {
+  const format = IDEA_FORMAT_LABEL[run.format] ?? safeText(run.format, "Ideas");
+  const count = typeof run.idea_count === "number" ? run.idea_count : 0;
+  const stage = safeText(run.stage, "").replace(/_/g, " ");
+  const createdAt = safeDateString(run.created_at, run.updated_at);
+  const updatedAt = safeDateString(run.updated_at, run.created_at);
+  const ownerEmail = typeof run.owner_email === "string" ? run.owner_email : null;
+  // A run has no user-given title, so the format plus what it produced is the
+  // most useful thing to show in a list beside stories and research sessions.
+  const title = `${format} ideas`;
+  const subtitle = count > 0
+    ? `${count} idea${count === 1 ? "" : "s"} generated`
+    : stage || "No ideas generated";
+  return {
+    kind: "idea",
+    id: safeText(run.id, `idea-${title}`),
+    title,
+    subtitle,
+    createdAt,
+    updatedAt,
+    ownerEmail,
+    status: safeText(run.status, "queued"),
+    href: run.id ? `/ideas?run=${encodeURIComponent(run.id)}` : "/ideas",
+    searchText: [title, subtitle, stage, ownerEmail].filter(Boolean).join(" ").toLowerCase(),
+    idea: run,
   };
 }
 
@@ -265,6 +326,20 @@ export default function HistoryPage() {
     },
   });
 
+  const {
+    data: ideaRuns,
+    isLoading: ideasLoading,
+    error: ideasError,
+    refetch: refetchIdeas,
+  } = useQuery<IdeaGenerationRunSummary[]>({
+    queryKey: ["idea-generations", "history"],
+    queryFn: () => apiClient.listIdeaGenerations(100),
+    refetchInterval: (query) => {
+      const runs = query.state.data ?? [];
+      return runs.some((run) => run.status === "queued" || run.status === "running") ? 3000 : false;
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiClient.deleteStory(id),
     onSuccess: () => {
@@ -290,8 +365,9 @@ export default function HistoryPage() {
     return [
       ...(stories ?? []).map(storyToHistoryItem),
       ...(researchSessions ?? []).map(researchToHistoryItem),
+      ...(ideaRuns ?? []).map(ideaToHistoryItem),
     ].sort((a, b) => dateSortValue(b.updatedAt) - dateSortValue(a.updatedAt));
-  }, [researchSessions, stories]);
+  }, [ideaRuns, researchSessions, stories]);
 
   const filtered = historyItems.filter((item) => {
     const q = search.trim().toLowerCase();
@@ -304,12 +380,13 @@ export default function HistoryPage() {
   const tableColumns = isAdmin
     ? "minmax(0, 1fr) 170px 112px 136px 84px"
     : "minmax(0, 1fr) 112px 136px 84px";
-  const isLoading = storiesLoading || researchLoading;
-  const historyError = storiesError ?? researchError;
+  const isLoading = storiesLoading || researchLoading || ideasLoading;
+  const historyError = storiesError ?? researchError ?? ideasError;
 
   const refetchHistory = () => {
     void refetchStories();
     void refetchResearch();
+    void refetchIdeas();
   };
 
   return (

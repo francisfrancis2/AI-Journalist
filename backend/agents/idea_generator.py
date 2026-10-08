@@ -327,7 +327,6 @@ def _prepare_signals(raw: dict[str, Any] | None) -> list[PreparedSignal]:
             key = f"{group}:{index}:{hashlib.sha1(topic.encode()).hexdigest()[:8]}"
             metric = (
                 "country_volume" if group == "uae_country_keywords"
-                else "growth" if group == "global_rising_keywords"
                 else "views_per_hour" if "trending" in group
                 else "breakout_score"
             )
@@ -339,7 +338,9 @@ def _prepare_signals(raw: dict[str, Any] | None) -> list[PreparedSignal]:
                     signal_type=signal_type,
                     topic=topic[:500],
                     query="UAE business economy technology entrepreneurship",
-                    geography="AE" if group != "global_rising_keywords" else None,
+                    # Every remaining trend call is AE-scoped; the one global
+                    # group was removed from fetch_idea_trends.
+                    geography="AE",
                     geography_meaning=semantics.get(group),
                     observed_at=datetime.now(timezone.utc),
                     window_days=int(raw.get("window_days") or 30),

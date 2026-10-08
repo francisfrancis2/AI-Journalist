@@ -316,6 +316,9 @@ class IdeaGenerationRunListItem(StrictSchema):
     created_at: datetime
     updated_at: datetime
     error_message: Optional[str] = None
+    # Set only for admins, who see every user's runs. None for everyone else,
+    # matching ResearchSessionListItem so both histories read the same way.
+    owner_email: Optional[str] = None
 
 
 class IdeaHandoffPreview(StrictSchema):

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Bookmark,
   CheckCircle2,
@@ -322,7 +322,11 @@ function IdeaCard({
 export default function IdeaGeneratorPage() {
   const queryClient = useQueryClient();
   const [format, setFormat] = useState<IdeaFormat>("documentary");
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  // /history links here with ?run=<id>, so a run opened from the unified
+  // history view is the one shown rather than whichever is newest.
+  const runIdFromUrl = searchParams.get("run");
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(runIdFromUrl);
   const [showDismissed, setShowDismissed] = useState(false);
 
   const runsQuery = useQuery<IdeaGenerationRunSummary[]>({
@@ -338,8 +342,12 @@ export default function IdeaGeneratorPage() {
   });
 
   useEffect(() => {
+    if (runIdFromUrl && runIdFromUrl !== selectedRunId) {
+      setSelectedRunId(runIdFromUrl);
+      return;
+    }
     if (!selectedRunId && runsQuery.data?.length) setSelectedRunId(runsQuery.data[0].id);
-  }, [runsQuery.data, selectedRunId]);
+  }, [runIdFromUrl, runsQuery.data, selectedRunId]);
 
   const generate = useMutation({
     mutationFn: ({ requestedFormat, previousRunId }: { requestedFormat: IdeaFormat; previousRunId?: string }) =>

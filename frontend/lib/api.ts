@@ -617,6 +617,8 @@ export interface IdeaGenerationRunSummary {
   created_at: string;
   updated_at: string;
   error_message: string | null;
+  /** Populated only for admins, who see every user's runs. */
+  owner_email?: string | null;
 }
 
 export interface IdeaHandoffPreview {

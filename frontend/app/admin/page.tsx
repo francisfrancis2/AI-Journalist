@@ -3,8 +3,14 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
-import { Activity, Bell, Loader2, RefreshCw, ShieldCheck, Trash2, UserPlus } from "lucide-react";
-import { apiClient, type AdminNotification, type HealthReport, type ServiceHealth } from "@/lib/api";
+import { Activity, Bell, Lightbulb, Loader2, RefreshCw, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import {
+  apiClient,
+  type AdminNotification,
+  type HealthReport,
+  type IdeaGenerationRunSummary,
+  type ServiceHealth,
+} from "@/lib/api";
 import { getUserInfo } from "@/lib/auth";
 
 type AdminUser = {
@@ -16,7 +22,7 @@ type AdminUser = {
   created_at: string;
 };
 
-type Tab = "users" | "health" | "notifications";
+type Tab = "users" | "health" | "notifications" | "ideas";
 
 // ── API Health Panel ──────────────────────────────────────────────────────────
 
@@ -77,6 +83,114 @@ const LEVEL_COLOR: Record<string, string> = {
   warning: "#d97706",
   info:    "#16a34a",
 };
+
+const IDEA_RUN_STATUS_CLASS: Record<string, string> = {
+  completed: "badge badge-active",
+  failed: "badge badge-neutral",
+  running: "badge badge-active",
+  queued: "badge badge-neutral",
+};
+
+function IdeaGenerationPanel() {
+  const { data: runs, isLoading, refetch, isFetching } = useQuery<IdeaGenerationRunSummary[]>({
+    queryKey: ["admin-idea-generations"],
+    // The list endpoint is admin-aware: it returns every user's runs attributed
+    // by owner email when the caller is an admin, the same way research
+    // sessions do. There is no separate admin endpoint to keep in step.
+    queryFn: () => apiClient.listIdeaGenerations(100),
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((run) => run.status === "queued" || run.status === "running")
+        ? 5000
+        : 60_000,
+  });
+
+  const total = runs?.length ?? 0;
+  const failed = runs?.filter((run) => run.status === "failed").length ?? 0;
+  const ideas = runs?.reduce((sum, run) => sum + (run.idea_count ?? 0), 0) ?? 0;
+
+  return (
+    <div>
+      <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <h2 style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", fontWeight: 600, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+              <Lightbulb size={14} /> Idea Generation {total ? `(${total})` : ""}
+            </h2>
+            <p style={{ margin: "6px 0 0", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
+              Every user&apos;s runs. {ideas} idea{ideas === 1 ? "" : "s"} generated
+              {failed ? `, ${failed} failed run${failed === 1 ? "" : "s"}` : ""}.
+            </p>
+          </div>
+          <button className="btn-secondary" type="button" onClick={() => void refetch()} disabled={isFetching}>
+            {isFetching ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />} Refresh
+          </button>
+        </div>
+      </div>
+
+      {isLoading && <div style={{ padding: 24, textAlign: "center" }}><Loader2 size={18} className="animate-spin" /></div>}
+
+      {!isLoading && !total && (
+        <div className="card" style={{ padding: 20 }}>
+          <p style={{ margin: 0, color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
+            No idea generation runs yet.
+          </p>
+        </div>
+      )}
+
+      {!isLoading && total > 0 && (
+        <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--color-text-tertiary)" }}>
+                <th style={{ padding: "10px 14px", fontWeight: 500 }}>Owner</th>
+                <th style={{ padding: "10px 14px", fontWeight: 500 }}>Format</th>
+                <th style={{ padding: "10px 14px", fontWeight: 500 }}>Status</th>
+                <th style={{ padding: "10px 14px", fontWeight: 500 }}>Stage</th>
+                <th style={{ padding: "10px 14px", fontWeight: 500 }}>Ideas</th>
+                <th style={{ padding: "10px 14px", fontWeight: 500 }}>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs!.map((run) => (
+                <tr key={run.id} style={{ borderTop: "0.5px solid var(--color-border-tertiary)" }}>
+                  <td style={{ padding: "10px 14px" }}>{run.owner_email ?? "—"}</td>
+                  <td style={{ padding: "10px 14px" }}>
+                    {run.format === "documentary" ? "Documentary" : "Expert Interview"}
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <span className={IDEA_RUN_STATUS_CLASS[run.status] ?? "badge badge-neutral"} style={{ whiteSpace: "nowrap" }}>
+                      {run.status}
+                    </span>
+                  </td>
+                  <td style={{ padding: "10px 14px", color: "var(--color-text-secondary)" }}>
+                    {run.stage?.replace(/_/g, " ") || "—"}
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>{run.idea_count}</td>
+                  <td style={{ padding: "10px 14px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+                    {run.created_at ? formatDistanceToNow(new Date(run.created_at), { addSuffix: true }) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!isLoading && runs?.some((run) => run.error_message) && (
+        <div className="card" style={{ padding: 16, marginTop: 16 }}>
+          <div className="section-label" style={{ marginBottom: 8 }}>Recent failures</div>
+          <ul style={{ margin: 0, paddingLeft: 16, display: "flex", flexDirection: "column", gap: 5, fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
+            {runs!.filter((run) => run.error_message).slice(0, 6).map((run) => (
+              <li key={run.id} style={{ color: "var(--color-text-secondary)" }}>
+                <strong style={{ fontWeight: 500 }}>{run.owner_email ?? "unknown"}</strong> — {run.error_message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function NotificationsPanel() {
   const queryClient = useQueryClient();
@@ -235,6 +349,7 @@ export default function AdminConsolePage() {
         <button style={TAB_STYLE(tab === "users")}         onClick={() => setTab("users")}>User Management</button>
         <button style={TAB_STYLE(tab === "health")}        onClick={() => setTab("health")}>API Health</button>
         <button style={TAB_STYLE(tab === "notifications")} onClick={() => setTab("notifications")}>Notifications</button>
+        <button style={TAB_STYLE(tab === "ideas")}         onClick={() => setTab("ideas")}>Idea Generation</button>
       </div>
 
       {/* ── USERS TAB ─────────────────────────────────────────────────────────── */}
@@ -328,6 +443,9 @@ export default function AdminConsolePage() {
 
       {/* ── NOTIFICATIONS TAB ────────────────────────────────────────────────── */}
       {tab === "notifications" && <NotificationsPanel />}
+
+      {/* ── IDEA GENERATION TAB ───────────────────────────────────────────────── */}
+      {tab === "ideas" && <IdeaGenerationPanel />}
     </div>
   );
 }
