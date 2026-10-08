@@ -34,7 +34,7 @@ async def test_all_initial_workspaces_use_gather_initial_package(mocker) -> None
     idea_agent = IdeaGeneratorAgent.__new__(IdeaGeneratorAgent)
     idea_agent._research = SimpleNamespace(gather_initial_package=idea_gather)
     mocker.patch(
-        "backend.agents.idea_generator.IdeaGeneratorAgent._fetch_youtube_demand",
+        "backend.agents.idea_generator.VidIQTool.fetch_idea_trends",
         new=AsyncMock(return_value=None),
     )
     with pytest.raises(RuntimeError, match="insufficient_evidence"):

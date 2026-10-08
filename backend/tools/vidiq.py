@@ -532,13 +532,12 @@ class VidIQTool:
     async def fetch_idea_trends(self, *, window_days: int = 30) -> Optional[dict[str, Any]]:
         """Collect broad YouTube opportunity signals for UAE business ideation.
 
-        NO LONGER ON THE IDEA-GENERATION PATH. That now uses
-        fetch_demand_report, the same curated pipeline as Research and the story
-        path, so its signals are filtered keywords and videos rather than raw
-        payloads. Kept because this is the only tool that reaches vidIQ's
-        trending and outlier endpoints, which the demand report does not: restore
-        it if idea discovery needs that breadth back, but note the caller must
-        then filter the rows itself.
+        This is the idea-generation path. It is deliberately NOT
+        fetch_demand_report: that takes one distilled seed and returns a curated
+        single-topic report, which is right for Research and the story path but
+        cannot surface what is breaking out across UAE business, because there
+        is no topic yet. These four tools are the only ones reaching vidIQ's
+        trending and outlier endpoints. The caller filters the rows.
 
         Country keyword volume is an in-country demand estimate. Trending and
         outlier country filters describe where the publishing channel is based,

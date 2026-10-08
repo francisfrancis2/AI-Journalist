@@ -141,7 +141,7 @@ class Settings(BaseSettings):
 
     # ── Idea Generator V2 ────────────────────────────────────────────────────
     enable_idea_generator: bool = True
-    idea_generator_candidate_count: int = 5
+    idea_generator_candidate_count: int = 4
     idea_generator_result_count: int = 3
     idea_generator_max_synthesis_attempts: int = 2  # one full pass + at most one compact repair
     # Google Trends is deliberately not implemented in V2 yet. Keep this false
@@ -154,9 +154,12 @@ class Settings(BaseSettings):
     idea_generator_total_timeout_seconds: int = 300
     # Per-phase nominal budgets. Each is additionally clamped to the time left
     # before the ceiling, so these can be generous without risking the ceiling.
-    # Measured on 2026-10-08: research 101s, synthesis 203s at 6 candidates and
-    # 16k max_tokens. Synthesis latency tracks output tokens almost linearly,
-    # so candidate_count and synthesis_max_tokens are the levers that move it.
+    # Measured on 2026-10-08. Synthesis latency tracks output tokens almost
+    # linearly, so candidate_count is the lever that moves it: 6 candidates
+    # ~203s, 5 ~154-175s, 4 ~140s. Research varies 97-118s run to run, and at 5
+    # candidates the pair could total 293s against the 288s the phases get,
+    # which failed as synthesis_timed_out. 4 candidates restores real slack.
+    # Raise it only alongside the ceiling, never on its own.
     idea_generator_research_timeout_seconds: int = 150
     idea_generator_synthesis_timeout_seconds: int = 195
     idea_generator_repair_timeout_seconds: int = 20

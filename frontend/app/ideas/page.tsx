@@ -275,7 +275,7 @@ function IdeaCard({
                 ))}
               </div>
             ) : (
-              <p style={{ margin: 0, color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>No vidIQ signal was available for this idea.</p>
+              <p style={{ margin: 0, color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>No vidIQ signal was selected for this idea.</p>
             )}
           </div>
           {idea.verification_gaps.length > 0 && (
