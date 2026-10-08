@@ -54,14 +54,22 @@ class StrictModel(BaseModel):
 
 
 class IdeaCandidate(StrictModel):
+    # These caps are a guard against runaway output, not a style rule. They
+    # used to sit at normal verbosity: a production run failed outright because
+    # two candidates wrote business_significance slightly over 900 characters,
+    # and because structured output validates the whole CandidateSet at once,
+    # two long paragraphs destroyed four candidates' work. The DB columns are
+    # Text with no limit, so nothing downstream needed the tight bound. Target
+    # lengths are stated in idea_generator_shared.md so the model can comply --
+    # the previous failure was partly that it was never told.
     sector: str = Field(min_length=2, max_length=120)
     title: str = Field(min_length=8, max_length=220)
-    premise: str = Field(min_length=30, max_length=1200)
-    why_now: str = Field(min_length=20, max_length=900)
-    uae_relevance: str = Field(min_length=20, max_length=900)
-    central_tension: str = Field(min_length=15, max_length=700)
+    premise: str = Field(min_length=30, max_length=1600)
+    why_now: str = Field(min_length=20, max_length=1200)
+    uae_relevance: str = Field(min_length=20, max_length=1200)
+    central_tension: str = Field(min_length=15, max_length=1000)
     target_audience: str = Field(min_length=5, max_length=300)
-    business_significance: str = Field(min_length=20, max_length=900)
+    business_significance: str = Field(min_length=20, max_length=1600)
     format_details: dict[str, Any]
     source_ids: list[str] = Field(min_length=2, max_length=8)
     # min_length=1: vidIQ signals were collected (51 per run) but almost never

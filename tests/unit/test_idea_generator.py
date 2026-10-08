@@ -243,3 +243,43 @@ class TestRunCeilings:
         assert ledger.budget_usd == settings.idea_generator_max_cost_usd
         # And the context is clean afterwards, so one run cannot charge another.
         assert current_ledger() is None
+
+
+class TestCandidateFieldBudgets:
+    """A production run failed because two fields ran slightly over their cap.
+
+    Structured output validates the whole CandidateSet at once, so two long
+    paragraphs lost all four candidates and the run reported only a generic
+    "could not complete". The caps are a guard against runaway output, not a
+    style rule, and the DB columns are Text with no limit.
+    """
+
+    def test_a_long_but_reasonable_business_significance_is_accepted(self) -> None:
+        # ~1,100 characters: longer than the old 900 cap, well within a
+        # paragraph a producer would actually write.
+        long_text = (
+            "The UAE logistics market is forecast to grow substantially as "
+            "regional rerouting shifts volumes toward Jebel Ali. "
+        ) * 9
+        assert 900 < len(long_text) <= 1600
+        candidate = _candidate(business_significance=long_text)
+        assert candidate.business_significance == long_text
+
+    def test_runaway_output_is_still_rejected(self) -> None:
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            _candidate(business_significance="x" * 5000)
+
+    def test_every_prose_field_accepts_a_full_paragraph(self) -> None:
+        """The 900-character trip-wire sat on three sibling fields, not one."""
+        paragraph = "Jebel Ali handled record container volumes this quarter. " * 18
+        assert len(paragraph) > 900
+        candidate = _candidate(
+            premise=paragraph,
+            why_now=paragraph[:1100],
+            uae_relevance=paragraph[:1100],
+            central_tension=paragraph[:950],
+            business_significance=paragraph,
+        )
+        assert candidate.premise == paragraph

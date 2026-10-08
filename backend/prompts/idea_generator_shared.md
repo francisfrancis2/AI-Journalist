@@ -48,3 +48,21 @@ than sanitising its evidence.
 ## Output
 
 Return only the requested idea fields.
+
+Keep each field inside its budget. These are hard limits, not preferences: a
+single field over its limit fails validation for the whole set, so every
+candidate is lost, not just the long one.
+
+| Field | Budget |
+|---|---|
+| `title` | under 220 characters |
+| `premise` | about 150 words, 1600 characters maximum |
+| `why_now` | about 120 words, 1200 characters maximum |
+| `uae_relevance` | about 120 words, 1200 characters maximum |
+| `business_significance` | about 150 words, 1600 characters maximum |
+| `central_tension` | about 100 words, 1000 characters maximum |
+| `target_audience` | one sentence, 300 characters maximum |
+
+Write to the shorter word figure. The character maximum is the cliff, not the
+target — a tight paragraph reads better than a padded one and leaves no risk of
+losing the set.
