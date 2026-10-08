@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import structlog
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.agents.research import ResearchAgent
 from backend.config import settings
@@ -77,6 +77,43 @@ class IdeaCandidate(StrictModel):
     # not the collection, is why demand data looked 'not pulled'.
     signal_keys: list[str] = Field(min_length=1, max_length=8)
     verification_gaps: list[str] = Field(default_factory=list, max_length=6)
+
+    # Character budgets stated in the prompt and enforced above are still only
+    # a request: the model can exceed them, and because structured output
+    # validates the whole CandidateSet at once, one long paragraph fails every
+    # candidate in the set. That is how a production run lost four ideas and
+    # ~$0.50 of work to two sentences of overrun.
+    #
+    # Raising the caps made that less likely. Trimming makes it impossible: an
+    # over-long field is cut back to its limit at a word boundary instead of
+    # rejected. A slightly shortened paragraph is plainly better than a failed
+    # run, and the overrun is logged so prompt drift stays visible.
+    @field_validator(
+        "premise", "why_now", "uae_relevance", "central_tension",
+        "target_audience", "business_significance", "title", "sector",
+        mode="before",
+    )
+    @classmethod
+    def _trim_to_budget(cls, value: Any, info: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        field = cls.model_fields.get(info.field_name)
+        limit = getattr(field, "metadata", None) and next(
+            (m.max_length for m in field.metadata if hasattr(m, "max_length")), None
+        )
+        if not limit or len(value) <= limit:
+            return value
+        cut = value[:limit]
+        # Prefer a clean break so the text does not end mid-word.
+        boundary = cut.rfind(" ")
+        trimmed = (cut[:boundary] if boundary > limit * 0.6 else cut).rstrip(" ,;:")
+        log.warning(
+            "idea_generator.field_trimmed",
+            field=info.field_name,
+            original_length=len(value),
+            limit=limit,
+        )
+        return trimmed
 
 
 class CandidateSet(StrictModel):

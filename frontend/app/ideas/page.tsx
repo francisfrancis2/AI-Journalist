@@ -173,12 +173,15 @@ function SignalSummary({ values }: { values: Record<string, unknown> }) {
 function IdeaCard({
   idea,
   onState,
+  onDelete,
 }: {
   idea: GeneratedIdea;
   onState: (ideaId: string, state: IdeaState) => void;
+  onDelete: (ideaId: string) => void;
 }) {
   const router = useRouter();
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const details = Object.entries(idea.format_details ?? {});
   const isDismissed = idea.state === "dismissed";
 
@@ -312,6 +315,22 @@ function IdeaCard({
               <Bookmark size={13} fill={idea.state === "saved" ? "currentColor" : "none"} /> {idea.state === "saved" ? "Saved" : "Save"}
             </button>
             <button className="btn-ghost" type="button" onClick={() => onState(idea.id, "dismissed")}><X size={13} /> Dismiss</button>
+            {confirmDelete ? (
+              <>
+                <button
+                  className="btn-ghost"
+                  type="button"
+                  style={{ color: "var(--color-danger)" }}
+                  onClick={() => onDelete(idea.id)}
+                >
+                  <Trash2 size={13} /> Delete permanently
+                </button>
+                <button className="btn-ghost" type="button" onClick={() => setConfirmDelete(false)}>Cancel</button>
+              </>
+            ) : (
+              // Two-step: Dismiss is reversible, this is not.
+              <button className="btn-ghost" type="button" onClick={() => setConfirmDelete(true)}><Trash2 size={13} /> Delete</button>
+            )}
           </>
         )}
       </div>
@@ -328,6 +347,9 @@ export default function IdeaGeneratorPage() {
   const runIdFromUrl = searchParams.get("run");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(runIdFromUrl);
   const [showDismissed, setShowDismissed] = useState(false);
+  // Delete can be refused -- a run with a live worker returns 409 -- and the
+  // reason has to be visible or the button looks broken.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const runsQuery = useQuery<IdeaGenerationRunSummary[]>({
     queryKey: ["idea-generations"],
@@ -367,6 +389,18 @@ export default function IdeaGeneratorPage() {
       queryClient.invalidateQueries({ queryKey: ["idea-generations"] });
     },
   });
+  const removeIdea = useMutation({
+    mutationFn: (ideaId: string) => apiClient.deleteGeneratedIdea(ideaId),
+    onSuccess: (_void, ideaId) => {
+      setActionError(null);
+      // Drop it from the cached run so the card goes immediately rather than
+      // after the next poll.
+      queryClient.setQueryData<IdeaGenerationRun>(["idea-generation", selectedRunId], (current) =>
+        current ? { ...current, ideas: current.ideas.filter((idea) => idea.id !== ideaId) } : current);
+      queryClient.invalidateQueries({ queryKey: ["idea-generations"] });
+    },
+    onError: (err: Error) => setActionError(err.message || "Could not delete that idea."),
+  });
   const updateState = useMutation({
     mutationFn: ({ ideaId, state }: { ideaId: string; state: IdeaState }) => apiClient.updateIdeaState(ideaId, state),
     onSuccess: (idea) => {
@@ -378,6 +412,7 @@ export default function IdeaGeneratorPage() {
   });
   const removeRun = useMutation({
     mutationFn: (runId: string) => apiClient.deleteIdeaGeneration(runId),
+    onError: (err: Error) => setActionError(err.message || "Could not delete that run."),
     onSuccess: (_, runId) => {
       if (selectedRunId === runId) setSelectedRunId(null);
       queryClient.removeQueries({ queryKey: ["idea-generation", runId] });
@@ -421,9 +456,20 @@ export default function IdeaGeneratorPage() {
                   <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>{FORMAT_LABEL[item.format]}</div>
                   <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>{titleCase(item.status)} · {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</div>
                 </button>
-                {!(["queued", "running"] as string[]).includes(item.status) && (
-                  <button type="button" className="btn-ghost" aria-label="Delete run" onClick={() => removeRun.mutate(item.id)} style={{ padding: 6 }}><Trash2 size={12} /></button>
-                )}
+                {/* Always offered. Hiding it for queued/running meant a run
+                    abandoned by a dead worker -- killed by a deploy, say --
+                    could never be cleared, because that is the state it stays
+                    in until recovery reaches it. The backend refuses only when
+                    a worker lease is genuinely still live, and says so. */}
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  aria-label="Delete run"
+                  onClick={() => removeRun.mutate(item.id)}
+                  style={{ padding: 6 }}
+                >
+                  <Trash2 size={12} />
+                </button>
               </div>
             ))}
             {!runsQuery.isLoading && !(runsQuery.data ?? []).length && <p style={{ color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>No idea runs yet.</p>}
@@ -449,6 +495,12 @@ export default function IdeaGeneratorPage() {
               </button>
             </div>
             {generate.isError && <p role="alert" style={{ color: "var(--color-danger)", marginBottom: 0 }}>{(generate.error as Error).message}</p>}
+            {actionError && (
+              <p role="alert" style={{ color: "var(--color-danger)", marginBottom: 0, display: "flex", gap: 8, alignItems: "center" }}>
+                {actionError}
+                <button className="btn-ghost" type="button" onClick={() => setActionError(null)}>Dismiss</button>
+              </p>
+            )}
           </section>
 
           {runQuery.isLoading && <div style={{ padding: 30, textAlign: "center" }}><Loader2 size={20} className="animate-spin" /></div>}
@@ -502,7 +554,14 @@ export default function IdeaGeneratorPage() {
               )}
 
               <div style={{ display: "grid", gap: 14 }}>
-                {ideas.map((idea) => <IdeaCard key={idea.id} idea={idea} onState={(ideaId, state) => updateState.mutate({ ideaId, state })} />)}
+                {ideas.map((idea) => (
+                  <IdeaCard
+                    key={idea.id}
+                    idea={idea}
+                    onState={(ideaId, state) => updateState.mutate({ ideaId, state })}
+                    onDelete={(ideaId) => removeIdea.mutate(ideaId)}
+                  />
+                ))}
               </div>
             </>
           )}

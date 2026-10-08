@@ -931,6 +931,10 @@ class AIJournalistAPIClient {
     return data;
   }
 
+  async deleteGeneratedIdea(ideaId: string): Promise<void> {
+    await this.http.delete(`/api/v1/idea-generations/ideas/${ideaId}`);
+  }
+
   async deleteIdeaGeneration(runId: string): Promise<void> {
     await this.http.delete(`/api/v1/idea-generations/${runId}`);
   }

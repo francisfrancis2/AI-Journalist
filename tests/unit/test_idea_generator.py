@@ -265,11 +265,15 @@ class TestCandidateFieldBudgets:
         candidate = _candidate(business_significance=long_text)
         assert candidate.business_significance == long_text
 
-    def test_runaway_output_is_still_rejected(self) -> None:
-        from pydantic import ValidationError
+    def test_runaway_output_is_bounded_not_rejected(self) -> None:
+        """The cap still bounds what gets stored; it no longer fails the run.
 
-        with pytest.raises(ValidationError):
-            _candidate(business_significance="x" * 5000)
+        This replaces an earlier expectation that an overrun raises. Rejecting
+        was the behaviour that lost four candidates to two long paragraphs in
+        production, so the guard now bounds the value instead.
+        """
+        candidate = _candidate(business_significance="x" * 50_000)
+        assert len(candidate.business_significance) <= 1600
 
     def test_every_prose_field_accepts_a_full_paragraph(self) -> None:
         """The 900-character trip-wire sat on three sibling fields, not one."""
@@ -283,3 +287,43 @@ class TestCandidateFieldBudgets:
             business_significance=paragraph,
         )
         assert candidate.premise == paragraph
+
+
+    def test_overrun_is_trimmed_rather_than_failing_the_set(self) -> None:
+        """The production failure mode, made impossible.
+
+        Raising the caps only made an overrun less likely. Because structured
+        output validates the whole CandidateSet at once, any overrun still lost
+        every candidate -- so the field is trimmed instead of rejected.
+        """
+        candidate = _candidate(business_significance="word " * 1000)  # ~5000 chars
+        assert len(candidate.business_significance) <= 1600
+        assert not candidate.business_significance.endswith(" ")
+        # Trimmed at a word boundary, not mid-word.
+        assert candidate.business_significance.split()[-1] == "word"
+
+    def test_trimming_applies_to_every_prose_field(self) -> None:
+        candidate = _candidate(
+            premise="alpha " * 1000,
+            why_now="beta " * 1000,
+            uae_relevance="gamma " * 1000,
+            central_tension="delta " * 1000,
+            business_significance="epsilon " * 1000,
+        )
+        for field, limit in (
+            ("premise", 1600), ("why_now", 1200), ("uae_relevance", 1200),
+            ("central_tension", 1000), ("business_significance", 1600),
+        ):
+            assert len(getattr(candidate, field)) <= limit, field
+
+    def test_a_whole_set_survives_one_verbose_candidate(self) -> None:
+        """What actually broke in production: one long field, four ideas lost."""
+        from backend.agents.idea_generator import CandidateSet
+
+        candidates = [
+            _candidate(title="Idea one that is long enough"),
+            _candidate(title="Idea two that is long enough", business_significance="word " * 1000),
+            _candidate(title="Idea three that is long enough"),
+        ]
+        result = CandidateSet(candidates=candidates)
+        assert len(result.candidates) == 3, "a verbose candidate must not lose the others"

@@ -513,3 +513,87 @@ async def test_budget_exceeded_reports_the_actual_figures(db_session, monkeypatc
 
     assert run.error_code == "budget_exceeded"
     assert "$0.42" in run.error_message, "the spend figures must survive into the UI"
+
+
+@pytest.mark.asyncio
+async def test_a_single_generated_idea_can_be_deleted(api_client, db_session) -> None:
+    """Dismiss hides; delete removes. The run's other ideas must survive."""
+    caller = (await db_session.execute(select(UserORM).where(UserORM.is_admin.is_(True)))).scalars().first()
+    run = _completed_run(caller.id)
+    db_session.add(run)
+    await db_session.commit()
+
+    kept, doomed = (
+        GeneratedIdeaORM(
+            run_id=run.id,
+            rank=rank,
+            format="documentary",
+            sector="Logistics",
+            title=f"Idea number {rank}",
+            premise="A premise long enough to satisfy the column.",
+            why_now="Because it is timely and verifiable.",
+            uae_relevance="It concerns the United Arab Emirates directly.",
+            central_tension="A real contradiction worth filming.",
+            target_audience="UAE business viewers",
+            business_significance="It explains where money is moving.",
+            format_details={},
+            score_breakdown={},
+            score=80.0,
+            strength="strong",
+            state="active",
+            verification_gaps=[],
+        )
+        for rank in (1, 2)
+    )
+    db_session.add_all([kept, doomed])
+    await db_session.commit()
+
+    response = await api_client.delete(f"/api/v1/idea-generations/ideas/{doomed.id}")
+    assert response.status_code == 204, response.text
+
+    remaining = (await db_session.execute(
+        select(GeneratedIdeaORM).where(GeneratedIdeaORM.run_id == run.id)
+    )).scalars().all()
+    assert [idea.id for idea in remaining] == [kept.id], "only the targeted idea should go"
+
+    # And the run itself is untouched.
+    assert (await db_session.get(IdeaGenerationRunORM, run.id)) is not None
+
+
+@pytest.mark.asyncio
+async def test_cannot_delete_another_users_idea(api_client, db_session) -> None:
+    other = UserORM(
+        id=uuid.uuid4(),
+        email="notme@example.com",
+        hashed_password="not-a-real-hash",
+        is_active=True,
+        is_admin=False,
+    )
+    db_session.add(other)
+    run = _completed_run(other.id)
+    db_session.add(run)
+    await db_session.commit()
+    idea = GeneratedIdeaORM(
+        run_id=run.id,
+        rank=1,
+        format="documentary",
+        sector="Energy",
+        title="Somebody else's idea",
+        premise="A premise long enough to satisfy the column.",
+        why_now="Because it is timely and verifiable.",
+        uae_relevance="It concerns the United Arab Emirates directly.",
+        central_tension="A real contradiction worth filming.",
+        target_audience="UAE business viewers",
+        business_significance="It explains where money is moving.",
+        format_details={},
+        score_breakdown={},
+        score=80.0,
+        strength="strong",
+        state="active",
+        verification_gaps=[],
+    )
+    db_session.add(idea)
+    await db_session.commit()
+
+    response = await api_client.delete(f"/api/v1/idea-generations/ideas/{idea.id}")
+    assert response.status_code == 404, "another user's idea must not be reachable"

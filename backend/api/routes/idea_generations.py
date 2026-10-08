@@ -874,6 +874,24 @@ async def delete_idea_generation(
     await db.commit()
 
 
+@router.delete("/ideas/{idea_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+async def delete_generated_idea(
+    idea_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> None:
+    """Remove a single generated idea for good.
+
+    Dismiss only hides an idea behind the "Show dismissed" toggle, which is the
+    right default for one a producer might reconsider. This is for the ones they
+    want gone -- the run's other ideas, its sources and its signals are
+    untouched, since those are shared across the run.
+    """
+    idea = await _load_idea(db, idea_id, current_user.id)
+    await db.execute(delete(GeneratedIdeaORM).where(GeneratedIdeaORM.id == idea.id))
+    await db.commit()
+
+
 @router.post("/ideas/{idea_id}/state", response_model=GeneratedIdeaRead)
 async def update_idea_state(
     idea_id: uuid.UUID,
