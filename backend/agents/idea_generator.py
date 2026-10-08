@@ -29,6 +29,7 @@ from backend.services.cost_ledger import (
 from backend.services.prompt_loader import load_prompt
 from backend.models.idea_generation import IdeaFormat
 from backend.models.research import RawSource, ResearchPackage
+from backend.tools.reddit_questions import RedditQuestionTool
 from backend.tools.vidiq import VidIQTool
 
 log = structlog.get_logger(__name__)
@@ -544,6 +545,21 @@ class _Deadline:
         return min(float(phase_budget), self.remaining)
 
 
+def _question_digest(report: Any, *, limit: int = 15) -> str:
+    """Public questions from UAE operators, as context for what to explain.
+
+    Not citable evidence and deliberately not given reference ids: a thread
+    shows a question is live and widely asked, never that an answer in it is
+    true. Facts come from the sources above it in the prompt.
+    """
+    if report is None or not getattr(report, "questions", None):
+        return ""
+    return "\n".join(
+        f"- {item.question}" + (f"  [r/{item.subreddit}]" if item.subreddit else "")
+        for item in report.questions[:limit]
+    )
+
+
 async def _bounded(awaitable, *, timeout: float, error_code: str):
     """Apply an attributable wall-clock bound to an external phase."""
     try:
@@ -649,7 +665,7 @@ class IdeaGeneratorAgent:
             "filmable change. Keep discussion of the UAE, its government, rulers and institutions neutral "
             "or constructive; reject a topic if compliance would require hiding or distorting evidence."
         )
-        package, vidiq_raw = await _bounded(
+        package, vidiq_raw, questions = await _bounded(
             asyncio.gather(
                 self._research.gather_initial_package(
                     prompt=research_prompt,
@@ -657,6 +673,10 @@ class IdeaGeneratorAgent:
                     include_vidiq=False,
                     rss_country="AE",
                     deep_max_uses=settings.anthropic_deep_research_idea_max_uses,
+                    # Opt out of topic-scoped Reddit search: the discovery
+                    # prompt is a paragraph, which makes a poor search query.
+                    # The broad founder question set is fetched below instead.
+                    include_community_questions=False,
                     # This caps only Anthropic server-side web-search uses.
                     # Tavily, NewsAPI, RSS, scraping, and retained source count
                     # are unchanged.
@@ -667,12 +687,16 @@ class IdeaGeneratorAgent:
                 # Research workspace and story path use. There is no topic yet;
                 # finding what is moving is the job.
                 VidIQTool().fetch_idea_trends(window_days=30),
+                # What operators are actually asking, with no topic: the point
+                # here is to find out what this audience wants explained.
+                RedditQuestionTool().fetch_questions(),
             ),
             timeout=deadline.allot(settings.idea_generator_research_timeout_seconds),
             error_code="research_timed_out",
         )
         sources = _prepare_sources(package)
         signals = _prepare_signals(vidiq_raw)
+        package.community_questions = questions
         if len({source.domain for source in sources if source.domain}) < 2:
             raise RuntimeError("insufficient_evidence")
         if on_stage is not None:
@@ -716,7 +740,10 @@ class IdeaGeneratorAgent:
                 f"Today is {datetime.now(timezone.utc).date().isoformat()}.\n"
                 f"Requested format: {idea_format.value}.\n\nFACTUAL SOURCES:\n"
                 f"{_source_digest(sources, limit=limit, excerpt_chars=excerpt_chars)}\n\n"
-                f"VIDIQ OPPORTUNITY SIGNALS:\n{_signal_digest(signals) or '(vidIQ unavailable)'}"
+                f"VIDIQ OPPORTUNITY SIGNALS:\n{_signal_digest(signals) or '(vidIQ unavailable)'}\n\n"
+                "QUESTIONS UAE OPERATORS ARE ASKING IN PUBLIC (demand evidence only, "
+                "never factual corroboration, and not citable as a source):\n"
+                f"{_question_digest(package.community_questions) or '(no community questions available)'}"
             )
 
         # Research has already charged the ledger, so what is left here is the
@@ -875,6 +902,17 @@ class IdeaGeneratorAgent:
                     else "vidIQ did not return data."
                 ),
                 "evidence_count": len(signals),
+            },
+            "community_questions": {
+                "status": "complete" if package.community_questions else "unavailable",
+                "detail": (
+                    f"{len(package.community_questions.questions)} public questions from UAE operators."
+                    if package.community_questions
+                    else "No community questions were collected."
+                ),
+                "evidence_count": (
+                    len(package.community_questions.questions) if package.community_questions else 0
+                ),
             },
             "google_trends": {
                 "status": "not_configured",

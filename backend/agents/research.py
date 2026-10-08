@@ -47,6 +47,7 @@ from backend.tools.news_api import NewsAPITool
 from backend.tools.rss_parser import RSSParserTool
 from backend.tools.web_scraper import WebScraperTool
 from backend.tools.anthropic_search import AnthropicSearchTool
+from backend.tools.reddit_questions import RedditQuestionTool
 from backend.tools.vidiq import (
     VidIQTool,
     demand_report_to_sources,
@@ -157,6 +158,7 @@ class ResearchAgent:
         # settings.enable_deep_research so cost stays tunable.
         self._deep_research = AnthropicDeepResearchTool()
         self._vidiq = VidIQTool()
+        self._questions = RedditQuestionTool()
         # Research Hub report consolidation and follow-up re-synthesis are
         # summarisation workloads; keep them on Haiku. Deep research retrieval
         # remains on Sonnet inside AnthropicDeepResearchTool.
@@ -426,6 +428,7 @@ class ResearchAgent:
         deep_max_uses: int | None = None,
         include_vidiq: bool = False,
         vidiq_topic: str | None = None,
+        include_community_questions: bool = True,
         rss_country: str = "US",
     ) -> None:
         """Dispatch all routed providers in parallel into ``package`` and scrape."""
@@ -488,6 +491,15 @@ class ResearchAgent:
                 search_seed=vidiq_seed,
             )
 
+        # Reddit questions -- what operators are actually asking. Demand
+        # evidence, gathered and failed-open exactly like vidIQ, and never added
+        # to package.sources: a thread shows a question is live, not that any
+        # answer in it is true.
+        questions_key = None
+        if include_community_questions and self._questions.enabled and package.community_questions is None:
+            questions_key = "community_questions"
+            fetch_tasks[questions_key] = self._questions.fetch_questions(vidiq_topic or topic)
+
         if not fetch_tasks:
             return
 
@@ -509,6 +521,11 @@ class ResearchAgent:
                     package.youtube_demand = result
                     for src in demand_report_to_sources(result):
                         package.add_source_deduped(src, seen_urls)
+                continue
+            if key == questions_key:
+                # Deliberately not folded into sources -- see the comment above.
+                if result is not None:
+                    package.community_questions = result
                 continue
             sources = result if isinstance(result, list) else [result]
             for src in sources:
@@ -540,6 +557,7 @@ class ResearchAgent:
         deep: bool = True,
         include_vidiq: bool = False,
         vidiq_topic: str | None = None,
+        include_community_questions: bool = True,
         rss_country: str = "US",
         deep_max_uses: int | None = None,
     ) -> ResearchPackage:
@@ -579,6 +597,7 @@ class ResearchAgent:
             deep_max_uses=deep_max_uses,
             include_vidiq=include_vidiq,
             vidiq_topic=vidiq_topic,
+            include_community_questions=include_community_questions,
             rss_country=rss_country,
         )
         package.research_duration_seconds = time.monotonic() - start
@@ -591,6 +610,10 @@ class ResearchAgent:
         deep: bool = True,
         include_vidiq: bool = False,
         vidiq_topic: str | None = None,
+        # The Idea Generator opts out: it has no topic at this point, so it
+        # fetches the broad founder question set itself rather than searching
+        # Reddit with a paragraph-long discovery prompt.
+        include_community_questions: bool = True,
         rss_country: str = "US",
         deep_max_uses: int | None = None,
     ) -> ResearchPackage:
@@ -606,6 +629,7 @@ class ResearchAgent:
             deep=deep,
             include_vidiq=include_vidiq,
             vidiq_topic=vidiq_topic,
+            include_community_questions=include_community_questions,
             rss_country=rss_country,
             deep_max_uses=deep_max_uses,
         )
@@ -619,6 +643,7 @@ class ResearchAgent:
         deep: bool = True,
         include_vidiq: bool = False,
         vidiq_topic: str | None = None,
+        include_community_questions: bool = True,
         conversation_turns: list[dict[str, Any]] | None = None,
     ) -> ConsolidatedResearch:
         """
@@ -639,6 +664,7 @@ class ResearchAgent:
             deep=deep,
             include_vidiq=include_vidiq,
             vidiq_topic=vidiq_topic,
+            include_community_questions=include_community_questions,
         )
 
         report, citations = await self._synthesizer.synthesize(

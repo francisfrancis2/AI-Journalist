@@ -52,6 +52,27 @@ executives is the wrong show, however strong the subject. Check `target_audience
 before you commit to an idea: if it does not name people running companies, the
 framing is wrong and the idea needs re-pointing or dropping.
 
+## Answer the questions operators are actually asking
+
+The prompt includes a list of questions UAE operators have asked in public
+forums. Treat it as the clearest available evidence of what this audience wants
+explained, and prefer ideas that answer one of them — or answer the real
+question sitting underneath several of them.
+
+Two rules about that list:
+
+- **It is demand evidence, never factual evidence.** A thread proves a question
+  is live and widely asked. It proves nothing about any answer in it, and it is
+  not a citable source. Every fact still comes from the research sources.
+- **Answer the question, do not repeat it.** "Should I go free zone or
+  mainland?" is the question; the episode is the mechanism that decides it, and
+  the thing most people get wrong about that decision.
+
+A recurring question is the strongest signal this show can get. When several
+people keep asking the same thing, an expert who can settle it is worth five
+minutes of anyone's time — and that is a better reason to make an episode than
+any news hook.
+
 ## The two tests every idea must pass
 
 **The UAE test.** The idea must turn on something specific to this market that a

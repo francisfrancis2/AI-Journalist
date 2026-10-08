@@ -34,6 +34,7 @@ _REPORT_SECTIONS = """# Research Report
 ## Executive Brief
 ## Key Findings
 ## Supporting Evidence
+## What the Audience Is Asking
 ## Open Questions and Verification Gaps"""
 
 
@@ -131,6 +132,16 @@ class ResearchReportSynthesizer:
 
         task = _followup_task(prompt) if existing_report else _initial_task(prompt)
 
+        community = getattr(package, "community_questions", None)
+        questions_block = (
+            "\n".join(
+                f"- {item.question}" + (f"  [r/{item.subreddit}]" if item.subreddit else "")
+                for item in community.questions[:15]
+            )
+            if community is not None and community.questions
+            else ""
+        )
+
         system_text = f"""You are a meticulous documentary research editor writing a consolidated research report.
 
 Always return a single Markdown report with these sections (omit a section only when nothing applies):
@@ -145,14 +156,23 @@ Rules:
 - Do not include a recommended next steps section or user action checklist.
 - Do not invent sources or citations. Do not include commentary outside the report."""
 
-        evidence_context = f"""You have TWO new evidence inputs to merge into the consolidated report. Do not output them
-separately — weave them together, deduplicating overlapping facts.
+        evidence_context = f"""You have new evidence inputs to merge into the consolidated report. Do not output them
+separately — weave the factual ones together, deduplicating overlapping facts.
 
 === DEEP RESEARCH NARRATIVE (Anthropic web search) ===
 {deep_report or '(no deep-research narrative was produced)'}
 
 === STRUCTURED MULTI-SOURCE EVIDENCE (Tavily / NewsAPI / RSS / financial) ===
-{digest or '(no structured sources were collected)'}"""
+{digest or '(no structured sources were collected)'}
+
+=== PUBLIC QUESTIONS FROM UAE OPERATORS (audience demand, NOT factual evidence) ===
+{questions_block or '(no community questions were collected)'}
+
+These questions belong only in "What the Audience Is Asking", summarised as the
+themes people keep raising. They are evidence that a question is live and widely
+asked — never evidence of any answer. Do not treat them as findings, do not cite
+them, and do not let them contradict the sourced material above. Omit the
+section entirely when no questions were collected."""
 
         # Research sessions already persist each completed prompt/report pair.
         # Reconstruct that append-only conversation so the prior turn remains

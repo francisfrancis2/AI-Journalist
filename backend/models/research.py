@@ -59,6 +59,31 @@ class ResearchQuery(BaseModel):
     time_range_days: Optional[int] = None  # None = no restriction
 
 
+class CommunityQuestion(BaseModel):
+    """One question a real operator asked in public."""
+
+    question: str
+    url: str
+    subreddit: Optional[str] = None
+
+
+class CommunityQuestionReport(BaseModel):
+    """What people are actually asking about doing business in the UAE.
+
+    Demand evidence, in the same category as the vidIQ YouTube signal and for
+    the same reason: a forum thread tells you a question is live and widely
+    asked, not that any answer in it is true. It must never be cited as factual
+    corroboration -- the questions shape which ideas are worth making, while the
+    facts come from the research sources.
+    """
+
+    topic: str
+    queries: list[str] = Field(default_factory=list)
+    questions: list[CommunityQuestion] = Field(default_factory=list)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    partial: bool = False
+
+
 class ResearchPackage(BaseModel):
     """All raw data collected for a topic during the research phase."""
     topic: str
@@ -77,6 +102,9 @@ class ResearchPackage(BaseModel):
     # disabled, unconfigured, out of credits, or simply failed — research
     # continues unchanged in all those cases.
     youtube_demand: Optional["YouTubeDemandReport"] = None
+    # Questions real operators are asking in public forums. Optional and
+    # fail-open on exactly the same terms as youtube_demand.
+    community_questions: Optional["CommunityQuestionReport"] = None
 
     def add_source(self, source: RawSource) -> None:
         self.sources.append(source)

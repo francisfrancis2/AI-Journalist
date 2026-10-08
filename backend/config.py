@@ -126,6 +126,16 @@ class Settings(BaseSettings):
     # failing a story. Calls bill ~5 vidIQ credits each from a shared monthly pool.
     vidiq_api_key: Optional[str] = Field(None, env="VIDIQ_API_KEY")
     enable_vidiq: bool = True
+    # ── Reddit community questions ──────────────────────────────────────────
+    # What operators are actually asking, searched through Tavily with a
+    # reddit.com domain filter because Reddit's own JSON answers 403 to
+    # datacenter traffic. Demand evidence only -- never factual corroboration.
+    reddit_questions_enabled: bool = True
+    reddit_questions_max_queries: int = 5
+    reddit_questions_results_per_query: int = 8
+    reddit_questions_max_questions: int = 15
+    reddit_questions_timeout_seconds: float = 25.0
+
     vidiq_max_calls_per_story: int = 9       # hard spend cap (~45 credits/story)
     vidiq_keyword_fanout: int = 2            # related keywords also given a video search
     vidiq_max_keywords: int = 10             # additional keywords kept beyond the seed
