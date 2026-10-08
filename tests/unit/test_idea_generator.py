@@ -327,3 +327,58 @@ class TestCandidateFieldBudgets:
         ]
         result = CandidateSet(candidates=candidates)
         assert len(result.candidates) == 3, "a verbose candidate must not lose the others"
+
+
+class TestFormatPromptContracts:
+    """The two formats pull in opposite directions and must each say so.
+
+    Expert Mode drifted into documentary territory -- national bets addressed to
+    policymakers -- partly because the shared instructions asked for a spread
+    across unrelated industries, which is right for a documentary slate and
+    wrong for a set aimed at one operator.
+    """
+
+    def test_expert_prompt_names_its_audience(self) -> None:
+        from backend.services.prompt_loader import load_prompt
+
+        expert = load_prompt("idea_generator_expert").lower()
+        assert "sme" in expert and "founder" in expert, "the audience must be stated"
+        assert "policymaker" in expert, "addressing policymakers must be called out as wrong"
+
+    def test_expert_prompt_rules_out_national_scale_bets(self) -> None:
+        from backend.services.prompt_loader import load_prompt
+
+        expert = load_prompt("idea_generator_expert").lower()
+        assert "megaproject" in expert or "national-scale" in expert
+
+    def test_each_format_states_its_own_distinctness_rule(self) -> None:
+        from backend.services.prompt_loader import load_prompt
+
+        expert = load_prompt("idea_generator_expert")
+        documentary = load_prompt("idea_generator_documentary")
+        expert = " ".join(expert.split())
+        documentary = " ".join(documentary.split())
+        assert "Distinctness for this format" in expert
+        assert "Distinctness for this format" in documentary
+        # The documentary slate still wants unrelated industries.
+        assert "unrelated industries" in documentary
+        # Expert Mode explicitly must not reach for that spread.
+        assert "unrelated industry" in expert
+
+    def test_shared_prompt_defers_distinctness_to_the_format(self) -> None:
+        from backend.services.prompt_loader import load_prompt
+
+        # Normalised, because these prompts are hard-wrapped markdown and the
+        # sentence under test spans a line break.
+        shared = " ".join(load_prompt("idea_generator_shared").split())
+        assert "format instructions below settle it" in shared
+        assert "different underlying story" in shared
+
+    def test_the_users_expert_definition_is_preserved(self) -> None:
+        """The show definition was supplied verbatim and must not be rewritten."""
+        from backend.services.prompt_loader import load_prompt
+
+        expert = " ".join(load_prompt("idea_generator_expert").split())
+        assert "I didn't understand this before" in expert
+        assert "Every idea must deliver three things" in expert
+        assert "Score each candidate against all seven" in expert

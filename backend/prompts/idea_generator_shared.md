@@ -34,10 +34,15 @@ the citation list to look better covered than you are.
 
 ## Distinctness
 
-Each candidate must occupy a different sector AND a different underlying story.
-Two ideas about the same company, the same funding round, or the same
-technology are not distinct even when the sector labels differ. Spread the set
-across unrelated industries.
+Every candidate must be a different underlying story. Two ideas about the same
+company, the same funding round, or the same technology are not distinct even
+when the sector labels differ.
+
+How much further distinctness goes depends on the format, and the format
+instructions below settle it: a documentary set spreads across unrelated
+industries, while an expert-interview set spreads across the different
+questions one operator faces. Follow the format section rather than reaching
+for a sector spread by default.
 
 ## Editorial policy
 

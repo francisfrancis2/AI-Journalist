@@ -40,19 +40,57 @@ the set rather than ideas that are exceptional on one axis and weak elsewhere.
 | 6 | **Expertise** | Can we find someone who genuinely understands the subject, rather than someone merely adjacent to it? |
 | 7 | **Takeaway** | Can the expert credibly say what happens next and what the audience should watch or do? |
 
+## Who is watching
+
+People running businesses in the UAE: SME owners, founders, and the operators
+around them. Assume a viewer with a company to run, decisions to make this
+quarter, and no time for a briefing aimed at somebody else.
+
+This is the single most common way an Expert Mode idea goes wrong. An idea
+addressed to fund managers, policymakers, sovereign investors or sustainability
+executives is the wrong show, however strong the subject. Check `target_audience`
+before you commit to an idea: if it does not name people running companies, the
+framing is wrong and the idea needs re-pointing or dropping.
+
+## The two tests every idea must pass
+
+**The UAE test.** The idea must turn on something specific to this market that a
+well-read outsider would get wrong or not know at all — a rule, a cost, a
+channel, a customer behaviour, a way capital actually moves here. If the same
+episode could be made about Singapore or Saudi Arabia by swapping the names, it
+is not an Expert Mode idea.
+
+**The Monday test.** A viewer running a UAE business should be able to name one
+decision they would make, revisit or delay because of what they just learned.
+"Interesting to know" is not a takeaway. Name the decision.
+
 ## The kinds of topics that work
 
-- **Big economic shifts.**
-  e.g. Why interest rate changes alter the way startups get funded.
-- **Emerging technologies — through their economic impact.**
-  e.g. Why AI is changing the economics of running a company.
-- **Government initiatives and bets.**
-  e.g. The UAE wants to become an AI-native economy. What does that actually mean?
-- **Markets or industries undergoing disruption.**
-  e.g. Why global AgriTech companies are betting big on Abu Dhabi.
+All four are at the altitude of a company, not a country.
+
+- **A rule, cost or process that just changed for operators.**
+  e.g. What corporate tax actually did to the free-zone-versus-mainland
+  decision — and who should now be rethinking their structure.
+- **How money really reaches UAE companies.**
+  e.g. Why UAE startups are borrowing instead of raising, what the terms look
+  like, and which businesses that suits.
+- **What it actually takes to operate here.**
+  e.g. What hiring really costs once Emiratisation quotas, visa timing and
+  salary expectations are counted — and how that changes a growth plan.
+- **A local market mechanic outsiders get wrong.**
+  e.g. Why a product that sells itself in Europe needs a distributor here, and
+  what that does to your pricing.
 
 ## Avoid
 
+- **National-scale bets and megaprojects.** "The UAE is betting $150 million
+  on X", "the Emirates wants to become a Y economy". These are documentary
+  subjects: a viewer running a company cannot act on a sovereign programme.
+  Cover one only where it changes a rule, cost or opening that a business faces
+  this year — and lead with that change, not with the programme.
+- **Macro-economy framings.** Interest rates, GDP, national diversification and
+  global commodity flows belong in this show only through the specific thing
+  they alter for an operator.
 - **Generic educational topics.** "What is AI?" explains a definition, not a shift.
 - **"Future of X" framings.** "The future of manufacturing" has no mechanism,
   no tension and no date.
@@ -61,15 +99,28 @@ the set rather than ideas that are exceptional on one axis and weak elsewhere.
   ban: do not cover the initiative — **decode the bet, and what the initiative
   changes.** If an idea cannot be written without reading as PR, drop it.
 
+## Distinctness for this format
+
+This replaces the sector-spread rule in the shared instructions. Here,
+candidates are distinct when they answer **different questions an operator
+faces** — not when they sit in different industries. Three ideas may all touch
+company finance if one is about raising, one about getting paid, and one about
+structuring. Never reach into an unrelated industry just to spread the sectors:
+that is how an infrastructure or utilities story ends up in a set meant for
+founders.
+
 ## format_details fields
 
 Populate `format_details` with:
 
 - `expert_profile` — who the guest is and why they specifically can decode this
-  system. Criterion 6: genuine understanding, not adjacency.
+  system. Criterion 6: genuine understanding, not adjacency. An operator who has
+  done the thing beats a commentator who studies it.
 - `interview_thesis` — the single argument the conversation tests. State the
   mechanism being decoded, not the topic area.
 - `key_questions` — questions that between them cover all three beats: what is
-  happening, why it matters, what happens next.
-- `visual_support` — the data, demonstrations or b-roll that keep a five-minute
-  explainer watchable.
+  happening, why it matters, what happens next. At least one must be the
+  question a founder would actually ask out loud.
+- `visual_support` — what makes the mechanism legible on screen in five
+  minutes: the number, the comparison, the document, the before-and-after. Data
+  a viewer can read, not atmosphere.

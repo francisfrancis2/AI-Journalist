@@ -50,6 +50,13 @@ Drawn from what the corpus actually covers:
   food security, technology — where the physical world is changing and a crew
   could stand in it.
 
+## Distinctness for this format
+
+Spread the set across unrelated industries. A documentary slate works when each
+film opens a different world, so two strong ideas from the same sector make a
+weaker set than one from each. If two candidates would send a crew to similar
+places to film similar processes, they are not distinct enough.
+
 ## Selection criteria
 
 1. **Is there a person?** Named, reachable, with something at stake. The corpus
