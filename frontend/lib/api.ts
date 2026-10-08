@@ -913,10 +913,18 @@ class AIJournalistAPIClient {
     return data;
   }
 
-  async listIdeaGenerations(limit = 20): Promise<IdeaGenerationRunSummary[]> {
+  /**
+   * List idea generation runs.
+   *
+   * `mine` forces the caller's own runs only. Without it an admin gets every
+   * user's runs, which is what the admin console and unified history want but
+   * wrong for the personal Ideas workspace -- a run you do not own cannot be
+   * deleted or retried, so listing it there only produces a confusing 404.
+   */
+  async listIdeaGenerations(limit = 20, mine = false): Promise<IdeaGenerationRunSummary[]> {
     const { data } = await this.http.get<IdeaGenerationRunSummary[]>(
       "/api/v1/idea-generations",
-      { params: { limit } }
+      { params: mine ? { limit, mine: true } : { limit } }
     );
     return data;
   }

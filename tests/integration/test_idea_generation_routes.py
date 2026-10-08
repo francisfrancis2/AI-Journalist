@@ -561,7 +561,13 @@ async def test_a_single_generated_idea_can_be_deleted(api_client, db_session) ->
 
 
 @pytest.mark.asyncio
-async def test_cannot_delete_another_users_idea(api_client, db_session) -> None:
+async def test_a_non_admin_cannot_delete_another_users_idea(api_client, db_session) -> None:
+    """The fixture user is an admin, and admins may now delete any idea, so the
+    caller's admin flag is dropped here to exercise the protection that counts."""
+    caller = (await db_session.execute(select(UserORM).where(UserORM.is_admin.is_(True)))).scalars().first()
+    caller.is_admin = False
+    await db_session.commit()
+
     other = UserORM(
         id=uuid.uuid4(),
         email="notme@example.com",
@@ -597,3 +603,55 @@ async def test_cannot_delete_another_users_idea(api_client, db_session) -> None:
 
     response = await api_client.delete(f"/api/v1/idea-generations/ideas/{idea.id}")
     assert response.status_code == 404, "another user's idea must not be reachable"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_delete_a_run_they_can_see(api_client, db_session) -> None:
+    """The regression that produced "Idea generation run not found".
+
+    Making the listing admin-wide while leaving delete owner-scoped meant an
+    admin saw runs they could not act on, and the 404 said "not found" about a
+    run plainly on screen.
+    """
+    other = UserORM(
+        id=uuid.uuid4(),
+        email="colleague@example.com",
+        hashed_password="not-a-real-hash",
+        is_active=True,
+        is_admin=False,
+    )
+    db_session.add(other)
+    run = _completed_run(other.id)
+    db_session.add(run)
+    await db_session.commit()
+
+    listed = await api_client.get("/api/v1/idea-generations")
+    assert run.id in {uuid.UUID(item["id"]) for item in listed.json()}, "admin should see it"
+
+    deleted = await api_client.delete(f"/api/v1/idea-generations/{run.id}")
+    assert deleted.status_code == 204, "what an admin can see, an admin can delete"
+
+
+@pytest.mark.asyncio
+async def test_mine_scopes_the_listing_even_for_an_admin(api_client, db_session) -> None:
+    """The Ideas workspace is personal, so it must only list actionable runs."""
+    caller = (await db_session.execute(select(UserORM).where(UserORM.is_admin.is_(True)))).scalars().first()
+    other = UserORM(
+        id=uuid.uuid4(),
+        email="somebody@example.com",
+        hashed_password="not-a-real-hash",
+        is_active=True,
+        is_admin=False,
+    )
+    db_session.add(other)
+    db_session.add(_completed_run(caller.id))
+    db_session.add(_completed_run(other.id))
+    await db_session.commit()
+
+    everything = await api_client.get("/api/v1/idea-generations")
+    assert len(everything.json()) == 2, "the admin console view shows both"
+
+    mine = await api_client.get("/api/v1/idea-generations", params={"mine": "true"})
+    runs = mine.json()
+    assert len(runs) == 1, "mine=true must exclude other users' runs"
+    assert runs[0]["owner_email"] == caller.email

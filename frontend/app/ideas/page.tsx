@@ -353,7 +353,10 @@ export default function IdeaGeneratorPage() {
 
   const runsQuery = useQuery<IdeaGenerationRunSummary[]>({
     queryKey: ["idea-generations"],
-    queryFn: () => apiClient.listIdeaGenerations(),
+    // Own runs only: the sidebar must list exactly the runs this user can
+    // open, delete and retry. Listing an admin's view of everyone's runs here
+    // meant clicking delete on someone else's produced "run not found".
+    queryFn: () => apiClient.listIdeaGenerations(20, true),
     refetchInterval: (query) => query.state.data?.some((run) => ["queued", "running"].includes(run.status)) ? 3000 : false,
   });
   const runQuery = useQuery<IdeaGenerationRun>({

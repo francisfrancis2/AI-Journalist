@@ -190,13 +190,27 @@ async def _load_run(
     return run
 
 
-async def _load_idea(db: AsyncSession, idea_id: uuid.UUID, user_id: uuid.UUID) -> GeneratedIdeaORM:
-    result = await db.execute(
+async def _load_idea(
+    db: AsyncSession,
+    idea_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    allow_any_owner: bool = False,
+) -> GeneratedIdeaORM:
+    """Load one generated idea. ``allow_any_owner`` is for admins.
+
+    Admins see every user's runs, so scoping their mutations to their own rows
+    produced a 404 reading "not found" for a run plainly visible on screen.
+    """
+    stmt = (
         select(GeneratedIdeaORM)
         .join(IdeaGenerationRunORM)
         .options(selectinload(GeneratedIdeaORM.sources), selectinload(GeneratedIdeaORM.signals))
-        .where(GeneratedIdeaORM.id == idea_id, IdeaGenerationRunORM.user_id == user_id)
+        .where(GeneratedIdeaORM.id == idea_id)
     )
+    if not allow_any_owner:
+        stmt = stmt.where(IdeaGenerationRunORM.user_id == user_id)
+    result = await db.execute(stmt)
     idea = result.scalar_one_or_none()
     if idea is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Idea not found")
@@ -786,6 +800,14 @@ async def create_idea_generation(
 @router.get("", response_model=list[IdeaGenerationRunListItem])
 async def list_idea_generations(
     limit: int = Query(20, ge=1, le=100),
+    mine: bool = Query(
+        False,
+        description=(
+            "Return only the caller's own runs even for an admin. The Ideas "
+            "workspace is personal, so it asks for this; the admin console and "
+            "the unified history want the cross-user view."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> list[IdeaGenerationRunListItem]:
@@ -798,7 +820,7 @@ async def list_idea_generations(
         .order_by(IdeaGenerationRunORM.created_at.desc())
         .limit(limit)
     )
-    if not current_user.is_admin:
+    if mine or not current_user.is_admin:
         stmt = stmt.where(IdeaGenerationRunORM.user_id == current_user.id)
     result = await db.execute(stmt)
     return [
@@ -835,7 +857,9 @@ async def retry_idea_generation(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> IdeaGenerationRunRead:
-    prior = await _load_run(db, run_id, current_user.id)
+    # Retry creates a new run owned by the caller, so an admin retrying
+    # someone else's failed run spends their own budget, not that user's.
+    prior = await _load_run(db, run_id, current_user.id, allow_any_owner=current_user.is_admin)
     if prior.status not in {IdeaRunStatus.FAILED.value, IdeaRunStatus.COMPLETED.value}:
         raise HTTPException(status_code=409, detail="The current run is still active")
     payload = IdeaGenerationCreate(format=IdeaFormat(prior.format), previous_run_id=prior.id)
@@ -854,7 +878,7 @@ async def delete_idea_generation(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> None:
-    run = await _load_run(db, run_id, current_user.id)
+    run = await _load_run(db, run_id, current_user.id, allow_any_owner=current_user.is_admin)
     # "Active" has to mean a worker is genuinely still on it. Checking status
     # alone made a run whose worker had died -- killed by a deploy or a machine
     # restart -- undeletable: it stayed RUNNING until recovery got to it, and
@@ -887,7 +911,7 @@ async def delete_generated_idea(
     want gone -- the run's other ideas, its sources and its signals are
     untouched, since those are shared across the run.
     """
-    idea = await _load_idea(db, idea_id, current_user.id)
+    idea = await _load_idea(db, idea_id, current_user.id, allow_any_owner=current_user.is_admin)
     await db.execute(delete(GeneratedIdeaORM).where(GeneratedIdeaORM.id == idea.id))
     await db.commit()
 
