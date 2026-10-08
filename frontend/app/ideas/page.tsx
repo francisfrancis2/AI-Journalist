@@ -279,8 +279,17 @@ function IdeaCard({
             )}
           </div>
           {idea.verification_gaps.length > 0 && (
-            <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-warning)" }}>
-              Verification gaps: {idea.verification_gaps.join(" · ")}
+            // Each gap is a full sentence, so joining them with a separator
+            // produced one unreadable run-on line. One claim per row instead.
+            <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
+              <div className="section-label" style={{ marginBottom: 6, color: "var(--color-warning)" }}>
+                Verify before broadcast ({idea.verification_gaps.length})
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 16, display: "flex", flexDirection: "column", gap: 4 }}>
+                {idea.verification_gaps.map((gap, index) => (
+                  <li key={index} style={{ color: "var(--color-text-secondary)" }}>{gap}</li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

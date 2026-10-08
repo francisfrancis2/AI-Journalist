@@ -166,7 +166,7 @@ async def test_idea_generator_uses_shared_initial_research_with_two_search_budge
     gather = AsyncMock(return_value=ResearchPackage(topic="UAE business"))
     agent._research = SimpleNamespace(gather_initial_package=gather)
     mocker.patch(
-        "backend.agents.idea_generator.VidIQTool.fetch_idea_trends",
+        "backend.agents.idea_generator.IdeaGeneratorAgent._fetch_youtube_demand",
         new=AsyncMock(return_value=None),
     )
 
@@ -231,7 +231,7 @@ class TestRunCeilings:
         agent = IdeaGeneratorAgent.__new__(IdeaGeneratorAgent)
         agent._research = SimpleNamespace(gather_initial_package=gather)
         mocker.patch(
-            "backend.agents.idea_generator.VidIQTool.fetch_idea_trends",
+            "backend.agents.idea_generator.IdeaGeneratorAgent._fetch_youtube_demand",
             new=AsyncMock(return_value=None),
         )
 

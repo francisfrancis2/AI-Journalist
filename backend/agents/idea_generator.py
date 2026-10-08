@@ -28,8 +28,8 @@ from backend.services.cost_ledger import (
 )
 from backend.services.prompt_loader import load_prompt
 from backend.models.idea_generation import IdeaFormat
-from backend.models.research import RawSource, ResearchPackage
-from backend.tools.vidiq import VidIQTool
+from backend.models.research import RawSource, ResearchPackage, YouTubeDemandReport
+from backend.tools.vidiq import VidIQTool, distill_search_seed
 
 log = structlog.get_logger(__name__)
 
@@ -210,80 +210,90 @@ def _walk_rows(value: Any, path: str = "") -> list[tuple[str, dict[str, Any]]]:
     return rows
 
 
-def _row_get(row: dict[str, Any], *names: str) -> Any:
-    """Case-insensitive lookup across a vidIQ row.
+def _prepare_signals(report: "YouTubeDemandReport | None") -> list[PreparedSignal]:
+    """Turn a vidIQ demand report into signals the synthesis can cite.
 
-    vidIQ is inconsistent between tools: the keyword tool returns ``keyword``
-    while the video tool returns ``VideoTitle`` and ``VideoId``. A
-    lowercase-only lookup therefore found no title on any video row, so every
-    one fell back to the literal label "YouTube opportunity signal" and the
-    real title surfaced only as a raw key/value dump in the UI.
+    The idea path used to call a separate fetch_idea_trends tool, which returned
+    four raw vidIQ payloads (country keywords, global rising keywords, trending
+    videos, outliers) with no filtering. Those were flattened row-by-row, so a
+    signal's topic was whatever key happened to be present -- usually nothing,
+    which is why every video signal read "YouTube opportunity signal" and
+    surfaced its real title inside a raw key/value dump next to a thumbnail URL
+    and a unix timestamp.
+
+    Idea generation now uses the same curated pipeline as the Research workspace
+    and the story path: one distilled seed through fetch_demand_report, whose
+    keywords are model-filtered for subject relevance and whose videos clear
+    both the duration window and filter_relevant_videos. Two signal shapes come
+    out of it -- what people search for, and what they actually watch -- each
+    carrying only fields worth reading.
     """
-    lowered = {str(key).lower(): value for key, value in row.items()}
-    for name in names:
-        value = lowered.get(name.lower())
-        if value not in (None, ""):
-            return value
-    return None
-
-
-def _prepare_signals(raw: dict[str, Any] | None) -> list[PreparedSignal]:
-    if not raw:
+    if report is None:
         return []
     signals: list[PreparedSignal] = []
-    semantics = raw.get("geography_semantics") or {}
-    for group, payload in (raw.get("payloads") or {}).items():
-        for index, (path, row) in enumerate(_walk_rows(payload)):
-            if len(signals) >= 60:
-                break
-            topic = str(
-                _row_get(row, "keyword", "videoTitle", "title", "question", "name")
-                or "YouTube opportunity signal"
+    observed_at = datetime.now(timezone.utc)
+
+    for index, keyword in enumerate(report.keywords):
+        signals.append(
+            PreparedSignal(
+                id=uuid.uuid4(),
+                key=f"kw:{index}:{hashlib.sha1(keyword.keyword.encode()).hexdigest()[:8]}",
+                provider="vidiq",
+                signal_type="keyword_demand",
+                topic=keyword.keyword[:500],
+                query=report.search_seed,
+                geography="AE",
+                geography_meaning="United Arab Emirates search volume",
+                observed_at=observed_at,
+                metric="estimated_monthly_search",
+                values={
+                    "estimated_monthly_search": keyword.estimated_monthly_search,
+                    "competition": keyword.competition,
+                    "overall": keyword.overall,
+                    "label": keyword.label,
+                },
+                reliability="medium",
+                raw_reference={"group": "keywords", "path": f"keywords[{index}]"},
             )
-            signal_type = (
-                "keyword_demand" if "keyword" in group
-                else "view_velocity" if "trending" in group
-                else "video_outlier" if "outlier" in group
-                else "youtube_signal"
+        )
+
+    for index, video in enumerate(report.videos):
+        signals.append(
+            PreparedSignal(
+                id=uuid.uuid4(),
+                key=f"vid:{index}:{hashlib.sha1(video.video_id.encode()).hexdigest()[:8]}",
+                provider="vidiq",
+                signal_type="video_outlier",
+                topic=video.title[:500],
+                query=video.matched_keyword or report.search_seed,
+                geography=None,
+                # Preserved verbatim from the old payload semantics: vidIQ's
+                # country filters describe where a channel is based, never where
+                # its audience lives, and that must not be upgraded into an
+                # audience claim during synthesis.
+                geography_meaning="Video performance on YouTube; not UAE audience geography",
+                observed_at=observed_at,
+                metric="view_count",
+                values={
+                    "viewCount": video.view_count,
+                    "channelTitle": video.channel,
+                    "duration": video.duration_display,
+                    "publishedAt": video.published_at,
+                },
+                source_url=video.url,
+                domain="youtube.com",
+                reliability="medium",
+                raw_reference={"group": "videos", "path": f"videos[{index}]"},
             )
-            signal_id = uuid.uuid4()
-            key = f"{group}:{index}:{hashlib.sha1(topic.encode()).hexdigest()[:8]}"
-            metric = (
-                "country_volume" if group == "uae_country_keywords"
-                else "growth" if group == "global_rising_keywords"
-                else "views_per_hour" if "trending" in group
-                else "breakout_score"
-            )
-            signals.append(
-                PreparedSignal(
-                    id=signal_id,
-                    key=key,
-                    provider="vidiq",
-                    signal_type=signal_type,
-                    topic=topic[:500],
-                    query="UAE business economy technology entrepreneurship",
-                    geography="AE" if group != "global_rising_keywords" else None,
-                    geography_meaning=semantics.get(group),
-                    observed_at=datetime.now(timezone.utc),
-                    window_days=int(raw.get("window_days") or 30),
-                    metric=metric,
-                    values=_safe_json(row),
-                    source_url=_video_url(row),
-                    domain="youtube.com" if "video" in group or "outlier" in group else None,
-                    reliability="medium",
-                    raw_reference={"group": group, "path": path},
-                )
-            )
+        )
+
+    log.info(
+        "idea_generator.signals_prepared",
+        keywords=len(report.keywords),
+        videos=len(report.videos),
+        seed=report.search_seed,
+    )
     return signals
-
-
-def _video_url(row: dict[str, Any]) -> str | None:
-    """A watchable link for a signal row, built from the id when none is given."""
-    url = _row_get(row, "url", "videoUrl")
-    if url:
-        return str(url)
-    video_id = _row_get(row, "videoId", "id")
-    return f"https://www.youtube.com/watch?v={video_id}" if video_id else None
 
 
 def _is_current_uae_source(source: PreparedSource) -> bool:
@@ -429,6 +439,13 @@ class _Deadline:
         return min(float(phase_budget), self.remaining)
 
 
+# Idea discovery has no single topic the way Research and the story path do, so
+# this stands in as the brief. It goes through the same distillation and the same
+# demand-report pipeline as any other request, which is what makes the signals
+# here identical in shape to the ones those two produce.
+IDEA_DISCOVERY_TOPIC = "UAE business economy technology entrepreneurship"
+
+
 async def _bounded(awaitable, *, timeout: float, error_code: str):
     """Apply an attributable wall-clock bound to an external phase."""
     try:
@@ -492,6 +509,15 @@ class IdeaGeneratorAgent:
         self._repair_structured_llm = repair_llm.with_structured_output(CandidateSet)
         self._research = ResearchAgent()
 
+    @staticmethod
+    async def _fetch_youtube_demand() -> YouTubeDemandReport | None:
+        """One vidIQ demand report for idea discovery. Never raises."""
+        seed = await distill_search_seed(IDEA_DISCOVERY_TOPIC)
+        return await VidIQTool().fetch_demand_report(
+            topic=IDEA_DISCOVERY_TOPIC,
+            search_seed=seed,
+        )
+
     async def generate(
         self,
         idea_format: IdeaFormat,
@@ -534,7 +560,7 @@ class IdeaGeneratorAgent:
             "filmable change. Keep discussion of the UAE, its government, rulers and institutions neutral "
             "or constructive; reject a topic if compliance would require hiding or distorting evidence."
         )
-        package, vidiq_raw = await _bounded(
+        package, vidiq_report = await _bounded(
             asyncio.gather(
                 self._research.gather_initial_package(
                     prompt=research_prompt,
@@ -546,16 +572,18 @@ class IdeaGeneratorAgent:
                     # Tavily, NewsAPI, RSS, scraping, and retained source count
                     # are unchanged.
                 ),
-                # Idea discovery needs broad UAE trend/outlier signals rather
-                # than the Research workspace's single-topic demand report.
-                # It still runs inside the shared initial research phase.
-                VidIQTool().fetch_idea_trends(window_days=30),
+                # Identical to backend/agents/research.py and the story path:
+                # distil a search seed, then one curated demand report. Keywords
+                # are model-filtered for relevance and videos clear both the
+                # duration window and filter_relevant_videos, so what reaches
+                # synthesis is top keywords and top videos -- not raw payloads.
+                self._fetch_youtube_demand(),
             ),
             timeout=deadline.allot(settings.idea_generator_research_timeout_seconds),
             error_code="research_timed_out",
         )
         sources = _prepare_sources(package)
-        signals = _prepare_signals(vidiq_raw)
+        signals = _prepare_signals(vidiq_report)
         if len({source.domain for source in sources if source.domain}) < 2:
             raise RuntimeError("insufficient_evidence")
         if on_stage is not None:
@@ -751,8 +779,12 @@ class IdeaGeneratorAgent:
                 "evidence_count": package.deep_research_web_search_requests,
             },
             "vidiq": {
-                "status": "partial" if vidiq_raw and vidiq_raw.get("partial") else "complete" if vidiq_raw else "unavailable",
-                "detail": "YouTube demand and video opportunity signals collected." if vidiq_raw else "vidIQ did not return data.",
+                "status": "partial" if vidiq_report and vidiq_report.partial else "complete" if vidiq_report else "unavailable",
+                "detail": (
+                    f"{len(vidiq_report.keywords)} keywords and {len(vidiq_report.videos)} videos collected."
+                    if vidiq_report
+                    else "vidIQ did not return data."
+                ),
                 "evidence_count": len(signals),
             },
             "google_trends": {
@@ -762,7 +794,7 @@ class IdeaGeneratorAgent:
             },
         }
         coverage_reasons = ["google_trends_not_configured"]
-        if not vidiq_raw:
+        if not vidiq_report:
             coverage_reasons.append("vidiq_unavailable")
         if len(selected) < settings.idea_generator_result_count:
             coverage_reasons.append("partial_idea_count")
@@ -779,7 +811,7 @@ class IdeaGeneratorAgent:
             },
             usage_metrics={
                 "synthesis_calls": synthesis_calls,
-                "vidiq_credits_spent": int((vidiq_raw or {}).get("credits_spent") or 0),
+                "vidiq_credits_spent": int(vidiq_report.credits_spent if vidiq_report else 0),
                 "deep_research_web_search_requests": package.deep_research_web_search_requests,
                 **ledger.snapshot(),
             },
