@@ -416,10 +416,7 @@ async def create_session(
                 selectinload(GeneratedIdeaORM.sources),
                 selectinload(GeneratedIdeaORM.signals),
             )
-            .where(
-                GeneratedIdeaORM.id == payload.origin_idea_id,
-                IdeaGenerationRunORM.user_id == current_user.id,
-            )
+            .where(GeneratedIdeaORM.id == payload.origin_idea_id)
         )
         idea = idea_result.scalar_one_or_none()
         if idea is None:

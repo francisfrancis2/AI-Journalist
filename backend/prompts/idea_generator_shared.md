@@ -32,6 +32,28 @@ candidate and let it be ranked on its merits — but say plainly in
 `business_significance` what the sourcing does not yet establish. Do not pad
 the citation list to look better covered than you are.
 
+## Using previously gathered research
+
+The prompt may include a block of trend research from earlier runs, pooled
+across the newsroom. It is there so each round of ideas builds on what is
+already known rather than starting cold.
+
+Every line states its age in days, and that age is load-bearing:
+
+- **Use it freely for context, pattern and recurrence.** A story that has
+  resurfaced across several runs is a durable trend, and that is genuinely
+  useful evidence about what matters.
+- **Never let it carry `why_now` on its own.** `why_now` must rest on a
+  FACTUAL SOURCE from the current run with a recent date. If the only thing
+  making an idea timely is a source months old, the idea is not timely — say so
+  in `verification_gaps` or drop it.
+- **It is not citable.** These lines carry no SOURCE_ID. Every `source_ids`
+  entry must still come from the FACTUAL SOURCES list.
+
+An idea whose evidence is entirely historical is a backgrounder, not a
+commission. Prefer the idea where old research explains the shape of something
+and a new source shows it moving.
+
 ## Distinctness
 
 Every candidate must be a different underlying story. Two ideas about the same

@@ -34,9 +34,16 @@ from backend.models.idea_generation import (
     IdeaSignalRead,
     IdeaSourceORM,
     IdeaSourceRead,
+    IdeaState,
     IdeaStateUpdate,
+    SharedIdeaRead,
 )
 from backend.models.user import UserORM
+from backend.services.trend_memory import (
+    KIND_SOURCE,
+    content_hash as trend_content_hash,
+    record_observations,
+)
 
 log = structlog.get_logger(__name__)
 router = APIRouter()
@@ -413,6 +420,7 @@ async def _persist_generation_result(run_id: uuid.UUID, worker_id: str, result) 
         run.coverage_level = CoverageLevel.PARTIAL.value
         run.candidate_metrics = result.candidate_metrics
         run.usage_metrics = result.usage_metrics
+        run.deep_research_report = getattr(result, "deep_research_report", None) or None
         run.status = IdeaRunStatus.COMPLETED.value
         run.stage = "completed"
         run.stage_progress = 100
@@ -423,6 +431,32 @@ async def _persist_generation_result(run_id: uuid.UUID, worker_id: str, result) 
         run.lease_expires_at = None
         run.worker_id = None
         await db.commit()
+
+        # Feed the pooled corpus so the next run starts from this. Best-effort
+        # on purpose: the research has already been saved against the run, and
+        # a corpus write must never fail a generation that otherwise succeeded.
+        try:
+            recorded = await record_observations(
+                db,
+                [
+                    {
+                        "content_hash": trend_content_hash(source.url, source.title),
+                        "kind": KIND_SOURCE,
+                        "title": source.title,
+                        "url": source.url,
+                        "domain": source.domain,
+                        "excerpt": source.excerpt or "",
+                        "published_at": source.published_at,
+                        "credibility": source.credibility,
+                        "is_uae_relevant": bool(source.is_uae_relevant),
+                        "payload": {"publisher": source.publisher, "type": source.source_type},
+                    }
+                    for source in result.sources
+                ],
+            )
+            log.info("trend_memory.recorded", run_id=str(run_id), observations=recorded)
+        except Exception as exc:
+            log.warning("trend_memory.record_failed", run_id=str(run_id), error=str(exc)[:200])
         return True
 
 
@@ -797,6 +831,60 @@ async def create_idea_generation(
     return _run_read(run)
 
 
+@router.get("/ideas/shared", response_model=list[SharedIdeaRead])
+async def list_shared_ideas(
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    idea_format: Optional[IdeaFormat] = Query(None, alias="format"),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> list[SharedIdeaRead]:
+    """Every idea the newsroom has generated, attributed to nobody.
+
+    Deliberately not scoped to the caller and deliberately not admin-aware:
+    this is one shared board, and who generated an idea is not part of it. The
+    response model carries no owner, user or run field at all, so attribution
+    cannot leak even by mistake.
+
+    Dismissed ideas are excluded -- somebody judged them not worth making, and
+    that judgement is worth respecting newsroom-wide.
+    """
+    stmt = (
+        select(GeneratedIdeaORM)
+        .join(IdeaGenerationRunORM)
+        .where(
+            IdeaGenerationRunORM.status == IdeaRunStatus.COMPLETED.value,
+            GeneratedIdeaORM.state != IdeaState.DISMISSED.value,
+        )
+        .order_by(GeneratedIdeaORM.created_at.desc(), GeneratedIdeaORM.rank.asc())
+        .offset(offset)
+        .limit(limit)
+    )
+    if idea_format is not None:
+        stmt = stmt.where(GeneratedIdeaORM.format == idea_format.value)
+    result = await db.execute(stmt)
+    return [
+        SharedIdeaRead(
+            id=idea.id,
+            format=idea.format,
+            sector=idea.sector,
+            title=idea.title,
+            premise=idea.premise,
+            why_now=idea.why_now,
+            uae_relevance=idea.uae_relevance,
+            central_tension=idea.central_tension,
+            target_audience=idea.target_audience,
+            business_significance=idea.business_significance,
+            format_details=idea.format_details or {},
+            score=idea.score,
+            strength=idea.strength,
+            verification_gaps=idea.verification_gaps or [],
+            created_at=idea.created_at,
+        )
+        for idea in result.scalars().all()
+    ]
+
+
 @router.get("", response_model=list[IdeaGenerationRunListItem])
 async def list_idea_generations(
     limit: int = Query(20, ge=1, le=100),
@@ -937,7 +1025,10 @@ async def idea_handoff_preview(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ) -> IdeaHandoffPreview:
-    idea = await _load_idea(db, idea_id, current_user.id)
+    # Any idea on the shared board can be previewed for handoff: ideas are a
+    # newsroom asset, and the story or session that results belongs to whoever
+    # develops it.
+    idea = await _load_idea(db, idea_id, current_user.id, allow_any_owner=True)
     allowed = target == "research" or idea.format == IdeaFormat.DOCUMENTARY.value
     prompt = (
         f"{idea.title}\n\nPremise: {idea.premise}\nWhy now: {idea.why_now}\n"

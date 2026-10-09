@@ -33,6 +33,7 @@ from backend.models import user as _user_models  # noqa: F401 — ensures UserOR
 from backend.models.benchmark import BIReferenceDocORM
 from backend.models.user import UserORM
 from backend.services.admin_notifications import cleanup_admin_notifications
+from backend.services.trend_memory import purge_expired_observations
 from backend.services.stale_pipeline_watchdog import (
     mark_stale_pipelines_failed,
     run_watchdog_loop,
@@ -152,6 +153,29 @@ async def _seed_benchmark_corpus_if_empty() -> None:
     )
 
 
+async def _purge_expired_trend_research() -> None:
+    """Drop pooled trend research outside the retention window."""
+    async with AsyncSessionLocal() as session:
+        deleted = await purge_expired_observations(session)
+    if deleted:
+        log.info("trend_memory.purge_complete", deleted=deleted)
+
+
+async def run_trend_purge_loop() -> None:
+    """Purge on a daily cycle, not just at startup.
+
+    The admin-notification cleanup runs once per boot, which is fine for a
+    process that restarts often. These machines can stay up for weeks, so a
+    boot-only sweep would let research sit months past its retention window.
+    """
+    while True:
+        try:
+            await _purge_expired_trend_research()
+        except Exception as exc:
+            log.warning("trend_memory.purge_failed", error=str(exc)[:200])
+        await asyncio.sleep(settings.idea_research_purge_interval_seconds)
+
+
 async def _cleanup_old_admin_notifications() -> None:
     """Prune old read admin notifications according to retention policy."""
     async with AsyncSessionLocal() as session:
@@ -219,6 +243,7 @@ def create_app() -> FastAPI:
         await _seed_admin()
         log.info("app.database_ready")
         await _cleanup_old_admin_notifications()
+        await _purge_expired_trend_research()
         # Idea jobs are owned by renewable database leases. Startup may schedule
         # queued work or reclaim an expired lease, but it must never cancel a
         # healthy job being run by another V1/V2 backend process.
@@ -226,6 +251,7 @@ def create_app() -> FastAPI:
         await mark_stale_pipelines_failed()
         # Then schedule periodic scans for the lifetime of this machine.
         lifecycle_tasks["watchdog"] = asyncio.create_task(run_watchdog_loop())
+        lifecycle_tasks["trend_purge"] = asyncio.create_task(run_trend_purge_loop())
         lifecycle_tasks["idea_recovery"] = asyncio.create_task(
             idea_generations_router.run_idea_generation_recovery_loop()
         )

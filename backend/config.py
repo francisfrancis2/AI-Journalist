@@ -126,6 +126,16 @@ class Settings(BaseSettings):
     # failing a story. Calls bill ~5 vidIQ credits each from a shared monthly pool.
     vidiq_api_key: Optional[str] = Field(None, env="VIDIQ_API_KEY")
     enable_vidiq: bool = True
+    # ── Pooled trend research ───────────────────────────────────────────────
+    # Research is kept across runs and users so each generation builds on what
+    # is already known. Retention runs on last_seen_at, so a recurring trend
+    # survives while a one-off ages out.
+    idea_research_retention_days: int = 90
+    idea_research_prior_source_limit: int = 40
+    # Age beyond which a prior source cannot carry "why now" on its own.
+    idea_research_why_now_max_age_days: int = 30
+    idea_research_purge_interval_seconds: int = 24 * 3600
+
     # ── Reddit community questions ──────────────────────────────────────────
     # What operators are actually asking, searched through Tavily with a
     # reddit.com domain filter because Reddit's own JSON answers 403 to

@@ -1968,8 +1968,9 @@ async def create_ideation_story(
                 selectinload(GeneratedIdeaORM.signals),
             )
             .where(
+                # Shared board: developable by anyone who can see it. The story
+                # created belongs to the caller.
                 GeneratedIdeaORM.id == payload.origin_idea_id,
-                IdeaGenerationRunORM.user_id == current_user.id,
             )
         )
         origin_idea = idea_result.scalar_one_or_none()

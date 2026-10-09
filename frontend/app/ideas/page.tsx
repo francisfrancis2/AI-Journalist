@@ -8,6 +8,7 @@ import {
   Bookmark,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   ExternalLink,
   Lightbulb,
   Loader2,
@@ -25,6 +26,7 @@ import {
   type IdeaGenerationRun,
   type IdeaGenerationRunSummary,
   type IdeaState,
+  type SharedIdea,
 } from "@/lib/api";
 
 const FORMAT_LABEL: Record<IdeaFormat, string> = {
@@ -167,6 +169,91 @@ function SignalSummary({ values }: { values: Record<string, unknown> }) {
           `${SIGNAL_LABEL[key.toLowerCase()] ?? titleCase(key)} ${formatSignalValue(key, value)}`)
         .join(" · ")}
     </span>
+  );
+}
+
+/**
+ * The newsroom idea board: every idea anyone has generated, unattributed.
+ *
+ * Deliberately separate from the "Recent runs" sidebar, which is scoped to the
+ * caller. This is the shared library -- you cannot tell who generated an entry,
+ * and any documentary idea here can be developed into a story by anyone.
+ */
+function SharedIdeaBoard({ onDevelop }: { onDevelop: (idea: SharedIdea) => void }) {
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<IdeaFormat | "all">("all");
+
+  const { data, isLoading } = useQuery<SharedIdea[]>({
+    queryKey: ["shared-ideas", filter],
+    queryFn: () => apiClient.listSharedIdeas(30, filter === "all" ? undefined : filter),
+    enabled: open,
+  });
+
+  return (
+    <section className="card" style={{ padding: 16, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <strong style={{ fontWeight: 500 }}>Previously suggested ideas</strong>
+          <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 3 }}>
+            Everything the newsroom has generated. Not attributed to anyone.
+          </div>
+        </div>
+        <button className="btn-ghost" type="button" onClick={() => setOpen((v) => !v)}>
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          {open ? "Hide" : "Browse"}
+        </button>
+      </div>
+
+      {open && (
+        <>
+          <div style={{ display: "flex", gap: 7, marginTop: 13, flexWrap: "wrap" }}>
+            {([["all", "All"], ["documentary", "Documentary"], ["expert_interview", "Expert Interview"]] as const).map(
+              ([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={`chip ${filter === value ? "selected" : ""}`}
+                  onClick={() => setFilter(value as IdeaFormat | "all")}
+                >
+                  {label}
+                </button>
+              )
+            )}
+          </div>
+
+          {isLoading && <div style={{ padding: 20, textAlign: "center" }}><Loader2 size={16} className="animate-spin" /></div>}
+
+          {!isLoading && !(data ?? []).length && (
+            <p style={{ margin: "13px 0 0", color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
+              No ideas have been generated yet.
+            </p>
+          )}
+
+          <div style={{ display: "grid", gap: 9, marginTop: 13 }}>
+            {(data ?? []).map((idea) => (
+              <div key={idea.id} style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, padding: 12 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                  <span className="chip" style={{ padding: "2px 8px", cursor: "default" }}>{FORMAT_LABEL[idea.format]}</span>
+                  <span className="chip" style={{ padding: "2px 8px", cursor: "default" }}>{idea.sector}</span>
+                  <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
+                    {formatDistanceToNow(new Date(idea.created_at), { addSuffix: true })}
+                  </span>
+                </div>
+                <div style={{ fontWeight: 500, marginTop: 7 }}>{idea.title}</div>
+                <div style={{ fontSize: "var(--text-xs)", lineHeight: 1.55, color: "var(--color-text-secondary)", marginTop: 5 }}>
+                  {idea.premise}
+                </div>
+                {idea.format === "documentary" && (
+                  <button className="btn-ghost" type="button" style={{ marginTop: 9 }} onClick={() => onDevelop(idea)}>
+                    <Sparkles size={13} /> Develop in New Story
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -341,6 +428,7 @@ function IdeaCard({
 export default function IdeaGeneratorPage() {
   const queryClient = useQueryClient();
   const [format, setFormat] = useState<IdeaFormat>("documentary");
+  const router = useRouter();
   const searchParams = useSearchParams();
   // /history links here with ?run=<id>, so a run opened from the unified
   // history view is the one shown rather than whichever is newest.
@@ -505,6 +593,8 @@ export default function IdeaGeneratorPage() {
               </p>
             )}
           </section>
+
+          <SharedIdeaBoard onDevelop={(idea) => router.push(`/?idea=${idea.id}`)} />
 
           {runQuery.isLoading && <div style={{ padding: 30, textAlign: "center" }}><Loader2 size={20} className="animate-spin" /></div>}
 

@@ -607,6 +607,25 @@ export interface IdeaGenerationRun {
   completed_at: string | null;
 }
 
+/** An idea on the newsroom board. Carries no attribution by design. */
+export interface SharedIdea {
+  id: string;
+  format: IdeaFormat;
+  sector: string;
+  title: string;
+  premise: string;
+  why_now: string;
+  uae_relevance: string;
+  central_tension: string;
+  target_audience: string;
+  business_significance: string;
+  format_details: Record<string, unknown>;
+  score: number;
+  strength: string;
+  verification_gaps: string[];
+  created_at: string;
+}
+
 export interface IdeaGenerationRunSummary {
   id: string;
   format: IdeaFormat;
@@ -936,6 +955,15 @@ class AIJournalistAPIClient {
 
   async retryIdeaGeneration(runId: string): Promise<IdeaGenerationRun> {
     const { data } = await this.http.post<IdeaGenerationRun>(`/api/v1/idea-generations/${runId}/retry`);
+    return data;
+  }
+
+  /** Every idea the newsroom has generated, attributed to nobody. */
+  async listSharedIdeas(limit = 30, format?: IdeaFormat): Promise<SharedIdea[]> {
+    const { data } = await this.http.get<SharedIdea[]>(
+      "/api/v1/idea-generations/ideas/shared",
+      { params: format ? { limit, format } : { limit } }
+    );
     return data;
   }
 

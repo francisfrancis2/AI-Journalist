@@ -19,6 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.agents.research import ResearchAgent
 from backend.config import settings
+from backend.db.database import AsyncSessionLocal
+from backend.services.trend_memory import format_for_prompt, load_recent_observations
 from backend.services.cost_ledger import (
     BudgetExceeded,
     CostLedger,
@@ -176,6 +178,8 @@ class IdeaGenerationResult(StrictModel):
     coverage_reasons: list[str]
     candidate_metrics: dict[str, Any]
     usage_metrics: dict[str, Any]
+    # Carried out so the run can keep it. Previously discarded with the package.
+    deep_research_report: str = ""
 
 
 def _safe_json(value: Any) -> Any:
@@ -694,6 +698,19 @@ class IdeaGeneratorAgent:
             timeout=deadline.allot(settings.idea_generator_research_timeout_seconds),
             error_code="research_timed_out",
         )
+        # What previous runs already found out. Pooled across users, capped and
+        # recency-ranked, and carrying each observation's age -- see the
+        # staleness rule in idea_generator_shared.md. Best-effort: a corpus read
+        # failure degrades this run to fresh research only.
+        prior_research = ""
+        try:
+            async with AsyncSessionLocal() as db:
+                prior = await load_recent_observations(db)
+            prior_research = format_for_prompt(prior)
+            log.info("idea_generator.prior_research_loaded", observations=len(prior))
+        except Exception as exc:
+            log.warning("idea_generator.prior_research_failed", error=str(exc)[:200])
+
         sources = _prepare_sources(package)
         signals = _prepare_signals(vidiq_raw)
         package.community_questions = questions
@@ -744,6 +761,14 @@ class IdeaGeneratorAgent:
                 "QUESTIONS UAE OPERATORS ARE ASKING IN PUBLIC (demand evidence only, "
                 "never factual corroboration, and not citable as a source):\n"
                 f"{_question_digest(package.community_questions) or '(no community questions available)'}"
+                + (
+                    "\n\nPREVIOUSLY GATHERED TREND RESEARCH (from earlier runs; each line "
+                    "states its age. Use it for context and pattern, not for 'why now' "
+                    "unless a FACTUAL SOURCE above is recent. These carry no SOURCE_ID and "
+                    "cannot be cited):\n" + prior_research
+                    if prior_research
+                    else ""
+                )
             )
 
         # Research has already charged the ledger, so what is left here is the
@@ -942,6 +967,7 @@ class IdeaGeneratorAgent:
                 "deep_research_web_search_requests": package.deep_research_web_search_requests,
                 **ledger.snapshot(),
             },
+            deep_research_report=package.deep_research_report or "",
         )
 
 

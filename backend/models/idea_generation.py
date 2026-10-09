@@ -10,6 +10,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -91,6 +92,8 @@ class IdeaGenerationRunORM(Base):
     algorithm_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v2")
     prompt_version: Mapped[str] = mapped_column(String(32), nullable=False, default="idea-generator-v2")
     previous_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # The richest artefact of a run, previously discarded entirely.
+    deep_research_report: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     worker_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
@@ -153,6 +156,44 @@ class GeneratedIdeaORM(Base):
     signals: Mapped[list["IdeaSignalORM"]] = relationship(
         secondary=idea_signal_links, lazy="selectin"
     )
+
+
+class TrendObservationORM(Base):
+    """One piece of UAE trend research, pooled across every user and run.
+
+    Separate from ``idea_sources`` on purpose. Those stay run-scoped because
+    candidates cite them by reference id, and they cascade away with the run --
+    which, now that runs are deletable, would destroy the research a deleted run
+    contributed. This table is keyed by content rather than by run, so research
+    survives the run that found it and accumulates instead of being re-fetched.
+
+    ``seen_count`` is a free trend signal: a source that keeps resurfacing
+    across runs is a durable story, not a one-day headline. Retention runs on
+    ``last_seen_at`` for the same reason -- a recurring topic stays alive while
+    a one-off ages out after the retention window.
+    """
+
+    __tablename__ = "trend_observations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Content, not URL: the same story reached us from several providers.
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    domain: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    excerpt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    credibility: Mapped[str] = mapped_column(String(24), nullable=False, default="medium")
+    is_uae_relevant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    seen_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class IdeaSourceORM(Base):
@@ -304,6 +345,31 @@ class IdeaGenerationRunRead(StrictSchema):
     # it can tick a countdown locally between polls.
     estimated_total_seconds: int = 0
     deadline_at: Optional[datetime] = None
+
+
+class SharedIdeaRead(StrictSchema):
+    """An idea on the newsroom-wide board, with no trace of who generated it.
+
+    A deliberately separate model from GeneratedIdeaRead rather than that model
+    with fields blanked: there is no user_id, owner_email or run_id to omit by
+    accident, so ownership cannot leak through this surface even for an admin.
+    """
+
+    id: uuid.UUID
+    format: IdeaFormat
+    sector: str
+    title: str
+    premise: str
+    why_now: str
+    uae_relevance: str
+    central_tension: str
+    target_audience: str
+    business_significance: str
+    format_details: dict[str, Any] = Field(default_factory=dict)
+    score: float
+    strength: str
+    verification_gaps: list[str] = Field(default_factory=list)
+    created_at: datetime
 
 
 class IdeaGenerationRunListItem(StrictSchema):
