@@ -7,7 +7,7 @@ import hashlib
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Literal, Optional
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -835,6 +835,9 @@ async def create_idea_generation(
 async def list_shared_ideas(
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    # Optional must be imported for this to resolve: the module uses postponed
+    # annotations, so an un-imported name behind Query() reaches pydantic as an
+    # unresolvable ForwardRef and every filtered request 500s.
     idea_format: Optional[IdeaFormat] = Query(None, alias="format"),
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),

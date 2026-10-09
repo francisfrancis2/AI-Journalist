@@ -655,3 +655,91 @@ async def test_mine_scopes_the_listing_even_for_an_admin(api_client, db_session)
     runs = mine.json()
     assert len(runs) == 1, "mine=true must exclude other users' runs"
     assert runs[0]["owner_email"] == caller.email
+
+
+def _idea(run_id: uuid.UUID, *, rank: int, title: str, state: str = "active") -> GeneratedIdeaORM:
+    return GeneratedIdeaORM(
+        run_id=run_id,
+        rank=rank,
+        format="documentary",
+        sector="Logistics",
+        title=title,
+        premise="A premise long enough to satisfy the column.",
+        why_now="Because it is timely and verifiable.",
+        uae_relevance="It concerns the United Arab Emirates directly.",
+        central_tension="A real contradiction worth filming.",
+        target_audience="UAE business viewers",
+        business_significance="It explains where money is moving.",
+        format_details={},
+        score_breakdown={},
+        score=80.0,
+        strength="strong",
+        state=state,
+        verification_gaps=[],
+    )
+
+@pytest.mark.asyncio
+async def test_shared_board_hides_who_generated_each_idea(api_client, db_session) -> None:
+    """The board is one newsroom list with no attribution, even for an admin."""
+    other = UserORM(
+        id=uuid.uuid4(),
+        email="colleague2@example.com",
+        hashed_password="not-a-real-hash",
+        is_active=True,
+        is_admin=False,
+    )
+    db_session.add(other)
+    run = _completed_run(other.id)
+    db_session.add(run)
+    await db_session.commit()
+    db_session.add(_idea(run.id, rank=1, title="Somebody else's idea entirely"))
+    await db_session.commit()
+
+    response = await api_client.get("/api/v1/idea-generations/ideas/shared")
+    assert response.status_code == 200
+    ideas = response.json()
+    assert ideas, "an idea from another user must still appear"
+    leaky = {"user_id", "owner_email", "run_id", "user", "owner", "email"}
+    assert not (leaky & set(ideas[0])), "the board must carry no attribution"
+
+
+@pytest.mark.asyncio
+async def test_shared_board_format_filter_does_not_500(api_client, db_session) -> None:
+    """The filter chips on the board 500'd in practice.
+
+    This module uses postponed annotations, so `Optional` behind Query() has to
+    be imported or it reaches pydantic as an unresolvable ForwardRef and every
+    filtered request fails -- a user-clickable 500.
+    """
+    caller = (await db_session.execute(select(UserORM).where(UserORM.is_admin.is_(True)))).scalars().first()
+    run = _completed_run(caller.id)
+    db_session.add(run)
+    await db_session.commit()
+    db_session.add(_idea(run.id, rank=1, title="A documentary idea for the board"))
+    await db_session.commit()
+
+    for fmt in ("documentary", "expert_interview"):
+        response = await api_client.get(
+            "/api/v1/idea-generations/ideas/shared", params={"format": fmt}
+        )
+        assert response.status_code == 200, f"{fmt} returned {response.status_code}"
+
+    unknown = await api_client.get(
+        "/api/v1/idea-generations/ideas/shared", params={"format": "nonsense"}
+    )
+    assert unknown.status_code == 422, "an unknown format is a validation error, not a 500"
+
+
+@pytest.mark.asyncio
+async def test_dismissed_ideas_stay_off_the_shared_board(api_client, db_session) -> None:
+    caller = (await db_session.execute(select(UserORM).where(UserORM.is_admin.is_(True)))).scalars().first()
+    run = _completed_run(caller.id)
+    db_session.add(run)
+    await db_session.commit()
+    db_session.add(_idea(run.id, rank=1, title="Kept on the board please", state="active"))
+    db_session.add(_idea(run.id, rank=2, title="Dismissed and should vanish", state="dismissed"))
+    await db_session.commit()
+
+    titles = {i["title"] for i in (await api_client.get("/api/v1/idea-generations/ideas/shared")).json()}
+    assert "Kept on the board please" in titles
+    assert "Dismissed and should vanish" not in titles
