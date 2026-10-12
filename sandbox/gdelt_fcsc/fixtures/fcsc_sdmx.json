@@ -1,0 +1,36 @@
+{
+  "dataSets": [
+    {
+      "series": {
+        "0:0:0:0": {
+          "observations": {
+            "0": [10483900],
+            "1": [10800000],
+            "2": [11290000]
+          }
+        }
+      }
+    }
+  ],
+  "structure": {
+    "dimensions": {
+      "series": [
+        {"id": "MEASURE", "values": [{"id": "POP", "name": "Population"}]},
+        {"id": "UNIT_MEASURE", "values": [{"id": "PS", "name": "Persons"}]},
+        {"id": "REF_AREA", "values": [{"id": "AE", "name": "United Arab Emirates"}]},
+        {"id": "FREQ", "values": [{"id": "A", "name": "Annual"}]}
+      ],
+      "observation": [
+        {
+          "id": "TIME_PERIOD",
+          "values": [
+            {"id": "2022", "name": "2022"},
+            {"id": "2023", "name": "2023"},
+            {"id": "2024", "name": "2024"}
+          ]
+        }
+      ]
+    }
+  }
+}
+

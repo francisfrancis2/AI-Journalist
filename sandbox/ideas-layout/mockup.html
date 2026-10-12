@@ -1,0 +1,662 @@
+<title>Idea Generator Layout</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<style>
+  /* ──────────────────────────────────────────────────────────────────────
+     Page chrome tokens. Themed, because the review page itself is read on
+     whatever the viewer's OS is set to. The app preview below keeps its own
+     fixed light tokens on purpose -- it is a faithful reproduction of a
+     light-only product surface, not a themed component.
+     ────────────────────────────────────────────────────────────────────── */
+  :root {
+    --chrome-ground: #eceef3;
+    --chrome-surface: #ffffff;
+    --chrome-ink: #1b1d23;
+    --chrome-ink-soft: #565a66;
+    --chrome-line: #d4d7e0;
+    --chrome-accent: #1c26a8;
+    --chrome-bar: #15171d;
+    --chrome-bar-ink: #e9eaf0;
+    --chrome-bar-ink-soft: #9ba0b0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --chrome-ground: #101217;
+      --chrome-surface: #1a1d24;
+      --chrome-ink: #e9eaf0;
+      --chrome-ink-soft: #9ba0b0;
+      --chrome-line: #2c313c;
+      --chrome-accent: #8f98f5;
+      --chrome-bar: #0a0b0f;
+      --chrome-bar-ink: #e9eaf0;
+      --chrome-bar-ink-soft: #9ba0b0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --chrome-ground: #101217;
+    --chrome-surface: #1a1d24;
+    --chrome-ink: #e9eaf0;
+    --chrome-ink-soft: #9ba0b0;
+    --chrome-line: #2c313c;
+    --chrome-accent: #8f98f5;
+    --chrome-bar: #0a0b0f;
+    --chrome-bar-ink: #e9eaf0;
+    --chrome-bar-ink-soft: #9ba0b0;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--chrome-ground);
+    color: var(--chrome-ink);
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Review chrome: deliberately not the app ───────────────────────── */
+  .bar {
+    background: var(--chrome-bar);
+    color: var(--chrome-bar-ink);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    flex-wrap: wrap;
+  }
+  .bar h1 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: 0.01em;
+  }
+  .bar .note {
+    font-size: 12px;
+    color: var(--chrome-bar-ink-soft);
+    margin: 0;
+  }
+  .variant-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .variant-group > span {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--chrome-bar-ink-soft);
+  }
+  .variant-btn {
+    font: inherit;
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: transparent;
+    color: var(--chrome-bar-ink);
+    cursor: pointer;
+  }
+  .variant-btn[aria-pressed="true"] {
+    background: var(--chrome-bar-ink);
+    color: var(--chrome-bar);
+    border-color: var(--chrome-bar-ink);
+  }
+  .variant-btn:focus-visible,
+  .app button:focus-visible { outline: 2px solid #8f98f5; outline-offset: 2px; }
+
+  .shell { max-width: 1160px; margin: 0 auto; padding: 26px 24px 56px; }
+
+  .caption {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--chrome-ink-soft);
+    max-width: 68ch;
+    margin: 0 0 18px;
+  }
+  .caption strong { color: var(--chrome-ink); font-weight: 500; }
+
+  /* ──────────────────────────────────────────────────────────────────────
+     APP PREVIEW. Tokens copied verbatim from frontend/app/globals.css so
+     this reads as the product, not as an impression of it.
+     ────────────────────────────────────────────────────────────────────── */
+  .app {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f5f5;
+    --bg-tertiary: #fafafa;
+    --line: #e5e5e5;
+    --ink: #171717;
+    --ink-2: #525252;
+    --ink-3: #737373;
+    --action: #1c26a8;
+    --action-hover: #151e8a;
+    --success: #16a34a;
+    --warning: #c2410c;
+    --warning-bg: #fff7ed;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 14px;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.10);
+
+    background: var(--bg-tertiary);
+    color: var(--ink);
+    border: 1px solid var(--chrome-line);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(16, 18, 23, 0.10);
+  }
+
+  .app-header {
+    height: 52px;
+    display: flex;
+    align-items: center;
+    padding: 0 28px;
+    background: var(--bg-primary);
+    border-bottom: 0.5px solid var(--line);
+    gap: 9px;
+  }
+  .app-header .title { font-size: 18px; line-height: 28px; font-weight: 500; }
+  .app-header .meta { font-size: 12px; line-height: 18px; color: var(--ink-3); }
+
+  .app-body { display: grid; grid-template-columns: 240px minmax(0, 1fr); }
+
+  .app-aside {
+    border-right: 0.5px solid var(--line);
+    background: var(--bg-primary);
+    padding: 14px;
+  }
+  .app-main { padding: 28px; min-width: 0; }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 10px;
+  }
+
+  .card {
+    background: var(--bg-primary);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 0.5px solid var(--line);
+    background: var(--bg-secondary);
+    color: var(--ink-2);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.12s;
+    white-space: nowrap;
+  }
+  .chip:hover { color: var(--ink); }
+  .chip[aria-pressed="true"] {
+    background: var(--action);
+    color: #fff;
+    border-color: var(--action);
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 20px;
+    background: var(--action);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    min-width: 170px;
+  }
+  .btn-primary:hover { background: var(--action-hover); }
+
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    padding: 4px 2px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--action);
+    cursor: pointer;
+  }
+  .btn-ghost:hover { text-decoration: underline; }
+
+  /* ── Zone 1: controls ──────────────────────────────────────────────── */
+  .controls { padding: 20px; }
+  .controls-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 22px;
+    flex-wrap: wrap;
+  }
+  .control-group { display: flex; flex-direction: column; }
+  .control-group .chips { display: flex; gap: 8px; }
+
+  /* The divider is the whole point of the placement: it says the chip to its
+     right is a different kind of control, not a third format. */
+  .control-divider {
+    width: 1px;
+    align-self: stretch;
+    background: var(--line);
+    margin: 0 4px;
+  }
+  .control-cluster { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+
+  /* Variant A -- outlined action. Same hue as the format chips, different
+     weight: a quieter sibling rather than a competing colour. */
+  .app[data-variant="outline"] .chip-browse {
+    background: var(--bg-primary);
+    border: 1px solid var(--action);
+    color: var(--action);
+    font-weight: 500;
+  }
+  .app[data-variant="outline"] .chip-browse[aria-pressed="true"] {
+    background: var(--action);
+    color: #fff;
+  }
+
+  /* Variant B -- warm tint from their own warning family, used as a category
+     colour. Warm against cool indigo is the largest separation the existing
+     palette allows without inventing a hue. */
+  .app[data-variant="warm"] .chip-browse {
+    background: var(--warning-bg);
+    border: 1px solid #f0c9ab;
+    color: var(--warning);
+    font-weight: 500;
+  }
+  .app[data-variant="warm"] .chip-browse[aria-pressed="true"] {
+    background: var(--warning);
+    border-color: var(--warning);
+    color: #fff;
+  }
+
+  .count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.08);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .chip-browse[aria-pressed="true"] .count-badge { background: rgba(255, 255, 255, 0.22); }
+
+  /* ── The separator between controls and output ─────────────────────── */
+  .zone-rule {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 26px 0 16px;
+  }
+  .zone-rule .line { flex: 1; height: 1px; background: var(--line); }
+  .zone-rule .label {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+  }
+
+  /* ── Run status ────────────────────────────────────────────────────── */
+  .run { padding: 16px; margin-bottom: 18px; }
+  .run-top { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+  .run-stage { font-weight: 500; display: flex; align-items: center; gap: 7px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+  .run-sub { font-size: 12px; line-height: 18px; color: var(--ink-3); margin-top: 4px; }
+  .run-pct { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .track { height: 4px; background: var(--bg-tertiary); border-radius: 4px; margin-top: 10px; overflow: hidden; }
+  .track > i { display: block; height: 100%; background: var(--action); }
+  .provider-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .provider {
+    font-size: 12px;
+    padding: 4px 9px;
+    border-radius: 20px;
+    border: 0.5px solid var(--line);
+    background: var(--bg-secondary);
+    color: var(--ink-2);
+  }
+
+  /* ── Idea cards ────────────────────────────────────────────────────── */
+  .idea { padding: 20px; margin-bottom: 14px; }
+  .idea-meta { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; margin-bottom: 7px; }
+  .idea-rank { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .tag {
+    font-size: 12px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    border: 0.5px solid var(--line);
+    background: var(--bg-secondary);
+    color: var(--ink-2);
+  }
+  .idea h3 { font-size: 14px; line-height: 20px; font-weight: 500; margin: 0 0 6px; text-wrap: balance; }
+  .idea p { font-size: 12px; line-height: 19px; color: var(--ink-2); margin: 0; }
+  .idea-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+
+  /* ── The board, now living inside the results zone ─────────────────── */
+  .board-filters { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 14px; }
+  .board-item {
+    border: 0.5px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    background: var(--bg-primary);
+    margin-bottom: 9px;
+  }
+  .board-item .top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .board-item .age { font-size: 12px; color: var(--ink-3); }
+  .board-item h4 { font-size: 13px; font-weight: 500; margin: 7px 0 5px; text-wrap: balance; }
+  .board-item p { font-size: 12px; line-height: 19px; color: var(--ink-2); margin: 0; }
+
+  .run-item {
+    width: 100%;
+    text-align: left;
+    border: 0.5px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+    padding: 9px 10px;
+    font: inherit;
+    cursor: pointer;
+    margin-bottom: 6px;
+  }
+  .run-item[aria-current="true"] { border: 0.5px solid var(--action); background: #f4f5ff; }
+  .run-item .fmt { font-size: 12px; line-height: 18px; }
+  .run-item .when { font-size: 12px; line-height: 18px; color: var(--ink-3); }
+
+  [hidden] { display: none !important; }
+
+  @media (max-width: 860px) {
+    .app-body { grid-template-columns: 1fr; }
+    .app-aside { border-right: none; border-bottom: 0.5px solid var(--line); }
+    .app-main { padding: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="bar">
+  <h1>Idea Generator — layout mockup</h1>
+  <p class="note">Click the chips. Nothing here is wired to the backend.</p>
+  <div class="variant-group">
+    <span>Browse chip</span>
+    <button class="variant-btn" type="button" data-variant-pick="outline" aria-pressed="true">A · Outlined</button>
+    <button class="variant-btn" type="button" data-variant-pick="warm" aria-pressed="false">B · Warm tint</button>
+  </div>
+</div>
+
+<div class="shell">
+  <p class="caption">
+    Two changes. <strong>Previously suggested ideas</strong> is now a chip in the format row
+    rather than its own panel, set apart by a divider and its own micro-label so it reads as a
+    different kind of control. And the controls are separated from the output by a
+    <strong>labelled rule</strong> that names what follows — the boundary is stated, not implied
+    by spacing. Switch the chip treatment in the bar above.
+  </p>
+
+  <div class="app" data-variant="outline" data-view="documentary">
+    <div class="app-header">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1c26a8" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>
+      </svg>
+      <span class="title">Idea Generator</span>
+      <span class="meta">V2 · UAE business</span>
+    </div>
+
+    <div class="app-body">
+      <aside class="app-aside">
+        <div class="section-label">Recent runs</div>
+        <button class="run-item" type="button" aria-current="true">
+          <div class="fmt">Expert Interview</div>
+          <div class="when">Completed · 2 hours ago</div>
+        </button>
+        <button class="run-item" type="button">
+          <div class="fmt">Documentary</div>
+          <div class="when">Completed · yesterday</div>
+        </button>
+        <button class="run-item" type="button">
+          <div class="fmt">Expert Interview</div>
+          <div class="when">Completed · 3 days ago</div>
+        </button>
+      </aside>
+
+      <main class="app-main">
+        <!-- ZONE 1 — controls -->
+        <section class="card controls">
+          <div class="controls-row">
+            <div class="control-cluster">
+              <div class="control-group">
+                <div class="section-label">Choose a format</div>
+                <div class="chips">
+                  <button class="chip chip-format" type="button" data-view-pick="documentary" aria-pressed="true">Documentary</button>
+                  <button class="chip chip-format" type="button" data-view-pick="expert" aria-pressed="false">Expert Interview</button>
+                </div>
+              </div>
+
+              <div class="control-divider" aria-hidden="true"></div>
+
+              <div class="control-group">
+                <div class="section-label">Or revisit</div>
+                <button class="chip chip-browse" type="button" data-view-pick="board" aria-pressed="false">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>
+                  </svg>
+                  Previously suggested
+                  <span class="count-badge">18</span>
+                </button>
+              </div>
+            </div>
+
+            <button class="btn-primary" type="button">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/>
+              </svg>
+              I am feeling lucky
+            </button>
+          </div>
+        </section>
+
+        <!-- ZONE 2 — output, named by the rule -->
+        <div class="zone-rule">
+          <span class="label" data-zone-label>Latest run · 3 ideas</span>
+          <span class="line"></span>
+        </div>
+
+        <!-- Generated results -->
+        <div data-pane="results">
+          <section class="card run">
+            <div class="run-top">
+              <div>
+                <div class="run-stage"><span class="dot"></span>Completed</div>
+                <div class="run-sub">Took 3:30 of 5:00 budget · coverage partial</div>
+              </div>
+              <span class="run-pct">100%</span>
+            </div>
+            <div class="track"><i style="width:100%"></i></div>
+            <div class="provider-row">
+              <span class="provider">Research: complete</span>
+              <span class="provider">Deep research: complete</span>
+              <span class="provider">vidIQ: 42 signals</span>
+              <span class="provider">Community questions: 9</span>
+            </div>
+          </section>
+
+          <article class="card idea">
+            <div class="idea-meta">
+              <span class="idea-rank">#1</span>
+              <span class="tag">SME Finance &amp; Cash Flow</span>
+              <span class="tag">Strong · 86</span>
+            </div>
+            <h3>The Late Payment Problem: Why UAE Businesses Keep Getting Stiffed — and What the Law Actually Lets You Do</h3>
+            <p>UAE SMEs systematically under-use the legal tools available to recover late payments because they misunderstand what those tools cost and how long they take.</p>
+            <div class="idea-actions">
+              <button class="btn-ghost" type="button">Save</button>
+              <button class="btn-ghost" type="button">Dismiss</button>
+              <button class="btn-ghost" type="button">Delete</button>
+            </div>
+          </article>
+
+          <article class="card idea">
+            <div class="idea-meta">
+              <span class="idea-rank">#2</span>
+              <span class="tag">Business Setup &amp; Structure</span>
+              <span class="tag">Strong · 84</span>
+            </div>
+            <h3>Free Zone or Mainland? The Corporate Tax Era Has Changed the Calculation</h3>
+            <p>The decision is no longer about ownership and tax simplicity — it is about whether your business model can satisfy the qualifying-income conditions.</p>
+            <div class="idea-actions">
+              <button class="btn-ghost" type="button">Save</button>
+              <button class="btn-ghost" type="button">Dismiss</button>
+              <button class="btn-ghost" type="button">Delete</button>
+            </div>
+          </article>
+
+          <article class="card idea">
+            <div class="idea-meta">
+              <span class="idea-rank">#3</span>
+              <span class="tag">Manufacturing &amp; Industry</span>
+              <span class="tag">Promising · 76</span>
+            </div>
+            <h3>AI on the Factory Floor: What UAE Manufacturers Are Actually Deploying</h3>
+            <p>Growth is real, but the cost structure of running a factory here has changed materially in 24 months — and the inputs that moved are not the ones in the headlines.</p>
+            <div class="idea-actions">
+              <button class="btn-ghost" type="button">Save</button>
+              <button class="btn-ghost" type="button">Dismiss</button>
+              <button class="btn-ghost" type="button">Delete</button>
+            </div>
+          </article>
+        </div>
+
+        <!-- The board, in the same slot the results occupy -->
+        <div data-pane="board" hidden>
+          <div class="board-filters">
+            <button class="chip" type="button" aria-pressed="true">All</button>
+            <button class="chip" type="button" aria-pressed="false">Documentary</button>
+            <button class="chip" type="button" aria-pressed="false">Expert Interview</button>
+          </div>
+
+          <div class="board-item">
+            <div class="top">
+              <span class="tag">Expert Interview</span>
+              <span class="tag">Real Estate</span>
+              <span class="age">4 days ago</span>
+            </div>
+            <h4>Office Rents Are Up 27% — What That Actually Does to a UAE Business's Cost Model</h4>
+            <p>A lease renewal is not a property negotiation — it is a regulatory, licence and cash-flow decision.</p>
+          </div>
+
+          <div class="board-item">
+            <div class="top">
+              <span class="tag">Expert Interview</span>
+              <span class="tag">Logistics</span>
+              <span class="age">5 days ago</span>
+            </div>
+            <h4>What Jebel Ali's Automation Upgrade Actually Means for UAE Importers</h4>
+            <p>Not a headline about port capacity — an integration mandate that changes cost and speed for every forwarder on it.</p>
+          </div>
+
+          <div class="board-item">
+            <div class="top">
+              <span class="tag">Documentary</span>
+              <span class="tag">Energy</span>
+              <span class="age">1 week ago</span>
+            </div>
+            <h4>The Green Gamble: How Masdar Turned Abu Dhabi's Oil Money Into a Renewables Bet</h4>
+            <p>A sovereign wager on being the supplier rather than the consumer, told through the people who placed it.</p>
+            <div class="idea-actions">
+              <button class="btn-ghost" type="button">Develop in New Story</button>
+            </div>
+          </div>
+
+          <div class="board-item">
+            <div class="top">
+              <span class="tag">Documentary</span>
+              <span class="tag">Logistics</span>
+              <span class="age">1 week ago</span>
+            </div>
+            <h4>The Warehouse Boom: Why Dubai's Most Valuable Square Metres Have No Windows</h4>
+            <p>E-commerce rewrote what industrial land is worth, and the people buying it are not who you would guess.</p>
+            <div class="idea-actions">
+              <button class="btn-ghost" type="button">Develop in New Story</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <p class="caption" style="margin-top:20px">
+    <strong>Why the divider and the second label.</strong> Without them the browse chip reads as a
+    third format — something you generate. The divider plus “Or revisit” makes it a view switch,
+    and the count tells you there is something there before you click. Both treatments keep the
+    format chips as the only filled-indigo controls in the row.
+  </p>
+</div>
+
+<script>
+  (function () {
+    var app = document.querySelector(".app");
+    var zoneLabel = document.querySelector("[data-zone-label]");
+    var panes = {
+      results: document.querySelector('[data-pane="results"]'),
+      board: document.querySelector('[data-pane="board"]')
+    };
+    var labels = {
+      documentary: "Latest run · 3 ideas",
+      expert: "Latest run · 3 ideas",
+      board: "Previously suggested · 18 ideas from the newsroom"
+    };
+
+    function setView(view) {
+      app.dataset.view = view;
+      document.querySelectorAll("[data-view-pick]").forEach(function (btn) {
+        btn.setAttribute("aria-pressed", String(btn.dataset.viewPick === view));
+      });
+      var browsing = view === "board";
+      panes.board.hidden = !browsing;
+      panes.results.hidden = browsing;
+      zoneLabel.textContent = labels[view] || labels.documentary;
+    }
+
+    document.querySelectorAll("[data-view-pick]").forEach(function (btn) {
+      btn.addEventListener("click", function () { setView(btn.dataset.viewPick); });
+    });
+
+    document.querySelectorAll("[data-variant-pick]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        app.dataset.variant = btn.dataset.variantPick;
+        document.querySelectorAll("[data-variant-pick]").forEach(function (other) {
+          other.setAttribute("aria-pressed", String(other === btn));
+        });
+      });
+    });
+
+    // Board filter chips are illustrative only; keep them behaving like a group.
+    var filters = document.querySelectorAll(".board-filters .chip");
+    filters.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        filters.forEach(function (other) {
+          other.setAttribute("aria-pressed", String(other === btn));
+        });
+      });
+    });
+  })();
+</script>

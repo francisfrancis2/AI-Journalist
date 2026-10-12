@@ -10,8 +10,10 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  LayoutGrid,
   Lightbulb,
   Loader2,
+  Plus,
   RefreshCw,
   Search,
   Sparkles,
@@ -28,6 +30,15 @@ import {
   type IdeaState,
   type SharedIdea,
 } from "@/lib/api";
+
+// Shown under the format chips on the start page. The page's whole job is
+// that one decision, so saying what each format produces earns its space.
+const FORMAT_NOTE: Record<IdeaFormat, string> = {
+  documentary:
+    "One concrete subject — a person, a company, a place — used to explain how a larger system works. Four acts, a filmable world, a named protagonist.",
+  expert_interview:
+    "A complex business shift decoded by an expert in five minutes, for people running UAE companies. What is happening, why it matters, what happens next.",
+};
 
 const FORMAT_LABEL: Record<IdeaFormat, string> = {
   documentary: "Documentary",
@@ -179,81 +190,69 @@ function SignalSummary({ values }: { values: Record<string, unknown> }) {
  * caller. This is the shared library -- you cannot tell who generated an entry,
  * and any documentary idea here can be developed into a story by anyone.
  */
-function SharedIdeaBoard({ onDevelop }: { onDevelop: (idea: SharedIdea) => void }) {
-  const [open, setOpen] = useState(false);
+/**
+ * The newsroom idea board: every idea anyone has generated, unattributed.
+ *
+ * No longer a collapsible panel stacked above the results -- the sidebar's
+ * views are the toggle now, so this renders as a whole view and does not need
+ * to manage its own open state.
+ */
+function SharedIdeaList({ onDevelop }: { onDevelop: (idea: SharedIdea) => void }) {
   const [filter, setFilter] = useState<IdeaFormat | "all">("all");
 
   const { data, isLoading } = useQuery<SharedIdea[]>({
     queryKey: ["shared-ideas", filter],
     queryFn: () => apiClient.listSharedIdeas(30, filter === "all" ? undefined : filter),
-    enabled: open,
   });
 
   return (
-    <section className="card" style={{ padding: 16, marginBottom: 18 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <div>
-          <strong style={{ fontWeight: 500 }}>Previously suggested ideas</strong>
-          <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 3 }}>
-            Everything the newsroom has generated. Not attributed to anyone.
-          </div>
-        </div>
-        <button className="btn-ghost" type="button" onClick={() => setOpen((v) => !v)}>
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          {open ? "Hide" : "Browse"}
-        </button>
+    <>
+      <div style={{ display: "flex", gap: 7, marginBottom: 14, flexWrap: "wrap" }}>
+        {([["all", "All"], ["documentary", "Documentary"], ["expert_interview", "Expert Interview"]] as const).map(
+          ([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`chip ${filter === value ? "selected" : ""}`}
+              onClick={() => setFilter(value as IdeaFormat | "all")}
+            >
+              {label}
+            </button>
+          )
+        )}
       </div>
 
-      {open && (
-        <>
-          <div style={{ display: "flex", gap: 7, marginTop: 13, flexWrap: "wrap" }}>
-            {([["all", "All"], ["documentary", "Documentary"], ["expert_interview", "Expert Interview"]] as const).map(
-              ([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={`chip ${filter === value ? "selected" : ""}`}
-                  onClick={() => setFilter(value as IdeaFormat | "all")}
-                >
-                  {label}
-                </button>
-              )
+      {isLoading && <div style={{ padding: 20, textAlign: "center" }}><Loader2 size={16} className="animate-spin" /></div>}
+
+      {!isLoading && !(data ?? []).length && (
+        <p style={{ margin: 0, color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
+          No ideas have been generated yet.
+        </p>
+      )}
+
+      <div style={{ display: "grid", gap: 9 }}>
+        {(data ?? []).map((idea) => (
+          <div key={idea.id} style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, padding: 12, background: "var(--color-background-primary)" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+              <span className="chip" style={{ padding: "2px 8px", cursor: "default" }}>{FORMAT_LABEL[idea.format]}</span>
+              <span className="chip" style={{ padding: "2px 8px", cursor: "default" }}>{idea.sector}</span>
+              <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
+                {formatDistanceToNow(new Date(idea.created_at), { addSuffix: true })}
+              </span>
+            </div>
+            <div style={{ fontWeight: 500, marginTop: 7 }}>{idea.title}</div>
+            <div style={{ fontSize: "var(--text-xs)", lineHeight: 1.55, color: "var(--color-text-secondary)", marginTop: 5 }}>
+              {idea.premise}
+            </div>
+            {idea.format === "documentary" && (
+              <button className="btn-ghost" type="button" style={{ marginTop: 9 }} onClick={() => onDevelop(idea)}>
+                <Sparkles size={13} /> Develop in New Story
+              </button>
             )}
           </div>
-
-          {isLoading && <div style={{ padding: 20, textAlign: "center" }}><Loader2 size={16} className="animate-spin" /></div>}
-
-          {!isLoading && !(data ?? []).length && (
-            <p style={{ margin: "13px 0 0", color: "var(--color-text-tertiary)", fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>
-              No ideas have been generated yet.
-            </p>
-          )}
-
-          <div style={{ display: "grid", gap: 9, marginTop: 13 }}>
-            {(data ?? []).map((idea) => (
-              <div key={idea.id} style={{ border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, padding: 12 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
-                  <span className="chip" style={{ padding: "2px 8px", cursor: "default" }}>{FORMAT_LABEL[idea.format]}</span>
-                  <span className="chip" style={{ padding: "2px 8px", cursor: "default" }}>{idea.sector}</span>
-                  <span style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>
-                    {formatDistanceToNow(new Date(idea.created_at), { addSuffix: true })}
-                  </span>
-                </div>
-                <div style={{ fontWeight: 500, marginTop: 7 }}>{idea.title}</div>
-                <div style={{ fontSize: "var(--text-xs)", lineHeight: 1.55, color: "var(--color-text-secondary)", marginTop: 5 }}>
-                  {idea.premise}
-                </div>
-                {idea.format === "documentary" && (
-                  <button className="btn-ghost" type="button" style={{ marginTop: 9 }} onClick={() => onDevelop(idea)}>
-                    <Sparkles size={13} /> Develop in New Story
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </section>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -434,6 +433,10 @@ export default function IdeaGeneratorPage() {
   // history view is the one shown rather than whichever is newest.
   const runIdFromUrl = searchParams.get("run");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(runIdFromUrl);
+  // The sidebar is the navigation: "new" is the default and the format
+  // selector lives only there, so opening a run shows that run and nothing
+  // else. Arriving with ?run=<id> from /history opens straight into it.
+  const [view, setView] = useState<"new" | "run" | "board">(runIdFromUrl ? "run" : "new");
   const [showDismissed, setShowDismissed] = useState(false);
   // Delete can be refused -- a run with a live worker returns 409 -- and the
   // reason has to be visible or the button looks broken.
@@ -457,10 +460,11 @@ export default function IdeaGeneratorPage() {
   useEffect(() => {
     if (runIdFromUrl && runIdFromUrl !== selectedRunId) {
       setSelectedRunId(runIdFromUrl);
-      return;
+      setView("run");
     }
-    if (!selectedRunId && runsQuery.data?.length) setSelectedRunId(runsQuery.data[0].id);
-  }, [runIdFromUrl, runsQuery.data, selectedRunId]);
+    // Deliberately no "select the newest run" fallback. The default view is a
+    // clean start, not whatever ran last.
+  }, [runIdFromUrl, selectedRunId]);
 
   const generate = useMutation({
     mutationFn: ({ requestedFormat, previousRunId }: { requestedFormat: IdeaFormat; previousRunId?: string }) =>
@@ -468,6 +472,7 @@ export default function IdeaGeneratorPage() {
     onSuccess: (run) => {
       setSelectedRunId(run.id);
       setFormat(run.format);
+      setView("run");
       queryClient.setQueryData(["idea-generation", run.id], run);
       queryClient.invalidateQueries({ queryKey: ["idea-generations"] });
     },
@@ -476,6 +481,7 @@ export default function IdeaGeneratorPage() {
     mutationFn: (runId: string) => apiClient.retryIdeaGeneration(runId),
     onSuccess: (run) => {
       setSelectedRunId(run.id);
+      setView("run");
       queryClient.setQueryData(["idea-generation", run.id], run);
       queryClient.invalidateQueries({ queryKey: ["idea-generations"] });
     },
@@ -505,7 +511,12 @@ export default function IdeaGeneratorPage() {
     mutationFn: (runId: string) => apiClient.deleteIdeaGeneration(runId),
     onError: (err: Error) => setActionError(err.message || "Could not delete that run."),
     onSuccess: (_, runId) => {
-      if (selectedRunId === runId) setSelectedRunId(null);
+      // Deleting the run you are looking at returns you to the start page
+      // rather than leaving an empty results view.
+      if (selectedRunId === runId) {
+        setSelectedRunId(null);
+        setView("new");
+      }
       queryClient.removeQueries({ queryKey: ["idea-generation", runId] });
       queryClient.invalidateQueries({ queryKey: ["idea-generations"] });
     },
@@ -535,14 +546,32 @@ export default function IdeaGeneratorPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "240px minmax(0, 1fr)", minHeight: "calc(100vh - 52px)" }}>
         <aside style={{ borderRight: "0.5px solid var(--color-border-tertiary)", background: "var(--color-background-primary)", padding: 14 }}>
+          {/* The one permanent action, a tier above the run list. Marked
+              active with a ring rather than a colour change: a standing action
+              should not look selected the way a list row does. */}
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => setView("new")}
+            style={{
+              width: "100%",
+              marginBottom: 18,
+              boxShadow: view === "new" ? "0 0 0 3px rgba(28, 38, 168, 0.18)" : undefined,
+            }}
+          >
+            <Plus size={14} /> New idea
+          </button>
+
+          <div style={{ height: 1, background: "var(--color-border-tertiary)", marginBottom: 14 }} />
+
           <div className="section-label">Recent runs</div>
           <div style={{ display: "grid", gap: 6 }}>
             {(runsQuery.data ?? []).map((item) => (
               <div key={item.id} style={{ display: "flex", gap: 4 }}>
                 <button
                   type="button"
-                  onClick={() => { setSelectedRunId(item.id); setFormat(item.format); }}
-                  style={{ flex: 1, textAlign: "left", border: selectedRunId === item.id ? "0.5px solid var(--color-action)" : "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: selectedRunId === item.id ? "#f4f5ff" : "#fff", padding: "9px 10px", cursor: "pointer" }}
+                  onClick={() => { setSelectedRunId(item.id); setFormat(item.format); setView("run"); }}
+                  style={{ flex: 1, textAlign: "left", border: view === "run" && selectedRunId === item.id ? "0.5px solid var(--color-action)" : "0.5px solid var(--color-border-tertiary)", borderRadius: 8, background: view === "run" && selectedRunId === item.id ? "#f4f5ff" : "#fff", padding: "9px 10px", cursor: "pointer" }}
                 >
                   <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)" }}>{FORMAT_LABEL[item.format]}</div>
                   <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)" }}>{titleCase(item.status)} · {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</div>
@@ -568,38 +597,98 @@ export default function IdeaGeneratorPage() {
         </aside>
 
         <main style={{ padding: 28, maxWidth: 1040, width: "100%" }}>
-          <section className="card" style={{ padding: 20, marginBottom: 18 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 18, flexWrap: "wrap" }}>
-              <div>
-                <div className="section-label">Choose a format</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {(["documentary", "expert_interview"] as IdeaFormat[]).map((value) => (
-                    <button key={value} type="button" className={`chip ${format === value ? "selected" : ""}`} onClick={() => setFormat(value)} disabled={!!isActive}>
-                      {FORMAT_LABEL[value]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <button type="button" className="btn-primary" disabled={generate.isPending || !!isActive} onClick={() => generate.mutate({ requestedFormat: format })} style={{ minWidth: 170 }}>
-                {generate.isPending || isActive ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                I am feeling lucky
-              </button>
-            </div>
-            {generate.isError && <p role="alert" style={{ color: "var(--color-danger)", marginBottom: 0 }}>{(generate.error as Error).message}</p>}
-            {actionError && (
-              <p role="alert" style={{ color: "var(--color-danger)", marginBottom: 0, display: "flex", gap: 8, alignItems: "center" }}>
-                {actionError}
-                <button className="btn-ghost" type="button" onClick={() => setActionError(null)}>Dismiss</button>
+          {actionError && (
+            <p role="alert" className="card" style={{ color: "var(--color-danger)", padding: "12px 14px", marginTop: 0, marginBottom: 18, display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+              {actionError}
+              <button className="btn-ghost" type="button" onClick={() => setActionError(null)}>Dismiss</button>
+            </p>
+          )}
+
+          {/* ── Default view: a clean start. The format selector lives only
+                here, so it never sits above a run's results. ───────────── */}
+          {view === "new" && (
+            <section className="card" style={{ padding: "36px 32px", maxWidth: 680 }}>
+              <h2 style={{ fontSize: "var(--text-xl)", lineHeight: "var(--text-xl-lh)", fontWeight: 500, margin: "0 0 6px" }}>
+                Generate a new set of ideas
+              </h2>
+              <p style={{ fontSize: "var(--text-sm)", lineHeight: "var(--text-sm-lh)", color: "var(--color-text-secondary)", margin: "0 0 26px" }}>
+                Three distinct ideas, grounded in current UAE research and what operators are asking.
+                Takes about four minutes.
               </p>
-            )}
-          </section>
 
-          <SharedIdeaBoard onDevelop={(idea) => router.push(`/?idea=${idea.id}`)} />
+              <div className="section-label">Choose a format</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {(["documentary", "expert_interview"] as IdeaFormat[]).map((value) => (
+                  <button key={value} type="button" className={`chip ${format === value ? "selected" : ""}`} onClick={() => setFormat(value)}>
+                    {FORMAT_LABEL[value]}
+                  </button>
+                ))}
+              </div>
+              <p style={{ fontSize: "var(--text-xs)", lineHeight: 1.6, color: "var(--color-text-secondary)", background: "var(--color-background-tertiary)", border: "0.5px solid var(--color-border-tertiary)", borderRadius: 8, padding: "11px 13px", margin: "13px 0 0" }}>
+                {FORMAT_NOTE[format]}
+              </p>
 
-          {runQuery.isLoading && <div style={{ padding: 30, textAlign: "center" }}><Loader2 size={20} className="animate-spin" /></div>}
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 28, paddingTop: 22, borderTop: "1px solid var(--color-border-tertiary)", flexWrap: "wrap" }}>
+                <button type="button" className="btn-primary" disabled={generate.isPending} onClick={() => generate.mutate({ requestedFormat: format })}>
+                  {generate.isPending ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  I am feeling lucky
+                </button>
+              </div>
+              {generate.isError && <p role="alert" style={{ color: "var(--color-danger)", margin: "14px 0 0" }}>{(generate.error as Error).message}</p>}
 
-          {run && (
+              <div style={{ marginTop: 30 }}>
+                <div className="section-label">Or revisit</div>
+                {/* Outlined rather than filled: filled indigo means "this is
+                    what I will generate", so a navigational chip must not
+                    wear it. */}
+                <button
+                  type="button"
+                  className="chip"
+                  onClick={() => setView("board")}
+                  style={{ background: "var(--color-background-primary)", border: "1px solid var(--color-action)", color: "var(--color-action)", fontWeight: 500 }}
+                >
+                  <LayoutGrid size={12} style={{ marginRight: 6 }} /> Previously suggested
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* ── Board view ──────────────────────────────────────────────── */}
+          {view === "board" && (
             <>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
+                <div>
+                  <h2 style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500, margin: 0 }}>Previously suggested</h2>
+                  <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 3 }}>
+                    Everything the newsroom has generated. Not attributed to anyone.
+                  </div>
+                </div>
+                <button className="btn-ghost" type="button" onClick={() => setView("new")}><Plus size={13} /> New idea</button>
+              </div>
+              <SharedIdeaList onDevelop={(idea) => router.push(`/?idea=${idea.id}`)} />
+            </>
+          )}
+
+          {/* ── Run view: this run's results and nothing else ───────────── */}
+          {view === "run" && runQuery.isLoading && (
+            <div style={{ padding: 30, textAlign: "center" }}><Loader2 size={20} className="animate-spin" /></div>
+          )}
+
+          {view === "run" && run && (
+            <>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
+                <div>
+                  <h2 style={{ fontSize: "var(--text-lg)", lineHeight: "var(--text-lg-lh)", fontWeight: 500, margin: 0 }}>
+                    {FORMAT_LABEL[run.format]} ideas
+                  </h2>
+                  <div style={{ fontSize: "var(--text-xs)", lineHeight: "var(--text-xs-lh)", color: "var(--color-text-tertiary)", marginTop: 3 }}>
+                    {run.started_at ? `Generated ${formatDistanceToNow(new Date(run.started_at), { addSuffix: true })}` : "Queued"}
+                    {run.status === "completed" ? ` · ${ideas.length} idea${ideas.length === 1 ? "" : "s"}` : ""}
+                  </div>
+                </div>
+                <button className="btn-ghost" type="button" onClick={() => setView("new")}><Plus size={13} /> New idea</button>
+              </div>
+
               <section className="card" style={{ padding: 16, marginBottom: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                   <div>
@@ -659,10 +748,12 @@ export default function IdeaGeneratorPage() {
             </>
           )}
 
-          {!run && !runQuery.isLoading && (
+          {view === "run" && !run && !runQuery.isLoading && (
             <div className="card" style={{ padding: 32, textAlign: "center", color: "var(--color-text-secondary)" }}>
-              <Sparkles size={23} style={{ margin: "0 auto 10px", color: "var(--color-action)" }} />
-              Pick a format and let the agent research the first set.
+              That run is no longer available.
+              <div style={{ marginTop: 10 }}>
+                <button className="btn-ghost" type="button" onClick={() => setView("new")}><Plus size={13} /> New idea</button>
+              </div>
             </div>
           )}
         </main>
