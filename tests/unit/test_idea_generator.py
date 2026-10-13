@@ -169,6 +169,17 @@ async def test_idea_generator_uses_shared_initial_research_with_two_search_budge
         "backend.agents.idea_generator.VidIQTool.fetch_idea_trends",
         new=AsyncMock(return_value=None),
     )
+    # generate() also fetches Reddit questions and reads the pooled trend
+    # corpus. Unmocked, the first makes live Tavily calls and the second opens
+    # a real database connection -- which is what stalled the suite.
+    mocker.patch(
+        "backend.agents.idea_generator.RedditQuestionTool.fetch_questions",
+        new=AsyncMock(return_value=None),
+    )
+    mocker.patch(
+        "backend.agents.idea_generator.load_recent_observations",
+        new=AsyncMock(return_value=[]),
+    )
 
     with pytest.raises(RuntimeError, match="insufficient_evidence"):
         await agent.generate(IdeaFormat.DOCUMENTARY)
@@ -233,6 +244,14 @@ class TestRunCeilings:
         mocker.patch(
             "backend.agents.idea_generator.VidIQTool.fetch_idea_trends",
             new=AsyncMock(return_value=None),
+        )
+        mocker.patch(
+            "backend.agents.idea_generator.RedditQuestionTool.fetch_questions",
+            new=AsyncMock(return_value=None),
+        )
+        mocker.patch(
+            "backend.agents.idea_generator.load_recent_observations",
+            new=AsyncMock(return_value=[]),
         )
 
         with pytest.raises(RuntimeError, match="insufficient_evidence"):

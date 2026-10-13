@@ -227,3 +227,75 @@ class TestVidIQLifecycle:
 
         assert "Saved vidIQ demand snapshot (reuse only; do not fetch again)" in context
         assert "UAE logistics" in context
+
+
+class TestSeedSalvage:
+    """A production session produced no keywords and no videos because the
+    distiller answered conversationally and the fallback then handed vidIQ the
+    raw sentence -- which, as distill_search_seed's own docstring says, returns
+    a zero-volume seed and an empty relatedKeywords array while still costing
+    credits.
+    """
+
+    def test_recovers_a_term_after_a_colon(self):
+        from backend.tools.vidiq import _salvage_seed
+
+        assert _salvage_seed("Here is the search term: UAE SME financing") == "UAE SME financing"
+
+    def test_recovers_a_quoted_term(self):
+        from backend.tools.vidiq import _salvage_seed
+
+        assert _salvage_seed('Sure! "Abu Dhabi family offices"') == "Abu Dhabi family offices"
+
+    def test_leaves_a_clean_term_untouched(self):
+        from backend.tools.vidiq import _salvage_seed
+
+        assert _salvage_seed("UAE logistics") == "UAE logistics"
+
+    def test_an_unrecoverable_preamble_stays_unusable(self):
+        """Better to refuse than to guess a subject that is not in the reply."""
+        from backend.tools.vidiq import _MAX_SEED_WORDS, _salvage_seed
+
+        truncated = "I'd be happy to help you create a YouTube search term for your Expert Mode episo"
+        assert len(_salvage_seed(truncated).split()) > _MAX_SEED_WORDS
+
+
+class TestUnsearchableSeedGuard:
+    @pytest.mark.asyncio
+    async def test_a_sentence_seed_is_refused_without_spending_a_call(self, monkeypatch):
+        """The measured failure: a sentence always returns nothing, so paying
+        for it is strictly worse than refusing."""
+        from backend.tools.vidiq import VidIQTool
+
+        tool = VidIQTool()
+        tool._api_key = "test-key"
+        called = {"n": 0}
+
+        async def _should_not_run(*a, **k):
+            called["n"] += 1
+            raise AssertionError("vidIQ must not be called with an unsearchable seed")
+
+        monkeypatch.setattr(VidIQTool, "_build_report", _should_not_run)
+
+        report = await tool.fetch_demand_report(
+            topic="I'm researching an episode of Expert Mode, a YouTube series for a bank",
+            search_seed="",
+        )
+        assert report is None
+        assert called["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_a_usable_seed_still_proceeds(self, monkeypatch):
+        from backend.tools.vidiq import VidIQTool
+
+        tool = VidIQTool()
+        tool._api_key = "test-key"
+        reached = {"seed": None}
+
+        async def _capture(self, client, topic, seed):
+            reached["seed"] = seed
+            return None
+
+        monkeypatch.setattr(VidIQTool, "_build_report", _capture)
+        await tool.fetch_demand_report(topic="anything", search_seed="UAE SME financing")
+        assert reached["seed"] == "UAE SME financing"

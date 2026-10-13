@@ -212,7 +212,16 @@ _SEED_SYSTEM = (
     "Example answer: UAE logistics\n"
     "Example brief: Why family offices are moving capital to Abu Dhabi after the "
     "2026 rule change\n"
-    "Example answer: Abu Dhabi family offices"
+    "Example answer: Abu Dhabi family offices\n"
+    # A brief that describes the production rather than the subject made the
+    # model answer conversationally ("I'd be happy to help you create..."),
+    # which is not a search term. The subject is what the episode is ABOUT,
+    # never the series, the channel or the client commissioning it.
+    "Example brief: I'm researching an episode of Expert Mode, a YouTube series "
+    "for Emirates Development Bank, about how SMEs get working capital\n"
+    "Example answer: UAE SME financing\n"
+    "Never answer conversationally. Never offer help, ask a question, or explain "
+    "your choice. Your entire reply is the search term and nothing else."
 )
 
 
@@ -227,6 +236,37 @@ _CIRCUMSTANTIAL = {
     "trends", "growth", "disruption", "transformation", "revolution", "boom",
     "rise", "decline", "strategy", "outlook", "story", "overview", "analysis",
 }
+
+
+_PREAMBLE_RE = re.compile(
+    r"^(?:sure|certainly|of course|here(?:'s| is)|i'?d be happy[^:]*|"
+    r"the search term[^:]*|search term)\b[^:]*:?\s*",
+    re.I,
+)
+
+
+def _salvage_seed(seed: str) -> str:
+    """Pull a search term out of a reply that came back conversational.
+
+    Observed in production: for a brief describing the series rather than the
+    subject, the model replied "I'd be happy to help you create a YouTube search
+    term for your Expert Mode episo..." -- a preamble, truncated by max_tokens.
+    A quoted phrase or the text after a colon is usually the real answer, so try
+    those before treating the reply as unusable.
+    """
+    if not seed:
+        return seed
+    quoted = re.findall(r'[\"\u201c\u2018\']([^\"\u201d\u2019\']{3,60})[\"\u201d\u2019\']', seed)
+    if quoted:
+        return quoted[-1].strip()
+    stripped = _PREAMBLE_RE.sub("", seed).strip()
+    if stripped and stripped != seed:
+        return stripped
+    if ":" in seed:
+        tail = seed.rsplit(":", 1)[-1].strip()
+        if tail:
+            return tail
+    return seed
 
 
 def _strip_circumstantial(seed: str) -> str:
@@ -259,7 +299,9 @@ async def distill_search_seed(prompt: str) -> str:
         llm = ChatAnthropic(
             model=settings.claude_haiku_model,
             api_key=settings.anthropic_api_key,
-            max_tokens=24,
+            # 24 truncated a conversational preamble mid-word, leaving nothing
+            # for _salvage_seed to recover. Still tight enough to be cheap.
+            max_tokens=48,
             temperature=0,   # same brief must distil to the same seed
         )
         reply = await llm.ainvoke(
@@ -267,6 +309,7 @@ async def distill_search_seed(prompt: str) -> str:
         )
         raw = reply.content if isinstance(reply.content, str) else str(reply.content)
         seed = " ".join(raw.strip().strip('"\'').split())
+        seed = _salvage_seed(seed)
         # A distiller that returns a sentence has not distilled anything.
         seed = _strip_circumstantial(seed)
         if seed and len(seed.split()) <= _MAX_SEED_WORDS:
@@ -275,7 +318,12 @@ async def distill_search_seed(prompt: str) -> str:
         log.warning("vidiq.seed_distill_unusable", returned=seed[:80])
     except Exception as exc:
         log.warning("vidiq.seed_distill_failed", error=str(exc)[:200])
-    return text
+    # Deliberately NOT the original prompt. Handing vidIQ a sentence returns a
+    # zero-volume seed with an empty relatedKeywords array -- measured against
+    # the live API, and the reason a production session came back with no
+    # keywords and no videos at all. The caller treats "" as "no usable seed"
+    # and skips the request rather than paying for a guaranteed empty report.
+    return ""
 
 
 # ── keyword relevance filter ──────────────────────────────────────────────────
@@ -509,6 +557,19 @@ class VidIQTool:
             return None
 
         seed = (search_seed or topic).strip()
+        # Refuse to spend a call on a seed vidIQ cannot search. A sentence
+        # returns a zero-volume seed with an empty relatedKeywords array -- the
+        # measured cause of a production session producing no keywords and no
+        # videos. Better to return nothing and say why than to pay for an empty
+        # report; research continues without the panel either way.
+        if not seed or len(seed.split()) > _MAX_SEED_WORDS:
+            log.warning(
+                "vidiq.unsearchable_seed",
+                topic=topic[:80],
+                seed=seed[:80],
+                words=len(seed.split()),
+            )
+            return None
         self._calls_made = 0
         try:
             async with httpx.AsyncClient(

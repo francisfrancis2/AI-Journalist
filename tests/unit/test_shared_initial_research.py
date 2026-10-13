@@ -24,6 +24,9 @@ async def test_all_initial_workspaces_use_gather_initial_package(mocker) -> None
         model=settings.claude_haiku_model,
         synthesize=AsyncMock(return_value=("# Research Report", [])),
     )
+    research_agent._questions = SimpleNamespace(
+        enabled=False, fetch_questions=AsyncMock(return_value=None)
+    )
     await research_agent.run_report(
         prompt="UAE logistics",
         include_vidiq=True,
@@ -36,6 +39,14 @@ async def test_all_initial_workspaces_use_gather_initial_package(mocker) -> None
     mocker.patch(
         "backend.agents.idea_generator.VidIQTool.fetch_idea_trends",
         new=AsyncMock(return_value=None),
+    )
+    mocker.patch(
+        "backend.agents.idea_generator.RedditQuestionTool.fetch_questions",
+        new=AsyncMock(return_value=None),
+    )
+    mocker.patch(
+        "backend.agents.idea_generator.load_recent_observations",
+        new=AsyncMock(return_value=[]),
     )
     with pytest.raises(RuntimeError, match="insufficient_evidence"):
         await idea_agent.generate(IdeaFormat.DOCUMENTARY)
