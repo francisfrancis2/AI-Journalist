@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from backend.api.deps import get_current_user
 from backend.api.security import validate_user_input
+from backend.config import settings
 from backend.db.database import AsyncSessionLocal, get_db
 from backend.models.research_session import (
     ResearchSessionCitation,
@@ -56,6 +57,58 @@ def _get_research_agent():
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+async def _title_for(prompt: str) -> str:
+    """A short, distinguishing title for a research session.
+
+    Truncating the opening 80 characters fails exactly when it matters: two
+    briefs for the same show share an opening paragraph, so both sessions read
+    identically in the sidebar and there is no way to tell which is which. A
+    title is generated from the whole prompt instead, which picks up the part
+    that actually differs -- the subject rather than the preamble.
+
+    Falls back to the truncation on any failure: a title is not worth failing a
+    research session over.
+    """
+    cleaned = " ".join((prompt or "").strip().split())
+    if len(cleaned) <= 80:
+        return _derive_title(prompt)
+
+    try:
+        from langchain_anthropic import ChatAnthropic
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        llm = ChatAnthropic(
+            model=settings.claude_haiku_model,
+            api_key=settings.anthropic_api_key,
+            max_tokens=32,
+            temperature=0,
+        )
+        reply = await llm.ainvoke([
+            SystemMessage(content=(
+                "You name research sessions. Return ONLY a title of three to "
+                "seven words naming the SUBJECT being researched. No quotes, no "
+                "explanation, no trailing punctuation.\n"
+                "Skip framing such as the series, the client, the audience or "
+                "the format -- several briefs share that preamble, and the title "
+                "exists to tell them apart.\n"
+                "Example brief: I'm researching an episode of Expert Mode, a "
+                "series for a bank. Working title: Why Fintech Is Winning the AI "
+                "Investment Race in the UAE.\n"
+                "Example answer: UAE fintech AI investment"
+            )),
+            HumanMessage(content=cleaned[:4000]),
+        ])
+        raw = reply.content if isinstance(reply.content, str) else str(reply.content)
+        title = " ".join(raw.strip().strip('"\'').split())
+        if title and 2 <= len(title.split()) <= 12:
+            log.info("research_session.title_generated", title=title)
+            return title[:200]
+        log.warning("research_session.title_unusable", returned=title[:60])
+    except Exception as exc:
+        log.warning("research_session.title_failed", error=str(exc)[:200])
+    return _derive_title(prompt)
 
 
 def _derive_title(prompt: str, max_len: int = 80) -> str:
@@ -477,7 +530,7 @@ async def create_session(
         user_id=current_user.id,
         origin_idea_id=payload.origin_idea_id,
         seed_evidence_data=seed_evidence_data,
-        title=_derive_title(prompt),
+        title=await _title_for(prompt),
         report_markdown="",
         citations=[],
         turns=[_turn_record(prompt, status=ResearchSessionStatus.RUNNING)],

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  ChevronDown,
   Download,
   ExternalLink,
   Loader2,
@@ -41,6 +42,107 @@ type LinkExportNotice = {
 
 type ResearchCitation = ResearchSession["citations"][number];
 type ResearchTurn = ResearchSession["turns"][number];
+
+// Matches ResearchSessionCreate.prompt / ResearchSessionTurnCreate.prompt in
+// backend/models/research_session.py. Shown rather than left to be discovered
+// by hitting it: a long brief pasted from elsewhere is exactly the case that
+// failed validation with nothing readable to explain why.
+const PROMPT_MAX_CHARS = 2000;
+
+/** The counter beneath a prompt box: quiet until it matters, loud at the edge. */
+function CharacterCount({ value }: { value: string }) {
+  const used = value.length;
+  const over = used > PROMPT_MAX_CHARS;
+  const close = !over && used > PROMPT_MAX_CHARS * 0.9;
+  return (
+    <span
+      aria-live={over ? "polite" : "off"}
+      style={{
+        fontSize: "var(--text-xs)",
+        lineHeight: "var(--text-xs-lh)",
+        color: over
+          ? "var(--color-danger)"
+          : close
+            ? "var(--color-warning)"
+            : "var(--color-text-tertiary)",
+        fontVariantNumeric: "tabular-nums",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {used.toLocaleString()} / {PROMPT_MAX_CHARS.toLocaleString()} characters
+      {over ? " — too long to start" : ""}
+    </span>
+  );
+}
+
+/**
+ * The prompts that produced a session, in full.
+ *
+ * The heading shows session.title, which is the opening 80 characters of the
+ * first prompt. Two briefs that share an opening paragraph therefore look
+ * identical in the sidebar and in the header, and there was no way to tell
+ * which was which. The full text was already in the API as turns[].prompt and
+ * simply never rendered.
+ */
+function PromptDisclosure({ session }: { session: ResearchSession }) {
+  const [open, setOpen] = useState(false);
+  const prompts = (session.turns ?? [])
+    .map((turn) => (turn.prompt ?? "").trim())
+    .filter(Boolean);
+
+  if (!prompts.length) return null;
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button
+        type="button"
+        className="btn-ghost"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        style={{ padding: 0 }}
+      >
+        <ChevronDown
+          size={13}
+          style={{ transform: open ? "rotate(180deg)" : undefined, transition: "transform 0.12s" }}
+        />
+        {open ? "Hide prompt" : prompts.length === 1 ? "See full prompt" : `See full prompts (${prompts.length})`}
+      </button>
+
+      {open && (
+        <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+          {prompts.map((prompt, index) => (
+            <div
+              key={index}
+              style={{
+                background: "var(--color-background-tertiary)",
+                border: "0.5px solid var(--color-border-tertiary)",
+                borderRadius: 8,
+                padding: "11px 13px",
+              }}
+            >
+              {prompts.length > 1 && (
+                <div className="section-label" style={{ marginBottom: 6 }}>
+                  {index === 0 ? "Opening prompt" : `Follow-up ${index}`}
+                </div>
+              )}
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "var(--text-xs)",
+                  lineHeight: 1.65,
+                  color: "var(--color-text-secondary)",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {prompt}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatResearchDuration(totalSeconds: number): string {
   const safeSeconds = Math.max(0, Math.round(totalSeconds));
@@ -814,11 +916,16 @@ function EmptyStatePrompt({
           style={{ resize: "vertical", minHeight: 140, lineHeight: 1.6, fontSize: "var(--text-sm)" }}
           disabled={isWorking}
         />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
             Be specific about geography, time window, and angle for sharper sources.
           </p>
-          <button type="submit" className="btn-primary" disabled={!promptText.trim() || isWorking}>
+          <CharacterCount value={promptText} />
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={!promptText.trim() || isWorking || promptText.length > PROMPT_MAX_CHARS}
+          >
             {isWorking ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
             Start research
           </button>
@@ -888,6 +995,7 @@ function ActiveSessionView({
             {dedupedCitations.length} {dedupedCitations.length === 1 ? "citation" : "citations"} ·{" "}
             {session.web_search_requests} web searches
           </p>
+          <PromptDisclosure session={session} />
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
           <button
@@ -932,11 +1040,16 @@ function ActiveSessionView({
           style={{ resize: "vertical", minHeight: 100, lineHeight: 1.6, fontSize: "var(--text-sm)" }}
           disabled={isWorking}
         />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
             Follow-ups merge into the consolidated report — no need to repeat the original prompt.
           </p>
-          <button type="submit" className="btn-primary" disabled={!promptText.trim() || isWorking}>
+          <CharacterCount value={promptText} />
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={!promptText.trim() || isWorking || promptText.length > PROMPT_MAX_CHARS}
+          >
             {isWorking ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
             Run follow-up
           </button>

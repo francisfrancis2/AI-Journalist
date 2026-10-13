@@ -338,3 +338,46 @@ class TestVidiqRetryOnFollowUpTurn:
 
         src = inspect.getsource(research_sessions._run_research_session_turn)
         assert "not has_demand_data" in src
+
+
+class TestSessionTitles:
+    """Two briefs for the same show share an opening paragraph, so truncating
+    the first 80 characters made both sessions read identically in the sidebar
+    with no way to tell which was which.
+    """
+
+    def test_a_short_prompt_keeps_its_own_words(self):
+        import asyncio
+
+        from backend.api.routes.research_sessions import _title_for
+
+        title = asyncio.run(_title_for("LODD drones in the UAE"))
+        assert title == "LODD drones in the UAE"
+
+    def test_truncation_is_still_the_fallback(self):
+        from backend.api.routes.research_sessions import _derive_title
+
+        long_prompt = "word " * 200
+        title = _derive_title(long_prompt)
+        assert len(title) <= 80
+        assert title.endswith("…")
+
+    def test_title_generation_fails_open(self, monkeypatch):
+        """A title is never worth failing a research session over."""
+        import asyncio
+
+        from backend.api.routes import research_sessions
+
+        class _Boom:
+            def __init__(self, *a, **k):
+                raise RuntimeError("model unavailable")
+
+        monkeypatch.setattr(
+            "langchain_anthropic.ChatAnthropic", _Boom, raising=False
+        )
+        long_prompt = (
+            "I'm researching an episode of Expert Mode, a YouTube series for a bank. "
+            "Each episode takes a recent decision and has an expert decode it."
+        )
+        title = asyncio.run(research_sessions._title_for(long_prompt))
+        assert title == research_sessions._derive_title(long_prompt)

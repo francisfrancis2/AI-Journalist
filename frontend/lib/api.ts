@@ -652,6 +652,39 @@ export interface IdeaHandoffPreview {
 
 // ── Client ────────────────────────────────────────────────────────────────────
 
+/**
+ * Turn an API error into something a person can act on.
+ *
+ * FastAPI returns `detail` as a string for HTTPException but as an array of
+ * objects for a 422 validation error. Passing that array to `new Error()`
+ * stringified it to "[object Object]", which is what a user saw instead of
+ * being told their prompt was too long -- they had to guess by shortening it.
+ */
+function readErrorMessage(err: AxiosError<{ detail?: unknown; message?: string }>): string {
+  const detail = err.response?.data?.detail;
+
+  if (typeof detail === "string" && detail.trim()) return detail;
+
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (!item || typeof item !== "object") return null;
+        const entry = item as { msg?: string; loc?: unknown[] };
+        if (!entry.msg) return null;
+        // loc is ["body", "prompt"]; the field name is the useful half.
+        const field = Array.isArray(entry.loc)
+          ? entry.loc.filter((part) => part !== "body").join(" \u2192 ")
+          : "";
+        return field ? `${field}: ${entry.msg}` : entry.msg;
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join("; ");
+  }
+
+  return err.response?.data?.message ?? err.message ?? "Unknown error";
+}
+
 class AIJournalistAPIClient {
   private http: AxiosInstance;
 
@@ -677,7 +710,7 @@ class AIJournalistAPIClient {
     // Global error interceptor
     this.http.interceptors.response.use(
       (res: AxiosResponse) => res,
-      (err: AxiosError<{ detail?: string; message?: string }>) => {
+      (err: AxiosError<{ detail?: unknown; message?: string }>) => {
         const timedOut =
           err.code === "ECONNABORTED" ||
           err.message.toLowerCase().includes("timeout");
@@ -702,12 +735,7 @@ class AIJournalistAPIClient {
           }
         }
 
-        const message =
-          err.response?.data?.detail ??
-          err.response?.data?.message ??
-          err.message ??
-          "Unknown error";
-        return Promise.reject(new Error(message));
+        return Promise.reject(new Error(readErrorMessage(err)));
       }
     );
   }
