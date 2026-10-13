@@ -285,3 +285,56 @@ async def test_resynthesize_raises_on_empty_response(mocker):
             existing_citations=[],
             prompt="follow up",
         )
+
+
+class TestVidiqRetryOnFollowUpTurn:
+    """A first turn that sets up the brief without naming a subject leaves
+    nothing for vidIQ to search, and the subject arrives in the follow-up.
+
+    Observed in production: turn 0 was "I'm researching an episode of Expert
+    Mode... each episode takes a recent UAE decision..." -- show format, no
+    subject -- and turn 1 carried "Why Fintech Is Winning the AI Investment
+    Race in the UAE". Collecting only on turn one meant vidIQ was asked at the
+    exact moment no subject existed, and never asked again once one did.
+    """
+
+    def test_follow_up_requests_vidiq_while_the_session_has_none(self):
+        import inspect
+
+        from backend.api.routes import research_sessions
+
+        src = inspect.getsource(research_sessions._run_research_session_turn)
+        assert "retry_vidiq = not has_demand_data" in src
+        assert "include_vidiq=retry_vidiq" in src, "the follow-up must be able to request vidIQ"
+        assert "vidiq_topic=prompt if retry_vidiq else None" in src
+
+    def test_follow_up_persists_what_it_collects(self):
+        """Without this the retry fetches and throws the result away."""
+        import inspect
+
+        from backend.api.routes import research_sessions
+
+        src = inspect.getsource(research_sessions._run_research_session_turn)
+        assert "follow_up_demand = result.package.youtube_demand" in src
+        assert "session.youtube_demand_data = follow_up_demand.model_dump" in src
+
+    def test_demand_data_is_read_before_the_session_detaches(self):
+        """session is expired once its AsyncSessionLocal block exits."""
+        import inspect
+
+        from backend.api.routes import research_sessions
+
+        src = inspect.getsource(research_sessions._run_research_session_turn)
+        capture = src.index("has_demand_data = bool(session.youtube_demand_data)")
+        use = src.index("retry_vidiq = not has_demand_data")
+        assert capture < use, "the value must be captured inside the session block"
+
+    def test_a_session_that_already_has_demand_data_does_not_refetch(self):
+        """Once collected it is never re-fetched, so a long session cannot run
+        up vidIQ credits one turn at a time."""
+        import inspect
+
+        from backend.api.routes import research_sessions
+
+        src = inspect.getsource(research_sessions._run_research_session_turn)
+        assert "not has_demand_data" in src

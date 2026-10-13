@@ -292,6 +292,9 @@ async def _run_research_session_turn(session_id: uuid.UUID) -> None:
         prompt = (session.pending_prompt or "").strip()
         existing_report = session.report_markdown
         existing_citations = _orm_to_citations(session.citations)
+        # Read inside the session, like everything else here: the instance is
+        # detached once this block exits.
+        has_demand_data = bool(session.youtube_demand_data)
         completed_turns = [
             turn
             for turn in (session.turns or [])
@@ -299,6 +302,16 @@ async def _run_research_session_turn(session_id: uuid.UUID) -> None:
             and turn.get("status") == ResearchSessionStatus.COMPLETED.value
             and turn.get("report_markdown")
         ]
+
+    # A first turn that sets up the brief without naming a subject -- "I'm
+    # researching an episode of X, each episode takes a recent UAE decision..."
+    # -- leaves nothing for vidIQ to search, and the subject arrives in the
+    # follow-up. Collecting only on turn one meant vidIQ was asked at the exact
+    # moment no subject existed and never asked again once one did. So retry on
+    # a later turn, but only while the session still has no demand data: once
+    # collected it is never re-fetched, and a session cannot run up credits one
+    # turn at a time.
+    retry_vidiq = not has_demand_data
 
     try:
         # Deep research runs only on a session's first query. Follow-up turns
@@ -310,7 +323,8 @@ async def _run_research_session_turn(session_id: uuid.UUID) -> None:
             existing_citations=existing_citations,
             conversation_turns=completed_turns,
             deep=False,
-            include_vidiq=False,
+            include_vidiq=retry_vidiq,
+            vidiq_topic=prompt if retry_vidiq else None,
         )
     except Exception as exc:
         log.error("research_session.turn.failed", session_id=str(session_id), error=str(exc))
@@ -336,6 +350,11 @@ async def _run_research_session_turn(session_id: uuid.UUID) -> None:
         session = await db.get(ResearchSessionORM, session_id)
         if session is None:
             return
+        # Without this the retry above would fetch and then throw the result
+        # away, leaving the panel empty and the credits spent.
+        follow_up_demand = result.package.youtube_demand
+        if follow_up_demand and not session.youtube_demand_data:
+            session.youtube_demand_data = follow_up_demand.model_dump(mode="json")
         session.report_markdown = result.report_markdown
         session.citations = _citations_to_orm(merged_citations)
         session.turns = _mark_latest_turn(
